@@ -17,20 +17,22 @@ function hashPassword(password: string): string {
 passport.use(
   new LocalStrategy(async (username, password, done) => {
     try {
-      console.log(`[auth] Login attempt for username: "${username}"`);
-      const user = await storage.getUserByUsername(username);
+      const trimmedUsername = username.trim();
+      const trimmedPassword = password.trim();
+      console.log(`[auth] Login attempt for username: "${trimmedUsername}"`);
+      const user = await storage.getUserByUsername(trimmedUsername);
       if (!user) {
         console.log(`[auth] User not found: "${username}"`);
         return done(null, false, { message: "Invalid username or password" });
       }
 
-      console.log(`[auth] Found user ${username}, stored password length: ${user.password.length}, provided password length: ${password.length}`);
-      if (!verifyPassword(password, user.password)) {
-        console.log(`[auth] Password mismatch for ${username}`);
+      console.log(`[auth] Found user ${trimmedUsername}, stored password length: ${user.password.length}, provided password length: ${trimmedPassword.length}`);
+      if (!verifyPassword(trimmedPassword, user.password)) {
+        console.log(`[auth] Password mismatch for ${trimmedUsername}`);
         return done(null, false, { message: "Invalid username or password" });
       }
 
-      console.log(`[auth] Login successful for ${username}`);
+      console.log(`[auth] Login successful for ${trimmedUsername}`);
       return done(null, user);
     } catch (error) {
       console.error(`[auth] Error during login:`, error);
