@@ -218,6 +218,19 @@
   }
 }
 
+@theme inline {
+  --color-navy-100: hsl(216 30% 92%);
+  --color-navy-200: hsl(216 25% 82%);
+  --color-navy-300: hsl(216 20% 70%);
+  --color-navy-400: hsl(216 18% 55%);
+  --color-navy-500: hsl(216 22% 42%);
+  --color-navy-600: hsl(218 26% 24%);
+  --color-navy-700: hsl(218 28% 18%);
+  --color-navy-800: hsl(218 36% 12%);
+  --color-navy-850: hsl(218 38% 10%);
+  --color-navy-900: hsl(218 40% 8%);
+}
+
 @layer utilities {
   input[type="search"]::-webkit-search-cancel-button {
     @apply hidden;
