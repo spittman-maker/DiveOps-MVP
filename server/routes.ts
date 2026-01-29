@@ -254,16 +254,18 @@ export async function registerRoutes(
   // ──────────────────────────────────────────────────────────────────────────
 
   app.get("/api/projects/:projectId/days", requireAuth, async (req: Request, res: Response) => {
-    // Get or create today's day for the project
-    const today = getTodayDate();
-    let day = await storage.getDayByProjectAndDate(req.params.projectId, today);
+    // Get the most recent day/shift for the project
+    let day = await storage.getMostRecentDayByProject(req.params.projectId);
     
+    // If no day exists and user can write, create one for today
     if (!day) {
       const user = getUser(req);
       if (canWriteLogEvents(user.role)) {
+        const today = getTodayDate();
         day = await storage.createDay({
           projectId: req.params.projectId,
           date: today,
+          shift: "1",
           status: "DRAFT",
           createdBy: user.id,
         });
@@ -281,10 +283,16 @@ export async function registerRoutes(
 
   app.post("/api/projects/:projectId/days", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
     const user = getUser(req);
+    const date = req.body.date || getTodayDate();
+    
+    // Auto-generate shift number for this date
+    const shiftCount = await storage.getShiftCountForDate(req.params.projectId, date);
+    const shiftNumber = String(shiftCount + 1);
+    
     const day = await storage.createDay({
       projectId: req.params.projectId,
-      date: req.body.date || getTodayDate(),
-      shift: req.body.shift,
+      date,
+      shift: shiftNumber,
       status: "DRAFT",
       createdBy: user.id,
     });

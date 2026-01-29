@@ -55,6 +55,8 @@ export interface IStorage {
   createDay(day: InsertDay): Promise<Day>;
   getDay(id: string): Promise<Day | undefined>;
   getDayByProjectAndDate(projectId: string, date: string): Promise<Day | undefined>;
+  getMostRecentDayByProject(projectId: string): Promise<Day | undefined>;
+  getShiftCountForDate(projectId: string, date: string): Promise<number>;
   updateDay(id: string, updates: Partial<InsertDay>): Promise<Day | undefined>;
   closeDay(id: string, closedBy: string): Promise<Day | undefined>;
   reopenDay(id: string): Promise<Day | undefined>;
@@ -250,6 +252,20 @@ export class DbStorage implements IStorage {
     const [day] = await db.select().from(schema.days)
       .where(and(eq(schema.days.projectId, projectId), eq(schema.days.date, date)));
     return day;
+  }
+
+  async getMostRecentDayByProject(projectId: string): Promise<Day | undefined> {
+    const [day] = await db.select().from(schema.days)
+      .where(eq(schema.days.projectId, projectId))
+      .orderBy(desc(schema.days.createdAt))
+      .limit(1);
+    return day;
+  }
+
+  async getShiftCountForDate(projectId: string, date: string): Promise<number> {
+    const days = await db.select().from(schema.days)
+      .where(and(eq(schema.days.projectId, projectId), eq(schema.days.date, date)));
+    return days.length;
   }
 
   async updateDay(id: string, updates: Partial<InsertDay>): Promise<Day | undefined> {

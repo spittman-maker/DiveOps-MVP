@@ -308,17 +308,22 @@ export function DailyLogTab() {
           <div className="flex items-center gap-3">
             <h2 className="text-sm font-semibold text-white">Supervisor Daily Log</h2>
             {currentDay && (
-              <Badge
-                className={`text-xs ${
-                  currentDay.status === "CLOSED"
-                    ? "bg-red-600"
-                    : currentDay.status === "ACTIVE"
-                    ? "bg-green-600"
-                    : "bg-yellow-600"
-                }`}
-              >
-                {currentDay.status}
-              </Badge>
+              <>
+                <Badge className="text-xs bg-navy-600">
+                  {currentDay.date} {currentDay.shift ? `Shift ${currentDay.shift}` : ""}
+                </Badge>
+                <Badge
+                  className={`text-xs ${
+                    currentDay.status === "CLOSED"
+                      ? "bg-red-600"
+                      : currentDay.status === "ACTIVE"
+                      ? "bg-green-600"
+                      : "bg-yellow-600"
+                  }`}
+                >
+                  {currentDay.status}
+                </Badge>
+              </>
             )}
           </div>
           <div className="flex gap-2">
