@@ -125,15 +125,13 @@ export function DailyLogTab() {
     // First try splitting by newlines
     let lines = rawInput.trim().split('\n').filter(line => line.trim());
     
-    // Check for multiple timestamps - split ONLY on timestamps, not slashes
-    // This preserves diving terminology like L/S, R/B, L/B, R/S
+    // Split ONLY on timestamp boundaries (space followed by 3-4 digit time)
     if (lines.length === 1) {
-      // Split on timestamp boundaries: look for patterns like " 0630" or "/0630" 
-      // where a 3-4 digit number starts a new entry
       const text = lines[0];
-      const timestampSplit = text.split(/(?=\s+\d{3,4}\b)|(?=\/\s*\d{3,4}\b)/);
+      // Split before any space + timestamp pattern like " 0630"
+      const timestampSplit = text.split(/(?=\s+\d{3,4}\b)/);
       const cleanedParts = timestampSplit
-        .map(p => p.replace(/^[\s\/]+/, '').trim())
+        .map(p => p.trim())
         .filter(p => p && timePattern.test(p));
       
       if (cleanedParts.length >= 2) {
