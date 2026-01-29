@@ -177,8 +177,8 @@ export function DailyLogTab() {
   };
 
   return (
-    <div className="h-full flex">
-      <div className="w-1/2 border-r border-navy-600 flex flex-col">
+    <div className="h-full flex overflow-hidden">
+      <div className="w-1/2 border-r border-navy-600 flex flex-col overflow-hidden">
         <div className="bg-navy-800 p-3 border-b border-navy-600 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h2 className="text-sm font-semibold text-white">Raw Event Stream</h2>
@@ -240,7 +240,7 @@ export function DailyLogTab() {
           )}
         </div>
 
-        <ScrollArea className="flex-1 p-4">
+        <div className="flex-1 overflow-auto p-4">
           <div className="space-y-2">
             {events.map((event) => (
               <div
@@ -263,7 +263,7 @@ export function DailyLogTab() {
               <p className="text-navy-400 text-center py-8">No log entries yet</p>
             )}
           </div>
-        </ScrollArea>
+        </div>
 
         {canWriteLogEvents && currentDay?.status !== "CLOSED" && (
           <div className="p-4 border-t border-navy-600 bg-navy-800">
@@ -297,13 +297,13 @@ export function DailyLogTab() {
         )}
       </div>
 
-      <div className="w-1/2 flex flex-col">
+      <div className="w-1/2 flex flex-col overflow-hidden">
         <div className="bg-navy-800 p-3 border-b border-navy-600">
           <h2 className="text-sm font-semibold text-white">Internal Canvas</h2>
           <p className="text-xs text-navy-400">AI-cleaned entries (derived from raw stream)</p>
         </div>
 
-        <ScrollArea className="flex-1 p-4">
+        <div className="flex-1 overflow-auto p-4">
           <div className="space-y-2">
             {events.map((event) => {
               const internalRender = event.renders?.find(r => r.renderType === "internal_canvas_line");
@@ -331,7 +331,7 @@ export function DailyLogTab() {
               <p className="text-navy-400 text-center py-8">Canvas will populate from log entries</p>
             )}
           </div>
-        </ScrollArea>
+        </div>
       </div>
     </div>
   );
