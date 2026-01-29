@@ -63,7 +63,7 @@ export function registerChatRoutes(app: Express): void {
   app.post("/api/conversations/:id/messages", async (req: Request, res: Response) => {
     try {
       const conversationId = parseInt(req.params.id);
-      const { content } = req.body;
+      const { content, userRole } = req.body;
 
       // Save user message
       await chatStorage.createMessage(conversationId, "user", content);
@@ -75,6 +75,44 @@ export function registerChatRoutes(app: Express): void {
         content: m.content,
       }));
 
+      // Create system prompt based on user role
+      const isGod = userRole === "GOD";
+      const systemPrompt = isGod
+        ? `You are the DiveOps™ Assistant for Precision Subsea Group. You are a helpful assistant for commercial diving operations.
+
+You help with:
+- Explaining diving terminology (LS = Leave Surface, RB = Reach Bottom, LB = Leave Bottom, RS = Reach Surface)
+- Answering questions about dive operations, safety, and Navy diving procedures
+- Providing guidance on dive planning and risk assessment
+- AS A GOD USER, you may also discuss app changes and development requests
+
+Diving terminology reference:
+- LS (Leave Surface): Diver submerges and begins descent
+- RB (Reach Bottom): Diver arrives at working depth
+- LB (Leave Bottom): Diver begins ascent
+- RS (Reach Surface): Diver surfaces
+- FSW: Feet of Sea Water (depth measurement)
+- BT: Bottom Time
+- TDT: Total Dive Time`
+        : `You are the DiveOps™ Assistant for Precision Subsea Group. You are a helpful assistant for commercial diving operations.
+
+You help with:
+- Explaining diving terminology (LS = Leave Surface, RB = Reach Bottom, LB = Leave Bottom, RS = Reach Surface)
+- Answering questions about dive operations, safety, and Navy diving procedures
+- Providing guidance on dive planning and risk assessment
+- Understanding log entries and dive records
+
+IMPORTANT: You cannot make changes to the app or discuss development features. If asked to change the app, politely explain that only administrators with GOD access can request app modifications.
+
+Diving terminology reference:
+- LS (Leave Surface): Diver submerges and begins descent
+- RB (Reach Bottom): Diver arrives at working depth
+- LB (Leave Bottom): Diver begins ascent
+- RS (Reach Surface): Diver surfaces
+- FSW: Feet of Sea Water (depth measurement)
+- BT: Bottom Time
+- TDT: Total Dive Time`;
+
       // Set up SSE
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
@@ -82,8 +120,11 @@ export function registerChatRoutes(app: Express): void {
 
       // Stream response from OpenAI
       const stream = await openai.chat.completions.create({
-        model: "gpt-5.1",
-        messages: chatMessages,
+        model: "gpt-4.1-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...chatMessages
+        ],
         stream: true,
         max_completion_tokens: 2048,
       });

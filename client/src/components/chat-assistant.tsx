@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -19,6 +20,7 @@ interface Conversation {
 }
 
 export function ChatAssistant({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const { user } = useAuth();
   const [input, setInput] = useState("");
   const [streamingContent, setStreamingContent] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -79,7 +81,7 @@ export function ChatAssistant({ isOpen, onClose }: { isOpen: boolean; onClose: (
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ content: userMessage }),
+        body: JSON.stringify({ content: userMessage, userRole: user?.role }),
       });
 
       if (!response.ok) throw new Error("Failed to send message");
@@ -151,8 +153,11 @@ export function ChatAssistant({ isOpen, onClose }: { isOpen: boolean; onClose: (
             <div className="space-y-4">
               {allMessages.length === 0 && (
                 <div className="text-center text-navy-400 py-8">
-                  <p className="text-sm">Ask me anything about your dive operations, or tell me what you'd like to change.</p>
-                  <p className="text-xs mt-2">Examples: "What does LS mean?" or "Change the header color to blue"</p>
+                  <p className="text-sm">Ask me anything about dive operations and terminology.</p>
+                  <p className="text-xs mt-2">Examples: "What does LS mean?" or "Explain Navy dive tables"</p>
+                  {user?.role === "GOD" && (
+                    <p className="text-xs mt-1 text-amber-500">GOD mode: You can also request app changes</p>
+                  )}
                 </div>
               )}
               {allMessages.map((msg, i) => (
