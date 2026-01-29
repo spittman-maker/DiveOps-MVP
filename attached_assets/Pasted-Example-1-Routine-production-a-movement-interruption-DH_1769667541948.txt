@@ -1,0 +1,102 @@
+Example 1 — Routine production + a movement interruption + DHO all-stop
+
+Supervisor Input
+
+LWT Big House — 0530 AIS shuttle / 0600 DHO safety / 0640 set station / 0724 ZM L/S pressure wash laitance PFU2–3 / 0850 ZM R/S / 0917 BR L/S continue PFU2–3 / 1038 BR R/S / 1048 MV L/S continue PFU2–3 / 1212 DHO all stop diving / 1233 secure / 1330 EOD
+
+Assistant considerations (high-level)
+
+Most of this is routine production: keep non-timestamped.
+
+The only item requiring a timestamp is the DHO all-stop (directive that impacts means/methods and schedule).
+
+Keep the station notes compact; don’t rewrite narratives.
+
+Assistant Output
+
+JV/OICC Directives and Changes (timestamped)
+
+[1212] DHO directive: All stop diving. Impact: immediate production stop; secure/demob (LWT Big House).
+
+Station Log — LWT Big House (non-timestamped)
+
+Mobilize / safety / set station.
+
+ZM L/S pressure wash laitance PFU2–PFU3; ZM R/S.
+
+BR L/S continue pressure wash PFU2–PFU3; BR R/S.
+
+MV L/S continue pressure wash PFU2–PFU3.
+
+Secure work area; demob; EOD.
+
+Example 2 — Conflicting direction / reversal (explicit tag required)
+
+Supervisor Input
+
+0730 JV said “continue rock placement in BH81.5.” 0815 bulkhead blew out. 0830 JV then said “stop all rock placement and shift to laitance breakup only.” We had already started staging rock for BH85.5 based on the first direction. Divers stood down, pressure washing instead.
+
+Assistant considerations (high-level)
+
+This contains a direction change that directly affects scope/cost/schedule → timestamp both directives if times are provided.
+
+This is a classic REVERSED DIRECTION scenario: original direction → reversal → operational impact.
+
+Capture the impact plainly (resequence, standby, rework).
+
+Assistant Output
+
+JV/OICC Directives and Changes (timestamped)
+
+[0730] JV directive: Continue rock placement at BH81.5. Impact: proceed with rock placement operations.
+[0830] JV directive: Stop all rock placement; shift to laitance breakup only. Impact: immediate resequence; stand down rock placement.
+
+REVERSED DIRECTION
+
+Originally directed: continue rock placement BH81.5 (0730).
+
+Reversed to: stop rock placement; shift to laitance breakup only (0830) after blowout condition identified.
+
+Impact: rock staging initiated for BH85.5 based on initial direction; production reset to pressure washing; standby/resequence exposure.
+
+Operational Notes (non-timestamped)
+
+[0815] Bulkhead blowout observed during rock placement attempt (recorded as condition; not a directive).
+
+Example 3 — Measurements/samples + third-party movement window + early day call
+
+Supervisor Input
+
+West ATC Wall — 0653 TB L/S stayform 45–46 / 0655 SK L/S stayform 41–42 / 0827 standby for Moffitt & Nickel boat movement / 0921 no show, send WR + TC in / 0927 M&N shows, pull divers / 1218 DHO calling an 8-hr day / 1330 secure.
+Big House also pulled laitance samples for DHO (PFU3 cell 9 and PFU2 cell 3) and took cage/dog bone clearances at PFU2–3.
+
+Assistant considerations (high-level)
+
+“Standby for boat movement” isn’t automatically a directive unless it’s an instruction; but “pull divers” due to movement is an operational change—timestamp if time is provided.
+
+“DHO calling an 8-hr day” is a directive → timestamp.
+
+Samples/measurements are station facts; log them under station notes (no timestamps unless tied to a directive).
+
+Assistant Output
+
+JV/OICC Directives and Changes (timestamped)
+
+[0927] Access change: Moffitt & Nickel arrival required divers pulled. Impact: stop work / standby / resequence (West ATC Wall).
+[1218] DHO directive: Convert to 8-hr day. Impact: early demob; reduced production window.
+
+Station Log — West ATC Wall (non-timestamped)
+
+TB L/S stayform 45–46; SK L/S stayform 41–42.
+
+Standby for anticipated Moffitt & Nickel movement; returned to water when no-show confirmed; pulled again upon arrival.
+
+Break down station; secure; EOD.
+
+Station Log — LWT Big House (non-timestamped)
+
+Laitance samples recovered for DHO: PFU3 cell 9 and PFU2 cell 3 (document recipient/storage if available).
+
+Recorded PFU2–3 cage/dog bone clearance measurements (attach field notes if needed).
+
+If you want, I can tailor these examples to your exact “voice” for the log (more aggressive traceability vs more production-focused), but the structure above is the locked standard: timestamp only directives/changes, flag CONFLICTING/REVERSED immediately, keep everything else in clean station blocks.
