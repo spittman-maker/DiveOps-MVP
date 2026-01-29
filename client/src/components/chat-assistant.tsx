@@ -269,7 +269,7 @@ export function ChatAssistant({ isOpen, onClose }: { isOpen: boolean; onClose: (
                       ? "bg-blue-600 text-white text-left"
                       : "bg-[#2f2f2f] text-gray-100"
                   }`}>
-                    <p className="text-[15px] leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                    <p className="text-[15px] leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
                   </div>
                 </div>
               </div>
