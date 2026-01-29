@@ -116,6 +116,28 @@ export function DailyLogTab() {
     },
   });
 
+  const createDayMutation = useMutation({
+    mutationFn: async () => {
+      if (!activeProject) throw new Error("No project");
+      const res = await fetch(`/api/projects/${activeProject.id}/days`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ date: new Date().toISOString().split('T')[0] }),
+      });
+      if (!res.ok) throw new Error("Failed to create day");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["days"] });
+      refreshDay();
+      toast({ title: "New day started", description: "Ready to log events" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to create new day", variant: "destructive" });
+    },
+  });
+
   const handleSend = async () => {
     if (!rawInput.trim()) return;
     
@@ -233,14 +255,38 @@ export function DailyLogTab() {
             </AlertDialog>
           )}
           {isSupervisor && currentDay?.status === "CLOSED" && (
+            <div className="flex gap-2">
+              <Button
+                data-testid="button-reopen-day"
+                size="sm"
+                variant="outline"
+                onClick={() => reopenDayMutation.mutate()}
+                className="text-xs border-green-500 text-green-400 hover:bg-green-500/20"
+              >
+                Reopen Day
+              </Button>
+              <Button
+                data-testid="button-new-day"
+                size="sm"
+                variant="outline"
+                onClick={() => createDayMutation.mutate()}
+                disabled={createDayMutation.isPending}
+                className="text-xs border-blue-500 text-blue-400 hover:bg-blue-500/20"
+              >
+                {createDayMutation.isPending ? "Creating..." : "New Day"}
+              </Button>
+            </div>
+          )}
+          {isSupervisor && !currentDay && (
             <Button
-              data-testid="button-reopen-day"
+              data-testid="button-start-day"
               size="sm"
               variant="outline"
-              onClick={() => reopenDayMutation.mutate()}
-              className="text-xs border-green-500 text-green-400 hover:bg-green-500/20"
+              onClick={() => createDayMutation.mutate()}
+              disabled={createDayMutation.isPending}
+              className="text-xs border-blue-500 text-blue-400 hover:bg-blue-500/20"
             >
-              Reopen Day
+              {createDayMutation.isPending ? "Creating..." : "Start Day"}
             </Button>
           )}
         </div>
