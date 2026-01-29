@@ -42,12 +42,15 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-navy-900 flex items-center justify-center p-4">
       <Card className="w-full max-w-md bg-navy-800/80 border-navy-600">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold text-white font-mono tracking-tight">
-            NAVY DIVE CONSOLE
+        <CardHeader className="text-center space-y-2">
+          <div className="text-sm text-navy-400 font-medium">Precision Subsea Group LLC</div>
+          <CardTitle className="text-2xl font-bold text-white tracking-tight">
+            DiveOps™
           </CardTitle>
-          <CardDescription className="text-navy-300">
-            Deep Operations Management System
+          <CardDescription className="text-navy-300 space-y-1">
+            <div>Enterprise Subsea Operations Management System</div>
+            <div className="text-xs text-navy-400">Command and Control for Subsea Operations</div>
+            <div className="text-xs text-navy-500 italic">Patent Pending</div>
           </CardDescription>
         </CardHeader>
         <CardContent>

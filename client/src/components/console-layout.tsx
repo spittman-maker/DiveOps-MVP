@@ -36,8 +36,8 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
     <div className="min-h-screen bg-navy-900 flex flex-col">
       <header className="bg-navy-800 border-b border-navy-600 px-4 py-2 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <h1 className="text-lg font-bold text-white font-mono tracking-tight">
-            NAVY DIVE CONSOLE
+          <h1 className="text-lg font-bold text-white tracking-tight">
+            DiveOps™
           </h1>
           <div className="h-4 w-px bg-navy-600" />
           <span className="text-sm text-navy-300 font-mono">
