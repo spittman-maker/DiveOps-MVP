@@ -83,11 +83,13 @@ export function registerChatRoutes(app: Express): void {
 **Supervisor input is fully timestamped for sequence control. Final 24-hour log retains timestamps ONLY for JV/OICC directives/changes/reversals/access/safety impacts. Routine production gets grouped into non-timestamped station notes.**
 
 ## WHAT GETS TIMESTAMPED (in final output)
-- JV directives (scope changes, work orders)
+- JV/OICC (Client) directives (scope changes, work orders)
 - DHO directives (all stop, pull divers, day length changes)
 - Access changes (vessel movements requiring diver pulls, contractor arrivals)
 - Reversed/conflicting direction
 - Safety impacts
+
+Note: JV = Joint Venture, OICC = Officer in Charge of Construction. These represent the CLIENT giving direction.
 
 Format: [HHMM] Type: Description. Impact: effect on operations (Station).
 
@@ -177,7 +179,8 @@ Station Log — LWT Big House (non-timestamped)
 ## DIVING TERMINOLOGY
 - L/S: Leave Surface | R/B: Reach Bottom | L/B: Leave Bottom | R/S: Reach Surface
 - FSW: Feet of Sea Water | BT: Bottom Time | TDT: Total Dive Time
-- DHO: Designated Head Official | JV: Joint Venture | OICC: Officer in Charge of Construction
+- DHO: Designated Head Official (site authority)
+- JV: Joint Venture (CLIENT) | OICC: Officer in Charge of Construction (CLIENT)
 - PFU: Pre-Formed Unit | GDS: General Dynamics | AIS: Automatic Identification System
 
 ## RESPONSE STYLE
