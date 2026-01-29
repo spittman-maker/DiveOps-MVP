@@ -34,8 +34,8 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
   };
 
   return (
-    <div className="min-h-screen bg-navy-900 flex flex-col">
-      <header className="bg-navy-800 border-b border-navy-600 px-4 py-2 flex items-center justify-between">
+    <div className="h-screen bg-navy-900 flex flex-col overflow-hidden">
+      <header className="bg-navy-800 border-b border-navy-600 px-4 py-2 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-4">
           <h1 className="text-lg font-bold text-white tracking-tight">
             DiveOps™
@@ -74,7 +74,7 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
         </div>
       </header>
 
-      <nav className="bg-navy-850 border-b border-navy-600 px-4">
+      <nav className="bg-navy-850 border-b border-navy-600 px-4 shrink-0">
         <div className="flex gap-1">
           {TABS.map((tab) => {
             const isHidden = tab.id === "admin" && !isAdmin;
