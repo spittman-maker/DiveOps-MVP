@@ -137,7 +137,7 @@ export function DailyLogTab() {
               size="sm"
               variant="outline"
               onClick={() => closeDayMutation.mutate()}
-              className="text-xs border-navy-500"
+              className="text-xs border-amber-500 text-amber-400 hover:bg-amber-500/20"
             >
               Close Day
             </Button>
