@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface Message {
   id: number;
@@ -225,7 +224,7 @@ export function ChatAssistant({ isOpen, onClose }: { isOpen: boolean; onClose: (
           </div>
         </div>
 
-        <ScrollArea className="flex-1 overflow-auto" ref={scrollRef}>
+        <div className="flex-1 overflow-y-auto min-h-0" ref={scrollRef}>
           <div className="px-6 py-6 space-y-6">
             {allMessages.length === 0 && (
               <div className="text-center py-16">
@@ -291,7 +290,7 @@ export function ChatAssistant({ isOpen, onClose }: { isOpen: boolean; onClose: (
               </div>
             )}
           </div>
-        </ScrollArea>
+        </div>
 
         <div className="p-4 border-t border-white/10">
           <div className="relative flex items-end bg-[#2f2f2f] rounded-2xl border border-white/10 focus-within:border-white/20 transition-colors">
