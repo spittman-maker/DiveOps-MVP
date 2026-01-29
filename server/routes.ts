@@ -313,6 +313,30 @@ export async function registerRoutes(
     res.json(day);
   });
 
+  app.post("/api/days/:id/reopen", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    const user = getUser(req);
+    const day = await storage.getDay(req.params.id);
+    if (!day) return res.status(404).json({ message: "Day not found" });
+    if (day.status !== "CLOSED") return res.status(400).json({ message: "Day is not closed" });
+    
+    const reopened = await storage.reopenDay(req.params.id);
+    if (!reopened) return res.status(500).json({ message: "Failed to reopen day" });
+    
+    const project = await storage.getProject(reopened.projectId);
+    await storage.createLogEvent({
+      dayId: reopened.id,
+      projectId: reopened.projectId,
+      authorId: user.id,
+      rawText: `Day reopened by ${user.fullName || user.username}`,
+      category: "directive",
+      captureTime: new Date(),
+      eventTime: new Date(),
+      extractedJson: {},
+    });
+    
+    res.json(reopened);
+  });
+
   // Check midnight status
   app.get("/api/days/:id/status", requireAuth, async (req: Request, res: Response) => {
     const day = await storage.getDay(req.params.id);

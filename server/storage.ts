@@ -55,6 +55,7 @@ export interface IStorage {
   getDayByProjectAndDate(projectId: string, date: string): Promise<Day | undefined>;
   updateDay(id: string, updates: Partial<InsertDay>): Promise<Day | undefined>;
   closeDay(id: string, closedBy: string): Promise<Day | undefined>;
+  reopenDay(id: string): Promise<Day | undefined>;
 
   // Log Events
   createLogEvent(event: InsertLogEvent): Promise<LogEvent>;
@@ -221,6 +222,14 @@ export class DbStorage implements IStorage {
   async closeDay(id: string, closedBy: string): Promise<Day | undefined> {
     const [updated] = await db.update(schema.days)
       .set({ status: "CLOSED", closedBy, closedAt: new Date(), updatedAt: new Date() })
+      .where(eq(schema.days.id, id))
+      .returning();
+    return updated;
+  }
+
+  async reopenDay(id: string): Promise<Day | undefined> {
+    const [updated] = await db.update(schema.days)
+      .set({ status: "ACTIVE", closedBy: null, closedAt: null, updatedAt: new Date() })
       .where(eq(schema.days.id, id))
       .returning();
     return updated;

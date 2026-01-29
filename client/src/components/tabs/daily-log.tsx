@@ -8,6 +8,17 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface LogEvent {
   id: string;
@@ -83,7 +94,25 @@ export function DailyLogTab() {
     },
     onSuccess: () => {
       refreshDay();
+      queryClient.invalidateQueries({ queryKey: ["log-events"] });
       toast({ title: "Day closed", description: "Master Log is now locked" });
+    },
+  });
+
+  const reopenDayMutation = useMutation({
+    mutationFn: async () => {
+      if (!currentDay) throw new Error("No day");
+      const res = await fetch(`/api/days/${currentDay.id}/reopen`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to reopen day");
+      return res.json();
+    },
+    onSuccess: () => {
+      refreshDay();
+      queryClient.invalidateQueries({ queryKey: ["log-events"] });
+      toast({ title: "Day reopened", description: "Day is now active - reopening logged" });
     },
   });
 
@@ -132,14 +161,45 @@ export function DailyLogTab() {
             )}
           </div>
           {isSupervisor && currentDay?.status !== "CLOSED" && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  data-testid="button-close-day"
+                  size="sm"
+                  variant="outline"
+                  className="text-xs border-amber-500 text-amber-400 hover:bg-amber-500/20"
+                >
+                  Close Shift
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="bg-navy-800 border-navy-600">
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="text-white">Confirm Close Shift</AlertDialogTitle>
+                  <AlertDialogDescription className="text-navy-300">
+                    Are you sure you want to close this shift? The Master Log will be locked and no new entries can be added. You can reopen if needed.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel className="bg-navy-700 text-white border-navy-600 hover:bg-navy-600">Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => closeDayMutation.mutate()}
+                    className="bg-amber-600 text-white hover:bg-amber-700"
+                  >
+                    Close Shift
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+          {isSupervisor && currentDay?.status === "CLOSED" && (
             <Button
-              data-testid="button-close-day"
+              data-testid="button-reopen-day"
               size="sm"
               variant="outline"
-              onClick={() => closeDayMutation.mutate()}
-              className="text-xs border-amber-500 text-amber-400 hover:bg-amber-500/20"
+              onClick={() => reopenDayMutation.mutate()}
+              className="text-xs border-green-500 text-green-400 hover:bg-green-500/20"
             >
-              Close Day
+              Reopen Day
             </Button>
           )}
         </div>
