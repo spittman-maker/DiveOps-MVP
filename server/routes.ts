@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { passport, hashPassword, requireAuth, requireRole, canWriteLogEvents, isGod, isAdminOrHigher } from "./auth";
 import { classifyEvent, extractData, parseEventTime, generateRiskId, getMasterLogSection, renderInternalCanvasLine } from "./extraction";
 import { generateAIRenders } from "./ai-drafting";
+import { generateShiftExport } from "./document-export";
 import type { User, UserRole, DayStatus } from "@shared/schema";
 import { z } from "zod";
 
@@ -311,6 +312,55 @@ export async function registerRoutes(
     const day = await storage.closeDay(req.params.id, user.id);
     if (!day) return res.status(404).json({ message: "Day not found" });
     res.json(day);
+  });
+
+  app.post("/api/days/:id/close-and-export", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    const user = getUser(req);
+    const dayId = req.params.id;
+    
+    const day = await storage.closeDay(dayId, user.id);
+    if (!day) return res.status(404).json({ message: "Day not found" });
+
+    try {
+      const exportResult = await generateShiftExport(dayId);
+      
+      const docCategoryMap: Record<string, "raw_notes" | "daily_log" | "master_log" | "dive_log" | "risk_register"> = {
+        "RawNotes": "raw_notes",
+        "DailyLog": "daily_log",
+        "MasterLog": "master_log",
+        "DL": "dive_log",
+        "RRR": "risk_register",
+      };
+
+      for (const file of exportResult.files) {
+        let docCategory: "raw_notes" | "daily_log" | "master_log" | "dive_log" | "risk_register" = "daily_log";
+        for (const [prefix, category] of Object.entries(docCategoryMap)) {
+          if (file.name.includes(prefix)) {
+            docCategory = category;
+            break;
+          }
+        }
+
+        await storage.createLibraryExport({
+          projectId: day.projectId,
+          dayId: dayId,
+          fileName: file.name,
+          filePath: file.path,
+          fileType: file.type,
+          docCategory,
+          fileData: file.buffer.toString("base64"),
+          exportedBy: user.id,
+        });
+      }
+
+      res.json({ 
+        day,
+        exportedFiles: exportResult.files.map(f => ({ name: f.name, path: f.path, type: f.type })),
+      });
+    } catch (error) {
+      console.error("Export failed:", error);
+      res.status(500).json({ message: "Day closed but export failed", day });
+    }
   });
 
   app.post("/api/days/:id/reopen", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
@@ -871,6 +921,31 @@ export async function registerRoutes(
     });
     
     res.status(201).json(doc);
+  });
+
+  // Library Exports (generated shift documents)
+  app.get("/api/projects/:projectId/library-exports", requireAuth, async (req: Request, res: Response) => {
+    const exports = await storage.getLibraryExports(req.params.projectId);
+    res.json(exports);
+  });
+
+  app.get("/api/days/:dayId/library-exports", requireAuth, async (req: Request, res: Response) => {
+    const exports = await storage.getLibraryExportsByDay(req.params.dayId);
+    res.json(exports);
+  });
+
+  app.get("/api/library-exports/:id/download", requireAuth, async (req: Request, res: Response) => {
+    const exportDoc = await storage.getLibraryExport(req.params.id);
+    if (!exportDoc) return res.status(404).json({ message: "Export not found" });
+
+    const buffer = Buffer.from(exportDoc.fileData, "base64");
+    const mimeType = exportDoc.fileType === "docx" 
+      ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+    res.setHeader("Content-Type", mimeType);
+    res.setHeader("Content-Disposition", `attachment; filename="${exportDoc.fileName}"`);
+    res.send(buffer);
   });
 
   // ──────────────────────────────────────────────────────────────────────────

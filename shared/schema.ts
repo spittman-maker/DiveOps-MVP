@@ -338,3 +338,26 @@ export const libraryDocuments = pgTable("library_documents", {
 export const insertLibraryDocumentSchema = createInsertSchema(libraryDocuments).omit({ id: true, uploadedAt: true });
 export type InsertLibraryDocument = z.infer<typeof insertLibraryDocumentSchema>;
 export type LibraryDocument = typeof libraryDocuments.$inferSelect;
+
+// ────────────────────────────────────────────────────────────────────────────
+// LIBRARY EXPORTS (Generated shift documents)
+// ────────────────────────────────────────────────────────────────────────────
+
+export const libraryExports = pgTable("library_exports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  dayId: varchar("day_id").notNull().references(() => days.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  filePath: text("file_path").notNull(),
+  fileType: text("file_type").notNull().$type<"docx" | "xlsx">(),
+  docCategory: text("doc_category").notNull().$type<"raw_notes" | "daily_log" | "master_log" | "dive_log" | "risk_register">(),
+  fileData: text("file_data").notNull(),
+  exportedBy: varchar("exported_by").notNull().references(() => users.id),
+  exportedAt: timestamp("exported_at").notNull().defaultNow(),
+}, (t) => ({
+  projectDayIdx: index("library_exports_project_day_idx").on(t.projectId, t.dayId),
+}));
+
+export const insertLibraryExportSchema = createInsertSchema(libraryExports).omit({ id: true, exportedAt: true });
+export type InsertLibraryExport = z.infer<typeof insertLibraryExportSchema>;
+export type LibraryExport = typeof libraryExports.$inferSelect;

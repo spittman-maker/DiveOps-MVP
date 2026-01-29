@@ -95,7 +95,32 @@ export function DailyLogTab() {
     onSuccess: () => {
       refreshDay();
       queryClient.invalidateQueries({ queryKey: ["log-events"] });
-      toast({ title: "Day closed", description: "Master Log is now locked" });
+      toast({ title: "Shift closed", description: "Master Log is now locked" });
+    },
+  });
+
+  const closeAndExportMutation = useMutation({
+    mutationFn: async () => {
+      if (!currentDay) throw new Error("No day");
+      const res = await fetch(`/api/days/${currentDay.id}/close-and-export`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to close and export");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      refreshDay();
+      queryClient.invalidateQueries({ queryKey: ["log-events"] });
+      queryClient.invalidateQueries({ queryKey: ["library-exports"] });
+      const fileCount = data.exportedFiles?.length || 0;
+      toast({ 
+        title: "Shift closed & exported", 
+        description: `${fileCount} documents saved to Library` 
+      });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to export documents", variant: "destructive" });
     },
   });
 
@@ -242,13 +267,20 @@ export function DailyLogTab() {
                     Are you sure you want to close this shift? The Master Log will be locked and no new entries can be added. You can reopen if needed.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
-                <AlertDialogFooter>
+                <AlertDialogFooter className="flex-col sm:flex-row gap-2">
                   <AlertDialogCancel className="bg-navy-700 text-white border-navy-600 hover:bg-navy-600">Cancel</AlertDialogCancel>
                   <AlertDialogAction
                     onClick={() => closeDayMutation.mutate()}
                     className="bg-amber-600 text-white hover:bg-amber-700"
                   >
                     Close Shift
+                  </AlertDialogAction>
+                  <AlertDialogAction
+                    onClick={() => closeAndExportMutation.mutate()}
+                    disabled={closeAndExportMutation.isPending}
+                    className="bg-green-600 text-white hover:bg-green-700"
+                  >
+                    {closeAndExportMutation.isPending ? "Exporting..." : "Close & Export to Library"}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -263,7 +295,7 @@ export function DailyLogTab() {
                 onClick={() => reopenDayMutation.mutate()}
                 className="text-xs border-green-500 text-green-400 hover:bg-green-500/20"
               >
-                Reopen Day
+                Reopen Shift
               </Button>
               <Button
                 data-testid="button-new-day"
@@ -273,7 +305,7 @@ export function DailyLogTab() {
                 disabled={createDayMutation.isPending}
                 className="text-xs border-blue-500 text-blue-400 hover:bg-blue-500/20"
               >
-                {createDayMutation.isPending ? "Creating..." : "New Day"}
+                {createDayMutation.isPending ? "Creating..." : "New Shift"}
               </Button>
             </div>
           )}
@@ -286,7 +318,7 @@ export function DailyLogTab() {
               disabled={createDayMutation.isPending}
               className="text-xs border-blue-500 text-blue-400 hover:bg-blue-500/20"
             >
-              {createDayMutation.isPending ? "Creating..." : "Start Day"}
+              {createDayMutation.isPending ? "Creating..." : "Start Shift"}
             </Button>
           )}
         </div>

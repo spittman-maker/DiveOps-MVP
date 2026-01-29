@@ -1,9 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 import { useState } from "react";
+import { useProject } from "@/hooks/use-project";
+import { Download, FileText, FileSpreadsheet, FolderOpen } from "lucide-react";
+import { format } from "date-fns";
 
 interface LibraryDocument {
   id: string;
@@ -13,6 +18,18 @@ interface LibraryDocument {
   version: string;
   uploadedAt: string;
   description?: string;
+}
+
+interface LibraryExport {
+  id: string;
+  projectId: string;
+  dayId: string;
+  fileName: string;
+  filePath: string;
+  fileType: string;
+  docCategory: string;
+  exportedAt: string;
+  exportedBy: string;
 }
 
 const SAMPLE_DOCS: LibraryDocument[] = [
@@ -26,6 +43,8 @@ const SAMPLE_DOCS: LibraryDocument[] = [
 export function LibraryTab() {
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("exports");
+  const { activeProject } = useProject();
 
   const { data: docs = SAMPLE_DOCS } = useQuery<LibraryDocument[]>({
     queryKey: ["library-docs"],
@@ -37,7 +56,18 @@ export function LibraryTab() {
     },
   });
 
-  const categories = [...new Set(docs.map(d => d.category))];
+  const { data: exports = [] } = useQuery<LibraryExport[]>({
+    queryKey: ["library-exports", activeProject?.id],
+    queryFn: async () => {
+      if (!activeProject?.id) return [];
+      const res = await fetch(`/api/projects/${activeProject.id}/library-exports`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!activeProject?.id,
+  });
+
+  const categories = Array.from(new Set(docs.map(d => d.category)));
 
   const filteredDocs = docs.filter(doc => {
     const matchesSearch = doc.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -45,6 +75,18 @@ export function LibraryTab() {
     const matchesCategory = !selectedCategory || doc.category === selectedCategory;
     return matchesSearch && matchesCategory;
   });
+
+  const filteredExports = exports.filter(exp => 
+    exp.fileName.toLowerCase().includes(search.toLowerCase()) ||
+    exp.filePath.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const groupedExports = filteredExports.reduce((acc, exp) => {
+    const date = exp.filePath.split("/")[1] || "Other";
+    if (!acc[date]) acc[date] = [];
+    acc[date].push(exp);
+    return acc;
+  }, {} as Record<string, LibraryExport[]>);
 
   const getCategoryColor = (category: string) => {
     switch (category) {
@@ -57,80 +99,197 @@ export function LibraryTab() {
     }
   };
 
+  const getDocCategoryLabel = (cat: string) => {
+    switch (cat) {
+      case "raw_notes": return "Raw Notes";
+      case "daily_log": return "Daily Log";
+      case "master_log": return "Master Log";
+      case "dive_log": return "Dive Log";
+      case "risk_register": return "Risk Register";
+      default: return cat;
+    }
+  };
+
+  const getDocCategoryColor = (cat: string) => {
+    switch (cat) {
+      case "raw_notes": return "bg-gray-600";
+      case "daily_log": return "bg-blue-600";
+      case "master_log": return "bg-green-600";
+      case "dive_log": return "bg-cyan-600";
+      case "risk_register": return "bg-red-600";
+      default: return "bg-navy-600";
+    }
+  };
+
+  const handleDownload = (id: string, fileName: string) => {
+    window.open(`/api/library-exports/${id}/download`, "_blank");
+  };
+
   return (
     <div className="h-full p-4">
       <div className="mb-4">
         <h2 className="text-lg font-semibold text-white">Document Library</h2>
         <p className="text-sm text-navy-400">
-          Reference documents, standards, and templates
+          {activeProject?.name || "Select a project"} - Exported documents and reference materials
         </p>
       </div>
 
-      <div className="flex gap-4 mb-4">
-        <Input
-          data-testid="input-library-search"
-          placeholder="Search documents..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="bg-navy-900 border-navy-600 text-white max-w-sm"
-        />
-        <div className="flex gap-2">
-          <Badge
-            data-testid="filter-all"
-            className={`cursor-pointer ${!selectedCategory ? "bg-blue-600" : "bg-navy-700 hover:bg-navy-600"}`}
-            onClick={() => setSelectedCategory(null)}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="bg-navy-800 border-navy-600 mb-4">
+          <TabsTrigger 
+            value="exports" 
+            data-testid="tab-exports"
+            className="data-[state=active]:bg-navy-600 text-white"
           >
-            All
-          </Badge>
-          {categories.map(cat => (
-            <Badge
-              key={cat}
-              data-testid={`filter-${cat.toLowerCase()}`}
-              className={`cursor-pointer ${selectedCategory === cat ? getCategoryColor(cat) : "bg-navy-700 hover:bg-navy-600"}`}
-              onClick={() => setSelectedCategory(cat)}
-            >
-              {cat}
-            </Badge>
-          ))}
-        </div>
-      </div>
+            Shift Exports ({exports.length})
+          </TabsTrigger>
+          <TabsTrigger 
+            value="reference" 
+            data-testid="tab-reference"
+            className="data-[state=active]:bg-navy-600 text-white"
+          >
+            Reference Docs ({docs.length})
+          </TabsTrigger>
+        </TabsList>
 
-      <ScrollArea className="h-[calc(100vh-220px)]">
-        <div className="grid gap-3">
-          {filteredDocs.map((doc) => (
-            <Card
-              key={doc.id}
-              data-testid={`doc-card-${doc.id}`}
-              className="bg-navy-800/50 border-navy-600 hover:bg-navy-800/70 transition-colors cursor-pointer"
-            >
-              <CardContent className="py-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded bg-navy-700 flex items-center justify-center text-xs font-mono text-navy-300">
-                      {doc.fileType}
-                    </div>
-                    <div>
-                      <h3 className="text-white font-medium">{doc.name}</h3>
-                      <p className="text-sm text-navy-400">
-                        Version {doc.version} • Uploaded {new Date(doc.uploadedAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </div>
-                  <Badge className={getCategoryColor(doc.category)}>
-                    {doc.category}
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-
-          {filteredDocs.length === 0 && (
-            <div className="text-center py-12">
-              <p className="text-navy-400">No documents found</p>
+        <div className="flex gap-4 mb-4">
+          <Input
+            data-testid="input-library-search"
+            placeholder="Search documents..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="bg-navy-900 border-navy-600 text-white max-w-sm"
+          />
+          {activeTab === "reference" && (
+            <div className="flex gap-2 flex-wrap">
+              <Badge
+                data-testid="filter-all"
+                className={`cursor-pointer ${!selectedCategory ? "bg-blue-600" : "bg-navy-700 hover:bg-navy-600"}`}
+                onClick={() => setSelectedCategory(null)}
+              >
+                All
+              </Badge>
+              {categories.map(cat => (
+                <Badge
+                  key={cat}
+                  data-testid={`filter-${cat.toLowerCase()}`}
+                  className={`cursor-pointer ${selectedCategory === cat ? getCategoryColor(cat) : "bg-navy-700 hover:bg-navy-600"}`}
+                  onClick={() => setSelectedCategory(cat)}
+                >
+                  {cat}
+                </Badge>
+              ))}
             </div>
           )}
         </div>
-      </ScrollArea>
+
+        <TabsContent value="exports" className="mt-0">
+          <ScrollArea className="h-[calc(100vh-280px)]">
+            {Object.keys(groupedExports).length === 0 ? (
+              <div className="text-center py-12">
+                <FolderOpen className="w-12 h-12 text-navy-500 mx-auto mb-4" />
+                <p className="text-navy-400">No exported documents yet</p>
+                <p className="text-sm text-navy-500 mt-2">
+                  Use "Close & Export to Library" when closing a shift to generate documents
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {Object.entries(groupedExports)
+                  .sort(([a], [b]) => b.localeCompare(a))
+                  .map(([date, exps]) => (
+                    <div key={date}>
+                      <h3 className="text-white font-medium mb-3 flex items-center gap-2">
+                        <FolderOpen className="w-4 h-4 text-amber-500" />
+                        {date}
+                      </h3>
+                      <div className="grid gap-2 pl-6">
+                        {exps.map(exp => (
+                          <Card
+                            key={exp.id}
+                            data-testid={`export-card-${exp.id}`}
+                            className="bg-navy-800/50 border-navy-600 hover:bg-navy-800/70 transition-colors"
+                          >
+                            <CardContent className="py-3 px-4">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  {exp.fileType === "docx" ? (
+                                    <FileText className="w-8 h-8 text-blue-400" />
+                                  ) : (
+                                    <FileSpreadsheet className="w-8 h-8 text-green-400" />
+                                  )}
+                                  <div>
+                                    <h4 className="text-white font-medium text-sm">{exp.fileName}</h4>
+                                    <p className="text-xs text-navy-400">
+                                      {format(new Date(exp.exportedAt), "MMM d, yyyy h:mm a")}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Badge className={getDocCategoryColor(exp.docCategory)}>
+                                    {getDocCategoryLabel(exp.docCategory)}
+                                  </Badge>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    data-testid={`download-${exp.id}`}
+                                    onClick={() => handleDownload(exp.id, exp.fileName)}
+                                    className="border-navy-600 text-white hover:bg-navy-600"
+                                  >
+                                    <Download className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </ScrollArea>
+        </TabsContent>
+
+        <TabsContent value="reference" className="mt-0">
+          <ScrollArea className="h-[calc(100vh-280px)]">
+            <div className="grid gap-3">
+              {filteredDocs.map((doc) => (
+                <Card
+                  key={doc.id}
+                  data-testid={`doc-card-${doc.id}`}
+                  className="bg-navy-800/50 border-navy-600 hover:bg-navy-800/70 transition-colors cursor-pointer"
+                >
+                  <CardContent className="py-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded bg-navy-700 flex items-center justify-center text-xs font-mono text-navy-300">
+                          {doc.fileType}
+                        </div>
+                        <div>
+                          <h3 className="text-white font-medium">{doc.name}</h3>
+                          <p className="text-sm text-navy-400">
+                            Version {doc.version} • Uploaded {new Date(doc.uploadedAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      <Badge className={getCategoryColor(doc.category)}>
+                        {doc.category}
+                      </Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+
+              {filteredDocs.length === 0 && (
+                <div className="text-center py-12">
+                  <p className="text-navy-400">No documents found</p>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

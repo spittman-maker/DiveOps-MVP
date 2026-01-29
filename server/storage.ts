@@ -19,6 +19,7 @@ import type {
   ProjectMember, InsertProjectMember,
   UserPreferences, InsertUserPreferences,
   LibraryDocument, InsertLibraryDocument,
+  LibraryExport, InsertLibraryExport,
 } from "@shared/schema";
 
 const pool = new Pool({
@@ -111,6 +112,12 @@ export interface IStorage {
   // Library Documents
   createLibraryDocument(doc: InsertLibraryDocument): Promise<LibraryDocument>;
   getLibraryDocuments(projectId?: string): Promise<LibraryDocument[]>;
+
+  // Library Exports
+  createLibraryExport(exportData: InsertLibraryExport): Promise<LibraryExport>;
+  getLibraryExports(projectId: string): Promise<LibraryExport[]>;
+  getLibraryExportsByDay(dayId: string): Promise<LibraryExport[]>;
+  getLibraryExport(id: string): Promise<LibraryExport | undefined>;
 }
 
 export class DbStorage implements IStorage {
@@ -492,7 +499,7 @@ export class DbStorage implements IStorage {
 
   // Library Documents
   async createLibraryDocument(doc: InsertLibraryDocument): Promise<LibraryDocument> {
-    const [created] = await db.insert(schema.libraryDocuments).values(doc).returning();
+    const [created] = await db.insert(schema.libraryDocuments).values(doc as any).returning();
     return created!;
   }
 
@@ -505,6 +512,30 @@ export class DbStorage implements IStorage {
     return await db.select().from(schema.libraryDocuments)
       .where(sql`${schema.libraryDocuments.projectId} IS NULL`)
       .orderBy(schema.libraryDocuments.title);
+  }
+
+  // Library Exports
+  async createLibraryExport(exportData: InsertLibraryExport): Promise<LibraryExport> {
+    const [created] = await db.insert(schema.libraryExports).values(exportData as any).returning();
+    return created!;
+  }
+
+  async getLibraryExports(projectId: string): Promise<LibraryExport[]> {
+    return await db.select().from(schema.libraryExports)
+      .where(eq(schema.libraryExports.projectId, projectId))
+      .orderBy(desc(schema.libraryExports.exportedAt));
+  }
+
+  async getLibraryExportsByDay(dayId: string): Promise<LibraryExport[]> {
+    return await db.select().from(schema.libraryExports)
+      .where(eq(schema.libraryExports.dayId, dayId))
+      .orderBy(schema.libraryExports.fileName);
+  }
+
+  async getLibraryExport(id: string): Promise<LibraryExport | undefined> {
+    const [exportDoc] = await db.select().from(schema.libraryExports)
+      .where(eq(schema.libraryExports.id, id));
+    return exportDoc;
   }
 }
 
