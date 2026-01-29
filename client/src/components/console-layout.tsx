@@ -1,7 +1,8 @@
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ChatAssistant } from "./chat-assistant";
 
 interface ConsoleLayoutProps {
   children: ReactNode;
@@ -21,6 +22,7 @@ const TABS = [
 
 export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayoutProps) {
   const { user, logout, isAdmin, isSupervisor } = useAuth();
+  const [chatOpen, setChatOpen] = useState(false);
 
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
@@ -46,6 +48,15 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
         </div>
 
         <div className="flex items-center gap-3">
+          <Button
+            data-testid="button-chat-assistant"
+            variant="outline"
+            size="sm"
+            onClick={() => setChatOpen(true)}
+            className="text-xs border-blue-500 text-blue-400 hover:bg-blue-500/20"
+          >
+            💬 Assistant
+          </Button>
           <div className="flex items-center gap-2">
             <span className="text-sm text-navy-200">{user?.fullName || user?.username}</span>
             <Badge className={`${getRoleBadgeColor(user?.role || "")} text-white text-xs`}>
@@ -96,6 +107,8 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
       <main className="flex-1 overflow-hidden">
         {children}
       </main>
+
+      <ChatAssistant isOpen={chatOpen} onClose={() => setChatOpen(false)} />
     </div>
   );
 }

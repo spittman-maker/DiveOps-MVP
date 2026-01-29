@@ -116,8 +116,24 @@ export function DailyLogTab() {
     },
   });
 
-  const handleSend = () => {
-    if (rawInput.trim()) {
+  const handleSend = async () => {
+    if (!rawInput.trim()) return;
+    
+    const lines = rawInput.trim().split('\n').filter(line => line.trim());
+    const timePattern = /^\d{3,4}\b|\b\d{1,2}:\d{2}\b/;
+    
+    const hasMultipleTimestampedLines = lines.length > 1 && 
+      lines.filter(line => timePattern.test(line.trim())).length > 1;
+    
+    if (hasMultipleTimestampedLines) {
+      for (const line of lines) {
+        if (line.trim()) {
+          await createEventMutation.mutateAsync(line.trim());
+        }
+      }
+      setRawInput("");
+      toast({ title: `${lines.length} entries saved`, description: "All log entries persisted to database" });
+    } else {
       createEventMutation.mutate(rawInput.trim());
     }
   };
