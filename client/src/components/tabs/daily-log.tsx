@@ -398,7 +398,7 @@ export function DailyLogTab() {
           </div>
         </div>
 
-        <ScrollArea className="flex-1">
+        <div className="flex-1 min-h-0 overflow-auto">
           <div className="p-4 space-y-2">
             {events.map((event) => (
               <div
@@ -421,7 +421,7 @@ export function DailyLogTab() {
               <p className="text-navy-400 text-center py-8">No log entries yet</p>
             )}
           </div>
-        </ScrollArea>
+        </div>
 
         {canWriteLogEvents && currentDay?.status !== "CLOSED" && (
           <div className="p-4 border-t border-navy-600 bg-navy-800 shrink-0">
@@ -469,7 +469,7 @@ export function DailyLogTab() {
           )}
         </div>
 
-        <ScrollArea className="flex-1">
+        <div className="flex-1 min-h-0 overflow-auto">
           <div className="p-4 space-y-6">
             <header className="text-center border-b border-navy-600 pb-4">
               <h1 className="text-xl font-bold text-white mb-1">DAILY OPERATIONS MASTER LOG</h1>
@@ -686,7 +686,7 @@ export function DailyLogTab() {
               </p>
             </footer>
           </div>
-        </ScrollArea>
+        </div>
       </div>
     </div>
   );
