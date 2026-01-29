@@ -31,6 +31,7 @@ export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByInitials(initials: string, projectId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, updates: Partial<InsertUser>): Promise<User | undefined>;
 
@@ -69,6 +70,8 @@ export interface IStorage {
   getDivesByDay(dayId: string): Promise<Dive[]>;
   getDivesByDiver(diverId: string, dayId?: string): Promise<Dive[]>;
   updateDive(id: string, updates: Partial<InsertDive>): Promise<Dive | undefined>;
+  getOrCreateDiveForDiver(dayId: string, projectId: string, diverId: string): Promise<Dive>;
+  updateDiveTimes(diveId: string, field: 'lsTime' | 'rbTime' | 'lbTime' | 'rsTime', time: Date, depthFsw?: number): Promise<Dive | undefined>;
 
   // Dive Confirmations
   createDiveConfirmation(confirmation: InsertDiveConfirmation): Promise<DiveConfirmation>;
@@ -120,6 +123,37 @@ export class DbStorage implements IStorage {
   async getUserByUsername(username: string): Promise<User | undefined> {
     const [user] = await db.select().from(schema.users).where(eq(schema.users.username, username));
     return user;
+  }
+
+  async getUserByInitials(initials: string, projectId: string): Promise<User | undefined> {
+    // Find user by initials within project members
+    const members = await db.select({ user: schema.users })
+      .from(schema.projectMembers)
+      .innerJoin(schema.users, eq(schema.projectMembers.userId, schema.users.id))
+      .where(eq(schema.projectMembers.projectId, projectId));
+    
+    const upperInitials = initials.toUpperCase().trim();
+    
+    for (const { user } of members) {
+      // Priority 1: Check explicit initials field (stored on user record)
+      if (user.initials && user.initials.toUpperCase().trim() === upperInitials) {
+        return user;
+      }
+    }
+    
+    for (const { user } of members) {
+      // Priority 2: Check username matches initials
+      if (user.username.toUpperCase().trim() === upperInitials) return user;
+      
+      // Priority 3: Check full name initials
+      if (user.fullName) {
+        const nameInitials = user.fullName.split(' ')
+          .map(n => n.charAt(0).toUpperCase())
+          .join('');
+        if (nameInitials === upperInitials) return user;
+      }
+    }
+    return undefined;
   }
 
   async createUser(user: InsertUser): Promise<User> {
@@ -291,6 +325,38 @@ export class DbStorage implements IStorage {
     const [updated] = await db.update(schema.dives)
       .set({ ...updates, updatedAt: new Date() })
       .where(eq(schema.dives.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getOrCreateDiveForDiver(dayId: string, projectId: string, diverId: string): Promise<Dive> {
+    // Find existing dive for this diver on this day that doesn't have all times filled
+    const existingDives = await db.select().from(schema.dives)
+      .where(and(eq(schema.dives.dayId, dayId), eq(schema.dives.diverId, diverId)))
+      .orderBy(desc(schema.dives.diveNumber));
+    
+    // Find a dive that is incomplete (missing rsTime means dive in progress)
+    const incompleteDive = existingDives.find(d => !d.rsTime);
+    if (incompleteDive) return incompleteDive;
+    
+    // Create new dive
+    const nextNumber = existingDives.length > 0 ? existingDives[0].diveNumber + 1 : 1;
+    const [created] = await db.insert(schema.dives).values({
+      dayId,
+      projectId,
+      diverId,
+      diveNumber: nextNumber,
+    }).returning();
+    return created!;
+  }
+
+  async updateDiveTimes(diveId: string, field: 'lsTime' | 'rbTime' | 'lbTime' | 'rsTime', time: Date, depthFsw?: number): Promise<Dive | undefined> {
+    const updates: any = { [field]: time, updatedAt: new Date() };
+    if (depthFsw) updates.maxDepthFsw = depthFsw;
+    
+    const [updated] = await db.update(schema.dives)
+      .set(updates)
+      .where(eq(schema.dives.id, diveId))
       .returning();
     return updated;
   }

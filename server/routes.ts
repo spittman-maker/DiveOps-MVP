@@ -444,6 +444,18 @@ export async function registerRoutes(
               status: "open",
             });
           }
+          
+          // If dive operation, create/update dive record for the diver
+          if (category === "dive_op" && extracted.diveOperation && extracted.diverInitials?.length) {
+            for (const initials of extracted.diverInitials) {
+              const diver = await storage.getUserByInitials(initials, data.projectId);
+              if (diver) {
+                const dive = await storage.getOrCreateDiveForDiver(day.id, data.projectId, diver.id);
+                const timeField = `${extracted.diveOperation}Time` as 'lsTime' | 'rbTime' | 'lbTime' | 'rsTime';
+                await storage.updateDiveTimes(dive.id, timeField, eventTime, extracted.depthFsw);
+              }
+            }
+          }
         })
         .catch((error) => {
           console.error("AI rendering failed:", error);
@@ -669,11 +681,33 @@ export async function registerRoutes(
       });
     }
     
+    // Get dives for this day with diver info
+    const dives = await storage.getDivesByDay(req.params.dayId);
+    const divesWithNames = await Promise.all(dives.map(async (dive) => {
+      const diver = await storage.getUser(dive.diverId);
+      return {
+        ...dive,
+        diverName: diver?.fullName || diver?.username || dive.diverId,
+      };
+    }));
+    
+    // Calculate summary
+    const uniqueDivers = new Set(dives.map(d => d.diverId));
+    const maxDepth = Math.max(0, ...dives.map(d => d.maxDepthFsw || 0));
+    
     res.json({
       day,
       isLocked: day.status === "CLOSED",
       isDraft: day.status !== "CLOSED",
       sections,
+      dives: divesWithNames,
+      summary: {
+        totalDives: dives.length,
+        totalDivers: uniqueDivers.size,
+        maxDepth,
+        safetyIncidents: sections.safety.length,
+        directivesCount: sections.directives.length,
+      },
     });
   });
 
