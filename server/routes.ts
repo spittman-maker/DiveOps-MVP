@@ -749,9 +749,62 @@ export async function registerRoutes(
       };
     }));
     
-    // Calculate summary
-    const uniqueDivers = new Set(dives.map(d => d.diverId));
-    const maxDepth = Math.max(0, ...dives.map(d => d.maxDepthFsw || 0));
+    // Calculate summary from log events (more accurate than dives table)
+    // Count L/S (left surface) patterns as dive starts, extract diver initials
+    const allDiverInitials = new Set<string>();
+    let diveStartCount = 0;
+    let extractedMaxDepth = 0;
+    
+    for (const event of events) {
+      const text = event.rawText.toUpperCase();
+      
+      // Extract diver initials (2-3 letter codes before L, R, or after time)
+      const initialsMatch = text.match(/\b([A-Z]{2,3})\s*[LR]\b/g);
+      if (initialsMatch) {
+        initialsMatch.forEach(m => {
+          const initials = m.replace(/\s*[LR]$/, '').trim();
+          if (initials.length >= 2 && initials.length <= 3) {
+            allDiverInitials.add(initials);
+          }
+        });
+      }
+      
+      // Also extract full names like "Zach Meador L" or "Michael Meehan L"
+      const nameMatch = event.rawText.match(/([A-Z][a-z]+\s+[A-Z][a-z]+)\s+L\b/g);
+      if (nameMatch) {
+        nameMatch.forEach(() => diveStartCount++);
+      }
+      
+      // Count L/S patterns (left surface / start dive)
+      const lsMatches = text.match(/\bL\/?S\b/g);
+      if (lsMatches) {
+        diveStartCount += lsMatches.length;
+      }
+      
+      // Count standalone L patterns after initials (e.g., "0658 Michael Meehan L")
+      const standaloneL = text.match(/\b[A-Z]{2,3}\s+L\b/g);
+      if (standaloneL) {
+        diveStartCount += standaloneL.length;
+      }
+      
+      // Extract depths (fsw patterns)
+      const depthMatch = text.match(/(\d+)\s*FSW/i);
+      if (depthMatch) {
+        const depth = parseInt(depthMatch[1], 10);
+        if (depth > extractedMaxDepth) extractedMaxDepth = depth;
+      }
+    }
+    
+    // Use dives table if it has data, otherwise use extracted data
+    const uniqueDivers = dives.length > 0 
+      ? new Set(dives.map(d => d.diverId))
+      : allDiverInitials;
+    const maxDepth = Math.max(
+      extractedMaxDepth,
+      ...dives.map(d => d.maxDepthFsw || 0)
+    );
+    const totalDives = dives.length > 0 ? dives.length : Math.max(diveStartCount, sections.dive.length);
+    const totalDivers = dives.length > 0 ? uniqueDivers.size : Math.max(allDiverInitials.size, 1);
     
     res.json({
       day,
@@ -760,11 +813,12 @@ export async function registerRoutes(
       sections,
       dives: divesWithNames,
       summary: {
-        totalDives: dives.length,
-        totalDivers: uniqueDivers.size,
+        totalDives,
+        totalDivers,
         maxDepth,
         safetyIncidents: sections.safety.length,
         directivesCount: sections.directives.length,
+        extractedDiverInitials: Array.from(allDiverInitials),
       },
     });
   });

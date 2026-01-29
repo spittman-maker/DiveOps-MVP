@@ -297,7 +297,7 @@ export function DailyLogTab() {
   };
 
   const sections = masterLogData?.sections || { ops: [], dive: [], directives: [], safety: [], risk: [] };
-  const summary = masterLogData?.summary || { totalDives: 0, totalDivers: 0, maxDepth: 0, safetyIncidents: 0, directivesCount: 0 };
+  const summary = masterLogData?.summary || { totalDives: 0, totalDivers: 0, maxDepth: 0, safetyIncidents: 0, directivesCount: 0, extractedDiverInitials: [] as string[] };
   const dives = masterLogData?.dives || [];
 
   return (
@@ -489,22 +489,27 @@ export function DailyLogTab() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-navy-100 leading-relaxed">
-                    {summary.totalDives > 0 ? (
+                    {(summary.totalDives > 0 || summary.totalDivers > 0 || events.length > 0) ? (
                       <>
                         On {formatDate(masterLogData?.day?.date)}, diving operations were conducted with{' '}
-                        <strong>{summary.totalDives} dive(s)</strong> completed by{' '}
-                        <strong>{summary.totalDivers} diver(s)</strong>.
+                        <strong>{summary.totalDives} dive evolution(s)</strong> completed by{' '}
+                        <strong>{summary.totalDivers} diver(s)</strong>
+                        {(summary as any).extractedDiverInitials?.length > 0 && (
+                          <> ({(summary as any).extractedDiverInitials.join(', ')})</>
+                        )}
+                        .
                         {summary.maxDepth > 0 && (
                           <> Maximum depth reached was <strong>{summary.maxDepth} fsw</strong>.</>
                         )}
                         {summary.directivesCount > 0 && (
-                          <> <strong>{summary.directivesCount} client directive(s)</strong> were received and actioned.</>
+                          <> <strong>{summary.directivesCount} client/DHO directive(s)</strong> were received and actioned.</>
                         )}
                         {summary.safetyIncidents > 0 ? (
                           <> <span className="text-yellow-400"><strong>{summary.safetyIncidents} safety incident(s)</strong> were logged.</span></>
                         ) : (
                           <> No safety incidents were reported.</>
                         )}
+                        <> Total log entries: <strong>{events.length}</strong>.</>
                       </>
                     ) : (
                       <span className="text-navy-400 italic">
