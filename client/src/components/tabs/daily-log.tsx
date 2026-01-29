@@ -125,20 +125,27 @@ export function DailyLogTab() {
     // First try splitting by newlines
     let lines = rawInput.trim().split('\n').filter(line => line.trim());
     
-    // If single line with slashes and multiple timestamps, split on slashes
+    // Check for multiple timestamps - split ONLY on timestamps, not slashes
+    // This preserves diving terminology like L/S, R/B, L/B, R/S
     if (lines.length === 1) {
-      const slashParts = lines[0].split(/\s*\/\s*/).filter(p => p.trim());
-      const timestampedParts = slashParts.filter(p => timePattern.test(p.trim()));
-      if (timestampedParts.length >= 2) {
-        entries = slashParts;
+      // Split on timestamp boundaries: look for patterns like " 0630" or "/0630" 
+      // where a 3-4 digit number starts a new entry
+      const text = lines[0];
+      const timestampSplit = text.split(/(?=\s+\d{3,4}\b)|(?=\/\s*\d{3,4}\b)/);
+      const cleanedParts = timestampSplit
+        .map(p => p.replace(/^[\s\/]+/, '').trim())
+        .filter(p => p && timePattern.test(p));
+      
+      if (cleanedParts.length >= 2) {
+        entries = cleanedParts;
       }
     }
     
-    // If no slash splitting, use newlines
+    // If no timestamp splitting worked, try newlines with timestamps
     if (entries.length === 0) {
       const timestampedLines = lines.filter(line => timePattern.test(line.trim()));
       if (timestampedLines.length >= 2) {
-        entries = lines;
+        entries = lines.filter(line => line.trim());
       }
     }
     
