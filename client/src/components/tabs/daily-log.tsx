@@ -119,20 +119,40 @@ export function DailyLogTab() {
   const handleSend = async () => {
     if (!rawInput.trim()) return;
     
-    const lines = rawInput.trim().split('\n').filter(line => line.trim());
-    const timePattern = /^\d{3,4}\b|\b\d{1,2}:\d{2}\b/;
+    const timePattern = /^\d{3,4}\b/;
+    let entries: string[] = [];
     
-    const hasMultipleTimestampedLines = lines.length > 1 && 
-      lines.filter(line => timePattern.test(line.trim())).length > 1;
+    // First try splitting by newlines
+    let lines = rawInput.trim().split('\n').filter(line => line.trim());
     
-    if (hasMultipleTimestampedLines) {
-      for (const line of lines) {
-        if (line.trim()) {
-          await createEventMutation.mutateAsync(line.trim());
+    // If single line with slashes and multiple timestamps, split on slashes
+    if (lines.length === 1) {
+      const slashParts = lines[0].split(/\s*\/\s*/).filter(p => p.trim());
+      const timestampedParts = slashParts.filter(p => timePattern.test(p.trim()));
+      if (timestampedParts.length >= 2) {
+        entries = slashParts;
+      }
+    }
+    
+    // If no slash splitting, use newlines
+    if (entries.length === 0) {
+      const timestampedLines = lines.filter(line => timePattern.test(line.trim()));
+      if (timestampedLines.length >= 2) {
+        entries = lines;
+      }
+    }
+    
+    // Save multiple entries or single entry
+    if (entries.length >= 2) {
+      let savedCount = 0;
+      for (const entry of entries) {
+        if (entry.trim()) {
+          await createEventMutation.mutateAsync(entry.trim());
+          savedCount++;
         }
       }
       setRawInput("");
-      toast({ title: `${lines.length} entries saved`, description: "All log entries persisted to database" });
+      toast({ title: `${savedCount} entries saved`, description: "All log entries persisted to database" });
     } else {
       createEventMutation.mutate(rawInput.trim());
     }
