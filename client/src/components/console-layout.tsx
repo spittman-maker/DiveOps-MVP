@@ -13,7 +13,6 @@ interface ConsoleLayoutProps {
 const TABS = [
   { id: "daily-log", label: "Daily Log" },
   { id: "dive-logs", label: "Dive Logs" },
-  { id: "master-log", label: "Master Log" },
   { id: "dive-plan", label: "Dive Plan" },
   { id: "library", label: "Library" },
   { id: "admin", label: "Admin" },
