@@ -215,10 +215,13 @@ export function DailyLogTab() {
       if (!res.ok) throw new Error("Failed to create day");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (newDay) => {
       queryClient.invalidateQueries({ queryKey: ["days"] });
+      queryClient.invalidateQueries({ queryKey: ["log-events"] });
+      queryClient.invalidateQueries({ queryKey: ["master-log"] });
+      queryClient.invalidateQueries({ queryKey: ["dives"] });
       refreshDay();
-      toast({ title: "New day started", description: "Ready to log events" });
+      toast({ title: "New shift started", description: `Shift ${newDay.shift || ""} ready for logging` });
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to create new day", variant: "destructive" });
