@@ -1,10 +1,12 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
+import express from "express";
 import { storage } from "./storage";
 import { passport, hashPassword, requireAuth, requireRole, canWriteLogEvents, isGod, isAdminOrHigher } from "./auth";
 import { classifyEvent, extractData, parseEventTime, generateRiskId, getMasterLogSection, renderInternalCanvasLine } from "./extraction";
 import { generateAIRenders } from "./ai-drafting";
 import { generateShiftExport } from "./document-export";
+import { speechToTextStream, ensureCompatibleFormat } from "./replit_integrations/audio/client";
 import type { User, UserRole, DayStatus } from "@shared/schema";
 import { z } from "zod";
 
@@ -703,6 +705,39 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Validation error", errors: error.errors });
       }
       res.status(500).json({ message: "Failed to update risk" });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // SPEECH-TO-TEXT (PTT Transcription)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const audioBodyParser = express.json({ limit: "50mb" });
+
+  app.post("/api/transcribe", audioBodyParser, async (req: Request, res: Response) => {
+    try {
+      const { audio } = req.body;
+      if (!audio) {
+        return res.status(400).json({ error: "Audio data (base64) required" });
+      }
+
+      const rawBuffer = Buffer.from(audio, "base64");
+      const { buffer: audioBuffer, format } = await ensureCompatibleFormat(rawBuffer);
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      const stream = await speechToTextStream(audioBuffer, format);
+      for await (const chunk of stream) {
+        res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
+      }
+
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+      res.end();
+    } catch (error) {
+      console.error("Transcription error:", error);
+      res.status(500).json({ error: "Transcription failed" });
     }
   });
 
