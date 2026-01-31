@@ -19,7 +19,8 @@ import {
 } from "docx";
 import ExcelJS from "exceljs";
 import { storage } from "./storage";
-import type { Day, LogEvent, RiskItem } from "@shared/schema";
+import type { Day, LogEvent, RiskItem, Dive } from "@shared/schema";
+import { validateMasterLogPayload, validateAIContent, sanitizeForMasterLog, type MasterLogPayload } from "./validator";
 
 export interface ExportResult {
   projectFolder: string;
@@ -46,7 +47,13 @@ function formatTime(date: Date | string | null): string {
   return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-export async function generateShiftExport(dayId: string): Promise<ExportResult> {
+export interface ValidationReport {
+  valid: boolean;
+  criticalErrors: string[];
+  warnings: string[];
+}
+
+export async function generateShiftExport(dayId: string): Promise<ExportResult & { validation: ValidationReport }> {
   const day = await storage.getDay(dayId);
   if (!day) throw new Error("Day not found");
 
@@ -56,6 +63,26 @@ export async function generateShiftExport(dayId: string): Promise<ExportResult> 
   const events = await storage.getLogEventsByDay(dayId);
   const dives = await storage.getDivesByDay(dayId);
   const risks = await storage.getRiskItemsByDay(dayId);
+
+  // Build payload for validation
+  const masterLogPayload = buildMasterLogPayload(events, day, project.name, dives);
+  const validationResult = validateMasterLogPayload(masterLogPayload);
+
+  const validationReport: ValidationReport = {
+    valid: validationResult.valid,
+    criticalErrors: validationResult.errors
+      .filter(e => e.severity === "critical")
+      .map(e => e.message),
+    warnings: validationResult.warnings.map(w => w.message),
+  };
+
+  // Log validation issues
+  if (!validationResult.valid) {
+    console.error("[VALIDATOR] Critical errors found:", validationReport.criticalErrors);
+  }
+  if (validationResult.warnings.length > 0) {
+    console.warn("[VALIDATOR] Warnings:", validationReport.warnings);
+  }
 
   const dateStr = formatDateYYYYMMDD(day.date);
   const projectFolder = sanitizeFolderName(project.name);
@@ -113,6 +140,74 @@ export async function generateShiftExport(dayId: string): Promise<ExportResult> 
     projectFolder,
     dayFolder,
     files,
+    validation: validationReport,
+  };
+}
+
+/**
+ * Builds a MasterLogPayload from raw data for validation
+ */
+function buildMasterLogPayload(
+  events: LogEvent[],
+  day: Day,
+  projectName: string,
+  dives: Dive[]
+): MasterLogPayload {
+  const sections: MasterLogPayload["sections"] = {
+    ops: [],
+    dive: [],
+    directives: [],
+    safety: [],
+    risk: [],
+  };
+
+  for (const event of events) {
+    const renders = (event as any).renders || [];
+    for (const render of renders) {
+      const section = render.section?.toLowerCase() || "ops";
+      const entry = {
+        id: event.id,
+        eventTime: formatTime(event.eventTime),
+        rawText: event.rawText,
+        masterLogLine: sanitizeForMasterLog(render.renderText || event.rawText),
+        status: render.status || "draft",
+      };
+
+      if (section in sections) {
+        sections[section as keyof typeof sections].push(entry);
+      } else {
+        sections.ops.push(entry);
+      }
+    }
+
+    // If no renders, add to ops
+    if (renders.length === 0) {
+      sections.ops.push({
+        id: event.id,
+        eventTime: formatTime(event.eventTime),
+        rawText: event.rawText,
+        masterLogLine: sanitizeForMasterLog(event.rawText),
+        status: "draft",
+      });
+    }
+  }
+
+  return {
+    date: day.date,
+    shift: day.shift || "1",
+    projectName,
+    sections,
+    dives: dives.map(d => ({
+      id: d.id,
+      diveNumber: d.diveNumber,
+      diverId: d.diverId,
+      diverName: undefined,
+      lsTime: d.lsTime ? formatTime(d.lsTime) : undefined,
+      rbTime: d.rbTime ? formatTime(d.rbTime) : undefined,
+      lbTime: d.lbTime ? formatTime(d.lbTime) : undefined,
+      rsTime: d.rsTime ? formatTime(d.rsTime) : undefined,
+      maxDepthFsw: d.maxDepthFsw ?? undefined,
+    })),
   };
 }
 
