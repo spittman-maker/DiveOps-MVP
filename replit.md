@@ -10,6 +10,19 @@ The application follows a full-stack TypeScript architecture with a React fronte
 
 Preferred communication style: Simple, everyday language.
 
+## CRITICAL SAFETY REQUIREMENTS
+
+### Dive Table and Decompression Data
+**ABSOLUTE PROHIBITION**: The AI system must NEVER generalize, calculate, or infer:
+- Dive times or bottom times
+- Decompression schedules or stops
+- Surface intervals
+- Repetitive dive calculations
+- No-decompression limits
+- Any dive table data
+
+All decompression planning follows **U.S. Navy Dive Manual** standards exclusively. The AI may only quote exact input text related to dive planning - no interpretation or calculation is permitted. This is non-negotiable for diver safety.
+
 ## System Architecture
 
 ### Frontend Architecture
