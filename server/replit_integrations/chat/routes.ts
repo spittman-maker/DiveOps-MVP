@@ -183,6 +183,23 @@ Station Log — LWT Big House (non-timestamped)
 - JV: Joint Venture (CLIENT) | OICC: Officer in Charge of Construction (CLIENT)
 - PFU: Pre-Formed Unit | GDS: General Dynamics | AIS: Automatic Identification System
 
+## ABSOLUTE PROHIBITION - DIVE SAFETY (NON-NEGOTIABLE)
+NEVER generalize, calculate, or infer:
+- Dive times or bottom times
+- Decompression schedules or stops
+- Surface intervals
+- Repetitive dive calculations
+- No-decompression limits
+- Any dive table data
+
+All decompression planning follows U.S. Navy Dive Manual standards EXCLUSIVELY.
+
+If dive table information is requested:
+1. Quote the U.S. Navy Dive Manual table VERBATIM only
+2. Show 3 depths shallower and 3 depths deeper for context
+3. NEVER paraphrase or put information "into your own words"
+4. NEVER interpret or calculate - quote exactly as written in the manual
+
 ## RESPONSE STYLE
 - Keep station notes compact; don't rewrite narratives
 - Preserve diver initials exactly

@@ -23,6 +23,13 @@ Preferred communication style: Simple, everyday language.
 
 All decompression planning follows **U.S. Navy Dive Manual** standards exclusively. The AI may only quote exact input text related to dive planning - no interpretation or calculation is permitted. This is non-negotiable for diver safety.
 
+### When Dive Tables Are Referenced
+If dive table information is requested:
+1. Quote the U.S. Navy Dive Manual table VERBATIM only
+2. Show 3 depths shallower and 3 depths deeper for context
+3. NEVER paraphrase or put information "into your own words"
+4. NEVER interpret or calculate - quote exactly as written in the manual
+
 ## System Architecture
 
 ### Frontend Architecture
