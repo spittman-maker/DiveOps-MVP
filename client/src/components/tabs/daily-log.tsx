@@ -93,6 +93,7 @@ export function DailyLogTab() {
   const [isRecording, setIsRecording] = useState(false);
   const [pttTranscript, setPttTranscript] = useState("");
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [pttPendingSubmit, setPttPendingSubmit] = useState(false); // Text ready to submit
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
@@ -141,6 +142,7 @@ export function DailyLogTab() {
     },
     onSuccess: () => {
       setRawInput("");
+      setPttPendingSubmit(false); // Reset PTT pending state
       queryClient.invalidateQueries({ queryKey: ["log-events"] });
       queryClient.invalidateQueries({ queryKey: ["master-log"] });
       toast({ title: "Entry saved", description: "Log entry persisted to database" });
@@ -313,9 +315,10 @@ export function DailyLogTab() {
                     setPttTranscript(fullText);
                   }
                   if (data.done && fullText.trim()) {
-                    // Auto-submit the transcribed text
+                    // Put text in input field, ready for review
                     setRawInput((prev) => (prev ? prev + " " + fullText : fullText));
                     setPttTranscript("");
+                    setPttPendingSubmit(true); // Ready for submit on next PTT click
                   }
                 } catch {}
               }
@@ -334,12 +337,37 @@ export function DailyLogTab() {
     });
   }, [toast]);
 
+  // Submit handler for PTT (when text is ready)
+  const handlePttSubmit = useCallback(() => {
+    if (rawInput.trim()) {
+      handleSend();
+      setPttPendingSubmit(false);
+    }
+  }, [rawInput]);
+
+  // PTT button click handler
+  const handlePttClick = useCallback(() => {
+    if (pttPendingSubmit && rawInput.trim()) {
+      // Text is ready - submit it
+      handlePttSubmit();
+    } else if (!isRecording && !isTranscribing) {
+      // Start recording
+      startRecording();
+    }
+  }, [pttPendingSubmit, rawInput, isRecording, isTranscribing, handlePttSubmit, startRecording]);
+
   // Alt key handler for PTT
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Alt" && !e.repeat && !isRecording && canWriteLogEvents && currentDay?.status !== "CLOSED") {
+      if (e.key === "Alt" && !e.repeat && canWriteLogEvents && currentDay?.status !== "CLOSED") {
         e.preventDefault();
-        startRecording();
+        if (pttPendingSubmit && rawInput.trim()) {
+          // Text is ready - submit it
+          handlePttSubmit();
+        } else if (!isRecording && !isTranscribing) {
+          // Start recording
+          startRecording();
+        }
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -355,7 +383,7 @@ export function DailyLogTab() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [isRecording, startRecording, stopRecording, canWriteLogEvents, currentDay?.status]);
+  }, [isRecording, isTranscribing, pttPendingSubmit, rawInput, startRecording, stopRecording, handlePttSubmit, canWriteLogEvents, currentDay?.status]);
 
   const handleSend = async () => {
     if (!rawInput.trim()) return;
@@ -601,14 +629,30 @@ export function DailyLogTab() {
               <div className="flex flex-col gap-2">
                 <Button
                   data-testid="button-ptt"
-                  onMouseDown={startRecording}
-                  onMouseUp={stopRecording}
+                  onMouseDown={() => {
+                    if (!pttPendingSubmit) startRecording();
+                  }}
+                  onMouseUp={() => {
+                    if (isRecording) stopRecording();
+                  }}
                   onMouseLeave={() => isRecording && stopRecording()}
+                  onClick={() => {
+                    if (pttPendingSubmit && rawInput.trim()) {
+                      handleSend();
+                      setPttPendingSubmit(false);
+                    }
+                  }}
                   disabled={isTranscribing}
-                  className={`${isRecording ? "bg-red-600 hover:bg-red-700" : "bg-orange-600 hover:bg-orange-700"} min-w-[60px]`}
-                  title="Hold to talk, release to transcribe (or hold Alt key)"
+                  className={`${
+                    isRecording 
+                      ? "bg-red-600 hover:bg-red-700" 
+                      : pttPendingSubmit 
+                        ? "bg-green-600 hover:bg-green-700 animate-pulse" 
+                        : "bg-orange-600 hover:bg-orange-700"
+                  } min-w-[60px]`}
+                  title={pttPendingSubmit ? "Click to submit (or press Alt)" : "Hold to talk, release to review, click again to submit"}
                 >
-                  {isRecording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                  {isRecording ? <Square className="h-4 w-4" /> : pttPendingSubmit ? "Send" : <Mic className="h-4 w-4" />}
                 </Button>
                 <Button
                   data-testid="button-send"
