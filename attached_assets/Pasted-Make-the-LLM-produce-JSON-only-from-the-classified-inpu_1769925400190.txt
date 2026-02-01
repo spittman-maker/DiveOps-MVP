@@ -1,0 +1,98 @@
+Make the LLM produce JSON only, from the classified inputs
+
+In your existing LLM call (wherever it is), change input to be:
+
+directives_candidates = normalized directive lines
+
+station_candidates = normalized station lines
+
+questions = store separately (do not put into the log)
+
+LLM output format (enforced):
+
+directives[] (timestamped)
+
+station_logs[] (NO timestamps)
+
+risks[] (create risk if directive impacts crew/schedule)
+
+Hard instruction: “If you output any timestamps in station logs, output VALIDATION_ERROR.”
+
+4) Add a validator gate that blocks bad output
+
+Create server/logging/validate.ts:
+
+// server/logging/validate.ts
+const TS_RE = /\b\d{1,2}:\d{2}\b|\[\d{1,2}:\d{2}\]/;
+
+export function assertNoTimestampsInStation(stationLogs: any[]) {
+  const blob = JSON.stringify(stationLogs);
+  if (TS_RE.test(blob)) {
+    throw new Error("VALIDATION_FAIL: Timestamp detected inside station logs");
+  }
+}
+
+export function assertDirectivesTimestamped(directives: any[]) {
+  for (const d of directives) {
+    if (!d.time || !/^\d{2}:\d{2}$/.test(d.time)) {
+      throw new Error("VALIDATION_FAIL: Directive missing valid time");
+    }
+  }
+}
+
+export function assertNoFillerText(payloadJson: string) {
+  const banned = [
+    "operations continued as scheduled",
+    "operational activities continued as scheduled",
+  ];
+  const lower = payloadJson.toLowerCase();
+  for (const b of banned) {
+    if (lower.includes(b)) throw new Error(`VALIDATION_FAIL: filler text "${b}"`);
+  }
+}
+
+
+If validation fails: do not write to Postgres and do not render DOCX.
+
+This directly prevents the exact defect shown in your generated log. 
+
+MasterLog_20260131
+
+5) Persist structured data (not prose) via server/storage.ts
+
+Update your storage functions so you store:
+
+daily_log_json (the validated JSON payload)
+
+raw_notes_text (original input, for traceability)
+
+questions[] stored separately or discarded
+
+Do not store the prose “Master Log” as your source of truth. The prose should be a render.
+
+6) Render DOCX from JSON (last step)
+
+Once the JSON payload passes validation, render your strict “Sir Reginald Higgins” template. Station logs will be untimestamped by construction; directives timestamped.
+
+Why this fixes your 2026-01-31 failure
+
+Your current output puts timestamped narrative into “Station Log (Non-Timestamped)” and includes duplicates and nonsense fields (“1012”, “2026”, “0:600”). 
+
+MasterLog_20260131
+
+ 
+
+DailyLog_20260131
+
+
+The normalizer + validator makes that impossible.
+
+What I need (minimal) to give you exact patch diffs
+
+Upload or paste these two files from your Replit repo:
+
+server/storage.ts (where you persist logs through Drizzle)
+
+The file where you call the LLM (often server/routes/*.ts or server/ai.ts)
+
+With those, I’ll return a concrete “replace this block with this block” patch (no further questions).
