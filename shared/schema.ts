@@ -361,3 +361,76 @@ export const libraryExports = pgTable("library_exports", {
 export const insertLibraryExportSchema = createInsertSchema(libraryExports).omit({ id: true, exportedAt: true });
 export type InsertLibraryExport = z.infer<typeof insertLibraryExportSchema>;
 export type LibraryExport = typeof libraryExports.$inferSelect;
+
+// ────────────────────────────────────────────────────────────────────────────
+// STATIONS (Work locations within a dive plan)
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface StationCrew {
+  supervisor: string;
+  divers: string[];
+  tender?: string;
+}
+
+export const stations = pgTable("stations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  divePlanId: varchar("dive_plan_id").notNull().references(() => divePlans.id, { onDelete: "cascade" }),
+  stationId: text("station_id").notNull(),
+  plannedDives: integer("planned_dives").notNull().default(1),
+  plannedTasks: jsonb("planned_tasks").$type<string[]>().default([]),
+  targetDepthFsw: integer("target_depth_fsw"),
+  plannedBottomTimeMin: integer("planned_bottom_time_min"),
+  crew: jsonb("crew").$type<StationCrew>(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertStationSchema = createInsertSchema(stations).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertStation = z.infer<typeof insertStationSchema>;
+export type Station = typeof stations.$inferSelect;
+
+// ────────────────────────────────────────────────────────────────────────────
+// DIVE LOG DETAILS (Enhanced dive tracking with QA)
+// ────────────────────────────────────────────────────────────────────────────
+
+export const diveLogDetails = pgTable("dive_log_details", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  diveId: varchar("dive_id").notNull().references(() => dives.id, { onDelete: "cascade" }),
+  stationId: varchar("station_id").references(() => stations.id, { onDelete: "set null" }),
+  taskPerformed: text("task_performed"),
+  issues: jsonb("issues").$type<string[]>().default([]),
+  qaNotes: text("qa_notes"),
+  equipmentUsed: jsonb("equipment_used").$type<string[]>(),
+  visibility: text("visibility"),
+  waterTemp: integer("water_temp"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertDiveLogDetailsSchema = createInsertSchema(diveLogDetails).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDiveLogDetails = z.infer<typeof insertDiveLogDetailsSchema>;
+export type DiveLogDetails = typeof diveLogDetails.$inferSelect;
+
+// ────────────────────────────────────────────────────────────────────────────
+// DAILY SUMMARY (Aggregated daily summary with references)
+// ────────────────────────────────────────────────────────────────────────────
+
+export const dailySummaries = pgTable("daily_summaries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  dayId: varchar("day_id").notNull().references(() => days.id, { onDelete: "cascade" }).unique(),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  workExecuted: jsonb("work_executed").$type<string[]>().default([]),
+  divePlanRefs: jsonb("dive_plan_refs").$type<string[]>().default([]),
+  diveLogRefs: jsonb("dive_log_refs").$type<string[]>().default([]),
+  weather: text("weather"),
+  personnelCount: integer("personnel_count"),
+  hoursWorked: integer("hours_worked"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertDailySummarySchema = createInsertSchema(dailySummaries).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDailySummary = z.infer<typeof insertDailySummarySchema>;
+export type DailySummary = typeof dailySummaries.$inferSelect;
