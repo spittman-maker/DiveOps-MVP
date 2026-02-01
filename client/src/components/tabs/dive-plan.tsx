@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useProject } from "@/hooks/use-project";
@@ -617,8 +617,9 @@ function ProjectDivePlanSection() {
   const [selectedPlan, setSelectedPlan] = useState<ProjectDivePlan | null>(null);
   
   const today = new Date().toISOString().split("T")[0];
+  const storageKey = `divePlanDraft_${activeProject?.id || 'default'}`;
   
-  const [formData, setFormData] = useState<ProjectDivePlanData>({
+  const getDefaultFormData = useCallback((): ProjectDivePlanData => ({
     coverPage: {
       companyName: "Precision Subsea Group LLC",
       projectTitle: activeProject?.name || "",
@@ -643,9 +644,57 @@ function ProjectDivePlanSection() {
       section: "All",
       changedBy: user?.fullName || user?.username || "",
     }],
+  }), [activeProject, today, user]);
+
+  const [formData, setFormData] = useState<ProjectDivePlanData>(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error("Failed to load saved draft:", e);
+    }
+    return getDefaultFormData();
   });
   
   const [newContact, setNewContact] = useState<DD5Contact>({ name: "", role: "", phone: "", email: "" });
+
+  useEffect(() => {
+    if (isCreating && formData) {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(formData));
+      } catch (e) {
+        console.error("Failed to save draft:", e);
+      }
+    }
+  }, [formData, isCreating, storageKey]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isCreating && formData.natureOfWork.selectedTasks.length > 0) {
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(formData));
+        } catch (err) {
+          console.error("Failed to save draft on unload:", err);
+        }
+        e.preventDefault();
+        e.returnValue = "You have unsaved changes. Are you sure you want to leave?";
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isCreating, formData, storageKey]);
+
+  const clearDraft = useCallback(() => {
+    try {
+      localStorage.removeItem(storageKey);
+    } catch (e) {
+      console.error("Failed to clear draft:", e);
+    }
+  }, [storageKey]);
 
   const { data: projectPlans = [] } = useQuery<ProjectDivePlan[]>({
     queryKey: ["project-dive-plans", activeProject?.id],
@@ -671,8 +720,10 @@ function ProjectDivePlanSection() {
       return res.json();
     },
     onSuccess: () => {
+      clearDraft();
       queryClient.invalidateQueries({ queryKey: ["project-dive-plans"] });
       setIsCreating(false);
+      setFormData(getDefaultFormData());
     },
   });
 
@@ -780,9 +831,9 @@ function ProjectDivePlanSection() {
   }
 
   return (
-    <div className="flex-1 flex">
-      <div className="w-1/2 border-r border-navy-600 flex flex-col">
-        <div className="bg-navy-800/50 p-3 border-b border-navy-600 flex justify-between items-center">
+    <div className="flex-1 flex h-full overflow-hidden">
+      <div className="w-1/2 border-r border-navy-600 flex flex-col h-full overflow-hidden">
+        <div className="bg-navy-800/50 p-3 border-b border-navy-600 flex justify-between items-center shrink-0">
           <div>
             <h2 className="text-sm font-semibold text-white flex items-center gap-2">
               <FileText className="w-4 h-4" />
@@ -803,7 +854,7 @@ function ProjectDivePlanSection() {
           )}
         </div>
 
-        <ScrollArea className="flex-1 p-4">
+        <div className="flex-1 overflow-y-auto p-4">
           {isCreating ? (
             <div className="space-y-4">
               <Card className="bg-navy-800/50 border-navy-600">
@@ -1109,11 +1160,11 @@ function ProjectDivePlanSection() {
               )}
             </div>
           )}
-        </ScrollArea>
+        </div>
       </div>
 
-      <div className="w-1/2 flex flex-col">
-        <div className="bg-navy-800/50 p-3 border-b border-navy-600">
+      <div className="w-1/2 flex flex-col h-full overflow-hidden">
+        <div className="bg-navy-800/50 p-3 border-b border-navy-600 shrink-0">
           <h2 className="text-sm font-semibold text-white flex items-center gap-2">
             <History className="w-4 h-4" />
             Plan Details
@@ -1121,7 +1172,7 @@ function ProjectDivePlanSection() {
           <p className="text-xs text-navy-400">View plan content and revision history</p>
         </div>
 
-        <ScrollArea className="flex-1 p-4">
+        <div className="flex-1 overflow-y-auto p-4">
           {selectedPlan ? (
             <div className="space-y-4">
               <Card className="bg-navy-800/50 border-navy-600">
@@ -1243,7 +1294,7 @@ function ProjectDivePlanSection() {
               <p className="text-navy-400">Select a plan to view details</p>
             </div>
           )}
-        </ScrollArea>
+        </div>
       </div>
     </div>
   );
