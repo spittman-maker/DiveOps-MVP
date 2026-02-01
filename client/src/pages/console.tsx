@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ConsoleLayout } from "@/components/console-layout";
+import { DashboardTab } from "@/components/tabs/dashboard";
 import { DailyLogTab } from "@/components/tabs/daily-log";
 import { DiveLogsTab } from "@/components/tabs/dive-logs";
 import { DivePlanTab } from "@/components/tabs/dive-plan";
@@ -8,10 +9,12 @@ import { AdminTab } from "@/components/tabs/admin";
 import { RiskRegisterTab } from "@/components/tabs/risk-register";
 
 export default function ConsolePage() {
-  const [activeTab, setActiveTab] = useState("daily-log");
+  const [activeTab, setActiveTab] = useState("dashboard");
 
   const renderTab = () => {
     switch (activeTab) {
+      case "dashboard":
+        return <DashboardTab />;
       case "daily-log":
         return <DailyLogTab />;
       case "dive-logs":
@@ -25,7 +28,7 @@ export default function ConsolePage() {
       case "risk-register":
         return <RiskRegisterTab />;
       default:
-        return <DailyLogTab />;
+        return <DashboardTab />;
     }
   };
 
