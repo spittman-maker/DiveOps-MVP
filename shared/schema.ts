@@ -698,3 +698,47 @@ export const projectDivePlans = pgTable("project_dive_plans", {
 export const insertProjectDivePlanSchema = createInsertSchema(projectDivePlans).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProjectDivePlan = z.infer<typeof insertProjectDivePlanSchema>;
 export type ProjectDivePlan = typeof projectDivePlans.$inferSelect;
+
+// ────────────────────────────────────────────────────────────────────────────
+// DASHBOARD WIDGETS (customizable dashboard layouts per user)
+// ────────────────────────────────────────────────────────────────────────────
+
+export type WidgetType = 
+  | "daily_summary" 
+  | "active_dives" 
+  | "recent_logs" 
+  | "safety_incidents" 
+  | "risk_register" 
+  | "project_status"
+  | "dive_stats"
+  | "weather";
+
+export interface WidgetConfig {
+  id: string;
+  type: WidgetType;
+  title: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  settings?: Record<string, any>;
+}
+
+export interface DashboardLayout {
+  widgets: WidgetConfig[];
+  version: number;
+}
+
+export const dashboardLayouts = pgTable("dashboard_layouts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  layoutData: jsonb("layout_data").$type<DashboardLayout>().notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  userIdUnique: uniqueIndex("uq_dashboard_layouts_user").on(t.userId),
+}));
+
+export const insertDashboardLayoutSchema = createInsertSchema(dashboardLayouts).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDashboardLayout = z.infer<typeof insertDashboardLayoutSchema>;
+export type DashboardLayoutRecord = typeof dashboardLayouts.$inferSelect;

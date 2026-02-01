@@ -183,6 +183,10 @@ export interface IStorage {
   // Project Contacts
   getProjectContacts(projectId: string): Promise<(ProjectContact & { roleName: string; sortOrder: number })[]>;
   setProjectContact(projectId: string, roleId: string, name: string, phone: string, email?: string): Promise<ProjectContact>;
+
+  // Dashboard Layouts
+  getDashboardLayout(userId: string): Promise<schema.DashboardLayoutRecord | undefined>;
+  saveDashboardLayout(userId: string, layoutData: schema.DashboardLayout): Promise<schema.DashboardLayoutRecord>;
 }
 
 export class DbStorage implements IStorage {
@@ -870,6 +874,30 @@ export class DbStorage implements IStorage {
     } else {
       const [created] = await db.insert(schema.projectContacts)
         .values({ projectId, roleId, contactName: name, contactPhone: phone, contactEmail: email })
+        .returning();
+      return created!;
+    }
+  }
+
+  // Dashboard Layouts
+  async getDashboardLayout(userId: string): Promise<schema.DashboardLayoutRecord | undefined> {
+    const [layout] = await db.select().from(schema.dashboardLayouts)
+      .where(eq(schema.dashboardLayouts.userId, userId));
+    return layout;
+  }
+
+  async saveDashboardLayout(userId: string, layoutData: schema.DashboardLayout): Promise<schema.DashboardLayoutRecord> {
+    const existing = await this.getDashboardLayout(userId);
+    
+    if (existing) {
+      const [updated] = await db.update(schema.dashboardLayouts)
+        .set({ layoutData, updatedAt: new Date() })
+        .where(eq(schema.dashboardLayouts.userId, userId))
+        .returning();
+      return updated!;
+    } else {
+      const [created] = await db.insert(schema.dashboardLayouts)
+        .values({ userId, layoutData })
         .returning();
       return created!;
     }
