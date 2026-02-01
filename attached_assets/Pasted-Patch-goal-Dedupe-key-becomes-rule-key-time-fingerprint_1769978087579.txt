@@ -1,0 +1,91 @@
+Patch goal
+
+Dedupe key becomes:
+
+rule.key + "|" + time + "|" + fingerprint(text)
+
+So each distinct directive/conflict instance generates its own Risk ID, but repeated duplicates of the same line won’t.
+
+1) Add a tiny fingerprint helper
+
+Add this near your other helpers in log_pipeline_guard.ts:
+
+function fingerprintText(s: string): string {
+  // Deterministic, lightweight fingerprint (not crypto) for dedupe.
+  // Normalizes whitespace and strips most punctuation.
+  const norm = s
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // Simple 32-bit hash -> base36
+  let h = 2166136261;
+  for (let i = 0; i < norm.length; i++) {
+    h ^= norm.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+}
+
+2) Change the dedupe key logic inside autoCreateRisksFromDirectives()
+
+Find this existing logic:
+
+const existingKeys = new Set<string>(
+  risks.map(r => normalizeTriggerKey((r as any).trigger_key ?? r.trigger))
+);
+...
+const trigger_key = normalizeTriggerKey(rule.key);
+if (existingKeys.has(trigger_key)) continue;
+...
+existingKeys.add(trigger_key);
+
+
+Replace it with event-level keys:
+
+const existingKeys = new Set<string>(
+  risks.map((r: any) => String(r.trigger_key ?? ""))
+    .filter(Boolean)
+);
+
+
+Then, when creating a key for a matched source event, do:
+
+const timePart = (src.time && mustBeHHMM(src.time)) ? src.time : "NA";
+const fp = fingerprintText(src.text);
+const trigger_key = normalizeTriggerKey(`${rule.key}|${timePart}|${fp}`);
+
+if (existingKeys.has(trigger_key)) continue;
+
+
+And after pushing the risk:
+
+existingKeys.add(trigger_key);
+
+3) (Recommended) Store trigger_key in DB for audit traceability
+
+Since you’re claims-focused, I recommend adding a nullable column trigger_key to your risks table and persisting it. It becomes your “event fingerprint” for dedupe and traceability.
+
+If you don’t want to store it, you can keep it only in memory and strip before save, but then dedupe won’t persist across re-runs.
+
+4) Also include source_time (optional but useful)
+
+When you push the risk, add:
+
+source_time: src.time,
+
+
+So you can show “Risk came from directive at 06:17” without reconstructing it later.
+
+Example push:
+
+risks.push({
+  risk_id,
+  trigger: rule.trigger,
+  impact: rule.impact,
+  owner: rule.owner,
+  status: "Open",
+  trigger_key,
+  source_time: src.time,
+} as any);

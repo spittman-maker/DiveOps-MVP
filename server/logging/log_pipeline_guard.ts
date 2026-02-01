@@ -421,6 +421,21 @@ function normalizeTriggerKey(s: string): string {
   return s.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+function fingerprintText(s: string): string {
+  const norm = s
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  let h = 2166136261;
+  for (let i = 0; i < norm.length; i++) {
+    h ^= norm.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+}
+
 type RiskRule = {
   key: string;
   match: RegExp;
@@ -430,40 +445,93 @@ type RiskRule = {
 };
 
 const RISK_RULES: RiskRule[] = [
+  // Manpower / time-window hits
   {
     key: "manpower_reduction",
-    match: /\b(reduce|reduction)\b.*\b(crew|crews|personnel|manpower)\b|\bcrew sizes\b|\bonly two crews\b/i,
+    match: /\b(reduce|reduction)\b.*\b(crew|crews|personnel|manpower)\b|\bcrew sizes\b|\bonly\s+\w+\s+crews?\b/i,
     trigger: "Client/JV-directed manpower reduction",
-    impact: "Reduced production capacity; schedule and inefficiency exposure (lost diver-hours / re-sequencing risk).",
+    impact: "Reduced production capacity; schedule exposure and inefficiency (lost diver-hours / re-sequencing).",
     owner: "Ops/PM",
   },
   {
     key: "early_release",
-    match: /\b(leave early|end .*shift early|cut .*shift|8\s*hours)\b/i,
-    trigger: "Client/JV-directed early release of crew",
-    impact: "Loss of planned work window; schedule impact and standby inefficiency exposure.",
+    match: /\b(leave early|end .*shift early|cut .*shift|released early|8\s*hours?|eight\s*hours?)\b/i,
+    trigger: "Client/JV-directed early release / reduced shift duration",
+    impact: "Loss of planned work window; standby inefficiency and schedule exposure.",
     owner: "Ops/PM",
+  },
+
+  // Diving stoppage / recall
+  {
+    key: "pull_all_divers",
+    match: /\b(pull all divers|recall.*divers|divers.*return to surface)\b|\b(dho)\b.*\b(pull|recall)\b/i,
+    trigger: "DHO/JV-directed diver recall / stoppage",
+    impact: "Interrupted bottom time and work sequence; productivity loss and potential rework/standby exposure.",
+    owner: "Diving Superintendent",
   },
   {
     key: "stop_work_hold",
-    match: /\b(stop work|hold|suspend|pause)\b/i,
-    trigger: "Client/JV-directed work stoppage/hold",
-    impact: "Immediate production loss; potential remobilization and rework exposure.",
+    match: /\b(stop work|hold|suspend|pause|stand down|standdown)\b/i,
+    trigger: "Client/JV-directed stop-work / hold / standdown",
+    impact: "Immediate production loss; remobilization and schedule exposure.",
+    owner: "Ops/PM",
+  },
+
+  // Access / control dependencies
+  {
+    key: "tower_clearance",
+    match: /\b(tower cleared|tower clearance|call tower|tower hold|tower denied)\b/i,
+    trigger: "Tower clearance dependency impacting dive start windows",
+    impact: "Delayed starts/interruptions due to tower clearance dependency; productivity loss exposure.",
+    owner: "Dive Supervisor",
+  },
+  {
+    key: "ais_shuffle_access",
+    match: /\b(AIS)\b.*\b(shuffle|parking|vehicle)\b|\bcar shuffle\b/i,
+    trigger: "AIS/parking shuffle access constraint",
+    impact: "Lost time due to access logistics; reduced effective production window.",
+    owner: "Ops/PM",
+  },
+
+  // Third-party / interface constraints
+  {
+    key: "eod_standdown",
+    match: /\b(EOD|explosive ordnance)\b.*\b(stand down|standdown|crew off|off)\b/i,
+    trigger: "EOD/interface standdown impacting work window",
+    impact: "Forced downtime due to third-party interface; schedule exposure.",
+    owner: "Ops/PM",
+  },
+
+  // Equipment / means & methods directives
+  {
+    key: "pump_circulation_directive",
+    match: /\b(6\"|6-inch|6 inch)\b.*\bpump\b|\bpump\b.*\b(in the water|deploy|install)\b|\bcirculat(e|ing)\b.*\bwater\b/i,
+    trigger: "Client/JV-directed equipment deployment (pump/circulation)",
+    impact: "Unplanned equipment deployment/diversion; potential critical path and crew utilization inefficiency.",
+    owner: "Diving Superintendent",
+  },
+  {
+    key: "hose_discharge_change",
+    match: /\b(discharge hose|discharge hoses)\b.*\b(install|add|relocat|move|set|secured?)\b/i,
+    trigger: "Material handling/discharge configuration change",
+    impact: "Time spent reconfiguring discharge/material handling; potential production slowdown and rework exposure.",
+    owner: "Dive Supervisor",
+  },
+
+  // Conflict-triggered risks
+  {
+    key: "conflicting_direction",
+    match: /\b(CONFLICTING DIRECTION)\b/i,
+    trigger: "CONFLICTING DIRECTION issued by JV/OICC",
+    impact: "Sequencing uncertainty and potential rework/standby exposure; schedule impact risk.",
     owner: "Ops/PM",
   },
   {
-    key: "access_restriction",
-    match: /\b(tower cleared|tower .*hold|AIS shuffle|access restricted|restricted access|clearance)\b/i,
-    trigger: "Access control / tower clearance constraints impacting diving",
-    impact: "Delayed start windows and productivity loss due to access/clearance dependency.",
-    owner: "Diving Superintendent",
-  },
-  {
-    key: "equipment_directive_pump",
-    match: /\b(6\"|6-inch|6 inch)\b.*\bpump\b|\bcirculat(e|ing)\b.*\bwater\b/i,
-    trigger: "Client/JV-directed equipment change (pump/circulation)",
-    impact: "Unplanned equipment deployment; potential diversion from critical path and crew utilization inefficiency.",
-    owner: "Diving Superintendent",
+    key: "reversed_direction",
+    match: /\b(REVERSED DIRECTION)\b/i,
+    trigger: "REVERSED DIRECTION issued by JV/OICC",
+    impact: "Reversal may cause rework, demobilization/remobilization inefficiency, and schedule impact.",
+    owner: "Ops/PM",
   },
 ];
 
@@ -480,29 +548,41 @@ function nextRiskId(dateIso: string, existing: RiskOut[] | undefined): string {
 }
 
 /**
- * Auto-create risks from directive language.
+ * Auto-create risks from directive and conflict language.
  * Call this AFTER validateModelOutputOrThrow() and BEFORE persisting.
  *
  * - Deterministic: no AI prose
- * - Dedupe: prevents duplicates by trigger_key per day output
+ * - Dedupe: uses fingerprinted trigger_key (rule|time|hash) for event-level uniqueness
+ * - Scans both directives[] and conflicts[] arrays
  */
 export function autoCreateRisksFromDirectives(out: DailyLogModelOutput): DailyLogModelOutput {
-  const risks: (RiskOut & { trigger_key?: string })[] = Array.isArray(out.risks) ? [...out.risks] : [];
+  const risks: (RiskOut & { trigger_key?: string; source_time?: string })[] = Array.isArray(out.risks) ? [...out.risks] : [];
 
   const existingKeys = new Set<string>(
-    risks.map(r => normalizeTriggerKey((r as any).trigger_key ?? r.trigger))
+    risks.map((r: any) => String(r.trigger_key ?? "")).filter(Boolean)
   );
 
-  const directiveTexts = out.directives.map(d => ({
-    time: d.time,
-    text: `${d.who ?? ""} ${d.what ?? ""} ${d.impact ?? ""}`.trim(),
-  }));
+  // Combine directives and conflicts as source events
+  const sources: { time?: string; text: string }[] = [
+    ...out.directives.map(d => ({
+      time: d.time,
+      text: `${d.who ?? ""} ${d.what ?? ""} ${d.impact ?? ""}`.trim(),
+    })),
+    ...((out as any).conflicts ?? []).map((c: any) => ({
+      time: c.time,
+      text: `${c.tag ?? ""} ${c.new_direction ?? ""} ${c.operational_impact ?? ""}`.trim(),
+    })),
+  ];
 
-  for (const dt of directiveTexts) {
+  for (const src of sources) {
     for (const rule of RISK_RULES) {
-      if (!rule.match.test(dt.text)) continue;
+      if (!rule.match.test(src.text)) continue;
 
-      const trigger_key = normalizeTriggerKey(rule.key);
+      // Event-level dedupe: rule|time|fingerprint
+      const timePart = (src.time && mustBeHHMM(src.time)) ? src.time : "NA";
+      const fp = fingerprintText(src.text);
+      const trigger_key = normalizeTriggerKey(`${rule.key}|${timePart}|${fp}`);
+
       if (existingKeys.has(trigger_key)) continue;
 
       const risk_id = nextRiskId(out.date, risks);
@@ -514,13 +594,14 @@ export function autoCreateRisksFromDirectives(out: DailyLogModelOutput): DailyLo
         owner: rule.owner,
         status: "Open",
         trigger_key,
+        source_time: src.time,
       });
 
       existingKeys.add(trigger_key);
     }
   }
 
-  return { ...out, risks: risks.map(({ trigger_key, ...rest }) => rest as RiskOut) };
+  return { ...out, risks: risks.map(({ trigger_key, source_time, ...rest }) => rest as RiskOut) };
 }
 
 /**

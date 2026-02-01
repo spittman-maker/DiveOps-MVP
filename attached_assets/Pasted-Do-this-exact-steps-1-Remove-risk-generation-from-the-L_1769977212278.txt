@@ -1,0 +1,111 @@
+Do this (exact steps)
+1) Remove risk generation from the LLM contract
+
+In your LLM prompt/system message, add:
+
+“Do not create risks. Return risks: [] always.”
+
+Or remove risks from the expected schema entirely.
+
+2) Enforce in code (hard)
+
+Right after you receive modelJson (before validation is fine, after is also fine), force risks empty:
+
+(modelJson as any).risks = [];
+
+3) Then run validation + auto-risk creation
+validateModelOutputOrThrow(modelJson);
+
+const withRisks = autoCreateRisksFromDirectives(modelJson);
+
+// Strip trigger_key if your DB doesn’t store it
+withRisks.risks = withRisks.risks?.map((r: any) => {
+  const { trigger_key, ...rest } = r;
+  return rest;
+});
+
+await storage.saveDailyLog(withRisks);
+await renderDailyLogDocx(withRisks);
+
+Result
+
+LLM cannot invent or “soft-suggest” risks.
+
+Risks are created only when a directive matches a deterministic trigger.
+
+You get consistent Risk IDs and claim-ready language every time.
+
+If you want the risks to also fire from conflicts[] (CONFLICTING/REVERSED direction), say so and I’ll add that hook (it’s a 5-line change).
+
+yes
+
+Add conflict-triggered risks by extending the risk engine to scan conflicts[] too (same deterministic approach). Below is the exact patch.
+
+1) Add these risk rules (append to RISK_RULES)
+{
+  key: "conflicting_direction",
+  match: /\b(CONFLICTING DIRECTION)\b/i,
+  trigger: "CONFLICTING DIRECTION issued by JV/OICC",
+  impact: "Sequencing uncertainty and potential rework/standby exposure; schedule impact risk.",
+  owner: "Ops/PM",
+},
+{
+  key: "reversed_direction",
+  match: /\b(REVERSED DIRECTION)\b/i,
+  trigger: "REVERSED DIRECTION issued by JV/OICC",
+  impact: "Reversal may cause rework, demobilization/remobilization inefficiency, and schedule impact.",
+  owner: "Ops/PM",
+},
+
+
+(These won’t fire unless your conflicts[] entries include the tag exactly as required.)
+
+2) Update autoCreateRisksFromDirectives() to also scan conflicts
+
+Replace the internal directiveTexts loop with this combined “sources” list:
+
+const sources: { time?: string; text: string }[] = [
+  ...out.directives.map(d => ({
+    time: d.time,
+    text: `${d.who ?? ""} ${d.what ?? ""} ${d.impact ?? ""}`.trim(),
+  })),
+  ...(out.conflicts ?? []).map(c => ({
+    time: c.time,
+    text: `${c.tag} ${c.new_direction} ${c.operational_impact}`.trim(),
+  })),
+];
+
+for (const src of sources) {
+  for (const rule of RISK_RULES) {
+    if (!rule.match.test(src.text)) continue;
+
+    const trigger_key = normalizeTriggerKey(rule.key);
+    if (existingKeys.has(trigger_key)) continue;
+
+    const risk_id = nextRiskId(out.date, risks);
+
+    risks.push({
+      risk_id,
+      trigger: rule.trigger,
+      impact: rule.impact,
+      owner: rule.owner,
+      status: "Open",
+      trigger_key,
+    });
+
+    existingKeys.add(trigger_key);
+  }
+}
+
+3) Keep Option A (LLM risks disabled)
+
+Continue forcing:
+
+(modelJson as any).risks = [];
+
+
+Then:
+
+validateModelOutputOrThrow(modelJson);
+
+autoCreateRisksFromDirectives(modelJson);

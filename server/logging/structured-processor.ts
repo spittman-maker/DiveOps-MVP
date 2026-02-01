@@ -47,16 +47,14 @@ NEVER generalize, calculate, or infer dive times, decompression schedules, or di
   "station_logs": [
     { "station": "Dive Station 1", "crew": "Diver names", "scope_worked": "description", "production": "measurements" }
   ],
-  "risks": [
-    { "risk_id": "auto", "trigger": "what caused this", "impact": "impact description", "owner": "role", "status": "Open" }
-  ]
+  "risks": []
 }
 
 ## CRITICAL RULES
 1. DIRECTIVES: Must have valid "time" field in HH:MM format. Extract time from the input.
 2. STATION_LOGS: Must NOT contain any timestamps. Remove all time references from text.
 3. If you place a timestamp anywhere inside station_logs, return an error instead of output.
-4. RISKS: Create a risk entry if a directive impacts crew safety, schedule, or scope.
+4. DO NOT CREATE RISKS. Return risks: [] always. Risk creation is handled separately.
 5. Preserve all diver names, initials, tasks, equipment, and measurements.
 6. Do NOT add filler text like "operations continued as scheduled".
 
@@ -168,7 +166,8 @@ export async function processStructuredLog(
     // Ensure required arrays exist
     modelJson.directives = modelJson.directives || [];
     modelJson.station_logs = modelJson.station_logs || [];
-    modelJson.risks = modelJson.risks || [];
+    // Force LLM risks empty - only deterministic auto-risk creation allowed
+    (modelJson as any).risks = [];
     modelJson.summary = modelJson.summary || {
       work_executed: [],
       primary_constraints: [],

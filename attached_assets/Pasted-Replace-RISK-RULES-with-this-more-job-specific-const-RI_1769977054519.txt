@@ -1,0 +1,92 @@
+Replace RISK_RULES with this (more job-specific)
+const RISK_RULES: RiskRule[] = [
+  // Manpower / time-window hits
+  {
+    key: "manpower_reduction",
+    match: /\b(reduce|reduction)\b.*\b(crew|crews|personnel|manpower)\b|\bcrew sizes\b|\bonly\s+\w+\s+crews?\b/i,
+    trigger: "Client/JV-directed manpower reduction",
+    impact: "Reduced production capacity; schedule exposure and inefficiency (lost diver-hours / re-sequencing).",
+    owner: "Ops/PM",
+  },
+  {
+    key: "early_release",
+    match: /\b(leave early|end .*shift early|cut .*shift|released early|8\s*hours?|eight\s*hours?)\b/i,
+    trigger: "Client/JV-directed early release / reduced shift duration",
+    impact: "Loss of planned work window; standby inefficiency and schedule exposure.",
+    owner: "Ops/PM",
+  },
+
+  // Diving stoppage / recall
+  {
+    key: "pull_all_divers",
+    match: /\b(pull all divers|recall.*divers|divers.*return to surface)\b|\b(dho)\b.*\b(pull|recall)\b/i,
+    trigger: "DHO/JV-directed diver recall / stoppage",
+    impact: "Interrupted bottom time and work sequence; productivity loss and potential rework/standby exposure.",
+    owner: "Diving Superintendent",
+  },
+  {
+    key: "stop_work_hold",
+    match: /\b(stop work|hold|suspend|pause|stand down|standdown)\b/i,
+    trigger: "Client/JV-directed stop-work / hold / standdown",
+    impact: "Immediate production loss; remobilization and schedule exposure.",
+    owner: "Ops/PM",
+  },
+
+  // Access / control dependencies
+  {
+    key: "tower_clearance",
+    match: /\b(tower cleared|tower clearance|call tower|tower hold|tower denied)\b/i,
+    trigger: "Tower clearance dependency impacting dive start windows",
+    impact: "Delayed starts/interruptions due to tower clearance dependency; productivity loss exposure.",
+    owner: "Dive Supervisor",
+  },
+  {
+    key: "ais_shuffle_access",
+    match: /\b(AIS)\b.*\b(shuffle|parking|vehicle)\b|\bcar shuffle\b/i,
+    trigger: "AIS/parking shuffle access constraint",
+    impact: "Lost time due to access logistics; reduced effective production window.",
+    owner: "Ops/PM",
+  },
+
+  // Third-party / interface constraints
+  {
+    key: "eod_standdown",
+    match: /\b(EOD|explosive ordnance)\b.*\b(stand down|standdown|crew off|off)\b/i,
+    trigger: "EOD/interface standdown impacting work window",
+    impact: "Forced downtime due to third-party interface; schedule exposure.",
+    owner: "Ops/PM",
+  },
+
+  // Equipment / means & methods directives
+  {
+    key: "pump_circulation_directive",
+    match: /\b(6\"|6-inch|6 inch)\b.*\bpump\b|\bpump\b.*\b(in the water|deploy|install)\b|\bcirculat(e|ing)\b.*\bwater\b/i,
+    trigger: "Client/JV-directed equipment deployment (pump/circulation)",
+    impact: "Unplanned equipment deployment/diversion; potential critical path and crew utilization inefficiency.",
+    owner: "Diving Superintendent",
+  },
+  {
+    key: "hose_discharge_change",
+    match: /\b(discharge hose|discharge hoses)\b.*\b(install|add|relocat|move|set|secured?)\b/i,
+    trigger: "Material handling/discharge configuration change",
+    impact: "Time spent reconfiguring discharge/material handling; potential production slowdown and rework exposure.",
+    owner: "Dive Supervisor",
+  },
+];
+
+2) Make sure you call it in the pipeline
+
+Right after validateModelOutputOrThrow():
+
+validateModelOutputOrThrow(modelJson);
+
+const withRisks = autoCreateRisksFromDirectives(modelJson);
+
+// If your DB schema for risks does NOT include trigger_key, strip it:
+withRisks.risks = withRisks.risks?.map((r: any) => {
+  const { trigger_key, ...rest } = r;
+  return rest;
+});
+
+await storage.saveDailyLog(withRisks);
+await renderDailyLogDocx(withRisks);
