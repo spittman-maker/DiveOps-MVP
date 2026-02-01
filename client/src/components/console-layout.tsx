@@ -37,15 +37,17 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
     }
   };
 
+  const isDark = theme === "dark";
+
   return (
-    <div className="h-screen bg-navy-900 flex flex-col overflow-hidden">
-      <header className="bg-navy-800 border-b border-navy-600 px-4 py-2 flex items-center justify-between shrink-0">
+    <div className={`h-screen flex flex-col overflow-hidden ${isDark ? "bg-navy-900" : "bg-background"}`}>
+      <header className={`px-4 py-2 flex items-center justify-between shrink-0 border-b ${isDark ? "bg-navy-800 border-navy-600" : "bg-card border-border"}`}>
         <div className="flex items-center gap-4">
-          <h1 className="text-lg font-bold text-white tracking-tight">
+          <h1 className={`text-lg font-bold tracking-tight ${isDark ? "text-white" : "text-foreground"}`}>
             DiveOps™
           </h1>
-          <div className="h-4 w-px bg-navy-600" />
-          <span className="text-sm text-navy-300 font-mono">
+          <div className={`h-4 w-px ${isDark ? "bg-navy-600" : "bg-border"}`} />
+          <span className={`text-sm font-mono ${isDark ? "text-navy-300" : "text-muted-foreground"}`}>
             {new Date().toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
           </span>
         </div>
@@ -56,9 +58,9 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
             variant="ghost"
             size="sm"
             onClick={toggleTheme}
-            className="text-navy-300 hover:text-white hover:bg-navy-700"
+            className={isDark ? "text-navy-300 hover:text-white hover:bg-navy-700" : "text-muted-foreground hover:text-foreground hover:bg-accent"}
           >
-            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>
           <Button
             data-testid="button-chat-assistant"
@@ -70,7 +72,7 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
             💬 Assistant
           </Button>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-navy-200">{user?.fullName || user?.username}</span>
+            <span className={`text-sm ${isDark ? "text-navy-200" : "text-foreground"}`}>{user?.fullName || user?.username}</span>
             <Badge className={`${getRoleBadgeColor(user?.role || "")} text-white text-xs`}>
               {user?.role}
             </Badge>
@@ -80,14 +82,14 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
             variant="ghost"
             size="sm"
             onClick={logout}
-            className="text-navy-300 hover:text-white hover:bg-navy-700"
+            className={isDark ? "text-navy-300 hover:text-white hover:bg-navy-700" : "text-muted-foreground hover:text-foreground hover:bg-accent"}
           >
             Logout
           </Button>
         </div>
       </header>
 
-      <nav className="bg-navy-850 border-b border-navy-600 px-4 shrink-0">
+      <nav className={`px-4 shrink-0 border-b ${isDark ? "bg-navy-850 border-navy-600" : "bg-secondary border-border"}`}>
         <div className="flex gap-1">
           {TABS.map((tab) => {
             const isHidden = tab.id === "admin" && !isAdmin;
@@ -101,14 +103,14 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
                 className={`
                   px-4 py-2 text-sm font-medium transition-colors relative
                   ${activeTab === tab.id
-                    ? "text-white"
-                    : "text-navy-400 hover:text-navy-200"
+                    ? (isDark ? "text-white" : "text-foreground")
+                    : (isDark ? "text-navy-400 hover:text-navy-200" : "text-muted-foreground hover:text-foreground")
                   }
                 `}
               >
                 {tab.label}
                 {activeTab === tab.id && (
-                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500" />
+                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
                 )}
               </button>
             );

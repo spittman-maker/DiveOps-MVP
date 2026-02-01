@@ -233,18 +233,18 @@ function WeatherWidget() {
     }
   }, []);
 
+  if (weatherLoading) {
+    return <div className="flex items-center justify-center h-full text-muted-foreground">Loading weather...</div>;
+  }
+
   if (!weather?.configured) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-navy-400 text-sm">
+      <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm">
         <CloudRain className="h-8 w-8 mb-2 opacity-50" />
         <p>Weather API not configured</p>
         <p className="text-xs mt-1">Add OPENWEATHER_API_KEY secret</p>
       </div>
     );
-  }
-
-  if (weatherLoading) {
-    return <div className="flex items-center justify-center h-full text-navy-400">Loading...</div>;
   }
 
   const getWeatherIcon = (icon?: string) => {
