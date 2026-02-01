@@ -208,6 +208,92 @@ export async function registerRoutes(
   });
 
   // ──────────────────────────────────────────────────────────────────────────
+  // DASHBOARD
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // Get user's dashboard layout
+  app.get("/api/dashboard/layout", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const layout = await storage.getDashboardLayout(user.id);
+      
+      if (!layout) {
+        // Return default layout if none exists
+        return res.json({
+          widgets: [
+            { id: "w1", type: "daily_summary", title: "Today's Summary", x: 0, y: 0, w: 2, h: 2 },
+            { id: "w2", type: "active_dives", title: "Active Dives", x: 2, y: 0, w: 2, h: 2 },
+            { id: "w3", type: "recent_logs", title: "Recent Log Entries", x: 0, y: 2, w: 2, h: 2 },
+            { id: "w4", type: "safety_incidents", title: "Safety Status", x: 2, y: 2, w: 2, h: 1 },
+          ],
+          version: 1,
+        });
+      }
+      
+      res.json(layout.layoutData);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Save user's dashboard layout
+  app.post("/api/dashboard/layout", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const layoutData = req.body;
+      
+      if (!layoutData.widgets || !Array.isArray(layoutData.widgets)) {
+        return res.status(400).json({ message: "Invalid layout data" });
+      }
+      
+      const saved = await storage.saveDashboardLayout(user.id, layoutData);
+      res.json({ success: true, layout: saved.layoutData });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get dashboard stats for widgets
+  app.get("/api/dashboard/stats", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const prefs = await storage.getUserPreferences(user.id);
+      const projectId = prefs?.activeProjectId;
+      
+      let stats: any = {
+        totalDives: 0,
+        activeDives: 0,
+        safetyIncidents: 0,
+        openRisks: 0,
+        logEntriestoday: 0,
+      };
+      
+      if (projectId) {
+        const day = await storage.getMostRecentDayByProject(projectId);
+        if (day) {
+          const dives = await storage.getDivesByDay(day.id);
+          const risks = await storage.getRiskItemsByDay(day.id);
+          const logs = await storage.getLogEventsByDay(day.id);
+          
+          stats = {
+            totalDives: dives.length,
+            activeDives: dives.filter(d => d.lsTime && !d.rsTime).length,
+            safetyIncidents: logs.filter(l => l.category === "safety").length,
+            openRisks: risks.filter(r => r.status === "open").length,
+            logEntriesToday: logs.length,
+            dayStatus: day.status,
+            dayDate: day.date,
+          };
+        }
+      }
+      
+      res.json(stats);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
   // PROJECTS
   // ──────────────────────────────────────────────────────────────────────────
 
