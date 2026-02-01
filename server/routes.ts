@@ -926,6 +926,106 @@ export async function registerRoutes(
   });
 
   // ──────────────────────────────────────────────────────────────────────────
+  // STATIONS (within dive plans)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  app.get("/api/dive-plans/:divePlanId/stations", requireAuth, async (req: Request, res: Response) => {
+    const stations = await storage.getStationsByDivePlan(req.params.divePlanId);
+    res.json(stations);
+  });
+
+  app.post("/api/dive-plans/:divePlanId/stations", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    const plan = await storage.getDivePlan(req.params.divePlanId);
+    if (!plan) return res.status(404).json({ message: "Dive plan not found" });
+    
+    const station = await storage.createStation({
+      ...req.body,
+      divePlanId: req.params.divePlanId,
+    });
+    
+    res.status(201).json(station);
+  });
+
+  app.get("/api/stations/:id", requireAuth, async (req: Request, res: Response) => {
+    const station = await storage.getStation(req.params.id);
+    if (!station) return res.status(404).json({ message: "Station not found" });
+    res.json(station);
+  });
+
+  app.patch("/api/stations/:id", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    const station = await storage.getStation(req.params.id);
+    if (!station) return res.status(404).json({ message: "Station not found" });
+    
+    const updated = await storage.updateStation(req.params.id, req.body);
+    res.json(updated);
+  });
+
+  app.delete("/api/stations/:id", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    const station = await storage.getStation(req.params.id);
+    if (!station) return res.status(404).json({ message: "Station not found" });
+    
+    await storage.deleteStation(req.params.id);
+    res.status(204).send();
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // DIVE LOG DETAILS
+  // ──────────────────────────────────────────────────────────────────────────
+
+  app.get("/api/dives/:diveId/details", requireAuth, async (req: Request, res: Response) => {
+    const details = await storage.getDiveLogDetails(req.params.diveId);
+    if (!details) return res.status(404).json({ message: "Dive log details not found" });
+    res.json(details);
+  });
+
+  app.post("/api/dives/:diveId/details", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    const dive = await storage.getDive(req.params.diveId);
+    if (!dive) return res.status(404).json({ message: "Dive not found" });
+    
+    const existing = await storage.getDiveLogDetails(req.params.diveId);
+    if (existing) {
+      const updated = await storage.updateDiveLogDetails(existing.id, req.body);
+      return res.json(updated);
+    }
+    
+    const details = await storage.createDiveLogDetails({
+      ...req.body,
+      diveId: req.params.diveId,
+    });
+    
+    res.status(201).json(details);
+  });
+
+  app.patch("/api/dive-details/:id", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    const updated = await storage.updateDiveLogDetails(req.params.id, req.body);
+    if (!updated) return res.status(404).json({ message: "Dive log details not found" });
+    res.json(updated);
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // DAILY SUMMARIES
+  // ──────────────────────────────────────────────────────────────────────────
+
+  app.get("/api/days/:dayId/summary", requireAuth, async (req: Request, res: Response) => {
+    const summary = await storage.getDailySummary(req.params.dayId);
+    if (!summary) return res.status(404).json({ message: "Daily summary not found" });
+    res.json(summary);
+  });
+
+  app.post("/api/days/:dayId/summary", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    const day = await storage.getDay(req.params.dayId);
+    if (!day) return res.status(404).json({ message: "Day not found" });
+    
+    const summary = await storage.createOrUpdateDailySummary({
+      ...req.body,
+      dayId: req.params.dayId,
+      projectId: day.projectId,
+    });
+    
+    res.json(summary);
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
   // DIRECTORY FACILITIES
   // ──────────────────────────────────────────────────────────────────────────
 

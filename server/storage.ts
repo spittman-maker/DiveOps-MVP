@@ -14,6 +14,9 @@ import type {
   ClientComm, InsertClientComm,
   LogRender, InsertLogRender,
   DivePlan, InsertDivePlan,
+  Station, InsertStation,
+  DiveLogDetails, InsertDiveLogDetails,
+  DailySummary, InsertDailySummary,
   DirectoryFacility, InsertDirectoryFacility,
   ProjectDirectory, InsertProjectDirectory,
   ProjectMember, InsertProjectMember,
@@ -98,7 +101,24 @@ export interface IStorage {
   createDivePlan(plan: InsertDivePlan): Promise<DivePlan>;
   getDivePlan(id: string): Promise<DivePlan | undefined>;
   getDivePlansByProject(projectId: string): Promise<DivePlan[]>;
+  getDivePlanByDay(dayId: string): Promise<DivePlan | undefined>;
   updateDivePlan(id: string, updates: Partial<InsertDivePlan>): Promise<DivePlan | undefined>;
+
+  // Stations
+  createStation(station: InsertStation): Promise<Station>;
+  getStation(id: string): Promise<Station | undefined>;
+  getStationsByDivePlan(divePlanId: string): Promise<Station[]>;
+  updateStation(id: string, updates: Partial<InsertStation>): Promise<Station | undefined>;
+  deleteStation(id: string): Promise<boolean>;
+
+  // Dive Log Details
+  createDiveLogDetails(details: InsertDiveLogDetails): Promise<DiveLogDetails>;
+  getDiveLogDetails(diveId: string): Promise<DiveLogDetails | undefined>;
+  updateDiveLogDetails(id: string, updates: Partial<InsertDiveLogDetails>): Promise<DiveLogDetails | undefined>;
+
+  // Daily Summaries
+  getDailySummary(dayId: string): Promise<DailySummary | undefined>;
+  createOrUpdateDailySummary(summary: InsertDailySummary): Promise<DailySummary>;
 
   // Directory Facilities
   createDirectoryFacility(facility: InsertDirectoryFacility): Promise<DirectoryFacility>;
@@ -468,6 +488,82 @@ export class DbStorage implements IStorage {
       .where(eq(schema.divePlans.id, id))
       .returning();
     return updated;
+  }
+
+  async getDivePlanByDay(dayId: string): Promise<DivePlan | undefined> {
+    const [plan] = await db.select().from(schema.divePlans)
+      .where(eq(schema.divePlans.dayId, dayId));
+    return plan;
+  }
+
+  // Stations
+  async createStation(station: InsertStation): Promise<Station> {
+    const [created] = await db.insert(schema.stations).values(station as any).returning();
+    return created!;
+  }
+
+  async getStation(id: string): Promise<Station | undefined> {
+    const [station] = await db.select().from(schema.stations).where(eq(schema.stations.id, id));
+    return station;
+  }
+
+  async getStationsByDivePlan(divePlanId: string): Promise<Station[]> {
+    return await db.select().from(schema.stations)
+      .where(eq(schema.stations.divePlanId, divePlanId))
+      .orderBy(schema.stations.stationId);
+  }
+
+  async updateStation(id: string, updates: Partial<InsertStation>): Promise<Station | undefined> {
+    const [updated] = await db.update(schema.stations)
+      .set({ ...updates, updatedAt: new Date() } as any)
+      .where(eq(schema.stations.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteStation(id: string): Promise<boolean> {
+    const result = await db.delete(schema.stations).where(eq(schema.stations.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // Dive Log Details
+  async createDiveLogDetails(details: InsertDiveLogDetails): Promise<DiveLogDetails> {
+    const [created] = await db.insert(schema.diveLogDetails).values(details as any).returning();
+    return created!;
+  }
+
+  async getDiveLogDetails(diveId: string): Promise<DiveLogDetails | undefined> {
+    const [details] = await db.select().from(schema.diveLogDetails)
+      .where(eq(schema.diveLogDetails.diveId, diveId));
+    return details;
+  }
+
+  async updateDiveLogDetails(id: string, updates: Partial<InsertDiveLogDetails>): Promise<DiveLogDetails | undefined> {
+    const [updated] = await db.update(schema.diveLogDetails)
+      .set({ ...updates, updatedAt: new Date() } as any)
+      .where(eq(schema.diveLogDetails.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Daily Summaries
+  async getDailySummary(dayId: string): Promise<DailySummary | undefined> {
+    const [summary] = await db.select().from(schema.dailySummaries)
+      .where(eq(schema.dailySummaries.dayId, dayId));
+    return summary;
+  }
+
+  async createOrUpdateDailySummary(summary: InsertDailySummary): Promise<DailySummary> {
+    const existing = await this.getDailySummary(summary.dayId);
+    if (existing) {
+      const [updated] = await db.update(schema.dailySummaries)
+        .set({ ...summary, updatedAt: new Date() } as any)
+        .where(eq(schema.dailySummaries.id, existing.id))
+        .returning();
+      return updated!;
+    }
+    const [created] = await db.insert(schema.dailySummaries).values(summary as any).returning();
+    return created!;
   }
 
   // Directory Facilities
