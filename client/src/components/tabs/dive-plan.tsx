@@ -8,8 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2, MapPin, Users, ClipboardList, Anchor } from "lucide-react";
-import type { DivePlan, Station, StationCrew } from "@shared/schema";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Plus, Trash2, MapPin, Users, ClipboardList, Anchor, FileText, Download, Send, CheckCircle, History, ChevronDown, ChevronRight } from "lucide-react";
+import type { DivePlan, Station, StationCrew, ProjectDivePlan, ProjectDivePlanData } from "@shared/schema";
 
 interface StationFormData {
   stationId: string;
@@ -168,17 +169,37 @@ export function DivePlanTab() {
   };
 
   const canEdit = isSupervisor || isAdmin;
+  const [activeTab, setActiveTab] = useState<string>("daily");
 
   return (
-    <div className="h-full flex">
-      <div className="w-1/2 border-r border-navy-600 flex flex-col">
-        <div className="bg-navy-800 p-3 border-b border-navy-600">
-          <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-            <Anchor className="w-4 h-4" />
-            Station Builder
-          </h2>
-          <p className="text-xs text-navy-400">Define stations with crews and tasks</p>
-        </div>
+    <div className="h-full flex flex-col">
+      <div className="bg-navy-800 p-3 border-b border-navy-600">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="bg-navy-700">
+            <TabsTrigger value="daily" className="data-[state=active]:bg-navy-600">
+              <Anchor className="w-4 h-4 mr-2" />
+              Daily Stations
+            </TabsTrigger>
+            <TabsTrigger value="project-docs" className="data-[state=active]:bg-navy-600">
+              <FileText className="w-4 h-4 mr-2" />
+              Project Dive Plan
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
+      {activeTab === "project-docs" ? (
+        <ProjectDivePlanSection />
+      ) : (
+        <div className="flex-1 flex">
+          <div className="w-1/2 border-r border-navy-600 flex flex-col">
+            <div className="bg-navy-800/50 p-3 border-b border-navy-600">
+              <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                <MapPin className="w-4 h-4" />
+                Station Builder
+              </h2>
+              <p className="text-xs text-navy-400">Define stations with crews and tasks</p>
+            </div>
 
         {canEdit ? (
           <ScrollArea className="flex-1 p-4">
@@ -576,6 +597,634 @@ export function DivePlanTab() {
               <p className="text-sm text-navy-500 mt-1">
                 Create a new dive plan to get started
               </p>
+            </div>
+          )}
+        </ScrollArea>
+      </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProjectDivePlanSection() {
+  const { isSupervisor, isAdmin, user } = useAuth();
+  const { activeProject } = useProject();
+  const queryClient = useQueryClient();
+  const [isCreating, setIsCreating] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<ProjectDivePlan | null>(null);
+  
+  const [formData, setFormData] = useState<Partial<ProjectDivePlanData>>({
+    projectName: activeProject?.name || "",
+    projectNumber: activeProject?.id?.substring(0, 8).toUpperCase() || "",
+    client: activeProject?.clientName || "",
+    location: "",
+    diveSupervisor: "",
+    divingMode: "SCUBA",
+    maxDepthFsw: 0,
+    estimatedBottomTime: "",
+    scopeOfWork: "",
+    equipmentRequired: [],
+    personnelRequired: [],
+    emergencyProcedures: "Follow Emergency Action Plan (EAP) on file. Contact Dive Supervisor immediately for any emergency.",
+    communicationPlan: "",
+    decompProcedure: "All dives to be conducted within no-decompression limits per U.S. Navy Dive Tables. No in-water decompression planned.",
+    safetyConsiderations: [],
+    environmentalConditions: "",
+    additionalNotes: "",
+  });
+  
+  const [newEquipment, setNewEquipment] = useState("");
+  const [newPersonnel, setNewPersonnel] = useState("");
+  const [newSafety, setNewSafety] = useState("");
+
+  const { data: projectPlans = [] } = useQuery<ProjectDivePlan[]>({
+    queryKey: ["project-dive-plans", activeProject?.id],
+    queryFn: async () => {
+      if (!activeProject?.id) return [];
+      const res = await fetch(`/api/projects/${activeProject.id}/project-dive-plans`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!activeProject?.id,
+  });
+
+  const createPlanMutation = useMutation({
+    mutationFn: async () => {
+      if (!activeProject?.id) throw new Error("No active project");
+      const res = await fetch(`/api/projects/${activeProject.id}/project-dive-plans`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ planData: formData }),
+      });
+      if (!res.ok) throw new Error("Failed to create project dive plan");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["project-dive-plans"] });
+      setIsCreating(false);
+    },
+  });
+
+  const submitPlanMutation = useMutation({
+    mutationFn: async (planId: string) => {
+      const res = await fetch(`/api/project-dive-plans/${planId}/submit`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to submit plan");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["project-dive-plans"] });
+    },
+  });
+
+  const approvePlanMutation = useMutation({
+    mutationFn: async (planId: string) => {
+      const res = await fetch(`/api/project-dive-plans/${planId}/approve`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to approve plan");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["project-dive-plans"] });
+    },
+  });
+
+  const downloadPlan = async (planId: string, revision: number) => {
+    const res = await fetch(`/api/project-dive-plans/${planId}/download`, { credentials: "include" });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `DivePlan_Rev${revision}.docx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const canEdit = isSupervisor || isAdmin;
+
+  const addToList = (list: "equipmentRequired" | "personnelRequired" | "safetyConsiderations", value: string, setValue: (v: string) => void) => {
+    if (value.trim()) {
+      setFormData({
+        ...formData,
+        [list]: [...(formData[list] || []), value.trim()],
+      });
+      setValue("");
+    }
+  };
+
+  const removeFromList = (list: "equipmentRequired" | "personnelRequired" | "safetyConsiderations", index: number) => {
+    setFormData({
+      ...formData,
+      [list]: (formData[list] || []).filter((_, i) => i !== index),
+    });
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "Draft":
+        return <Badge variant="outline" className="border-yellow-500 text-yellow-400">Draft</Badge>;
+      case "Submitted":
+        return <Badge variant="outline" className="border-blue-500 text-blue-400">Submitted</Badge>;
+      case "Approved":
+        return <Badge className="bg-green-600">Approved</Badge>;
+      case "Superseded":
+        return <Badge variant="outline" className="border-gray-500 text-gray-400">Superseded</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+
+  if (!activeProject) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center">
+          <FileText className="w-16 h-16 mx-auto text-navy-600 mb-4" />
+          <p className="text-navy-400 text-lg">Select a project to manage dive plans</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 flex">
+      <div className="w-1/2 border-r border-navy-600 flex flex-col">
+        <div className="bg-navy-800/50 p-3 border-b border-navy-600 flex justify-between items-center">
+          <div>
+            <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+              <FileText className="w-4 h-4" />
+              Project Dive Plan Document
+            </h2>
+            <p className="text-xs text-navy-400">Generate formal DD5 dive plan documents</p>
+          </div>
+          {canEdit && !isCreating && (
+            <Button
+              data-testid="button-new-project-plan"
+              size="sm"
+              onClick={() => setIsCreating(true)}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              New Revision
+            </Button>
+          )}
+        </div>
+
+        <ScrollArea className="flex-1 p-4">
+          {isCreating ? (
+            <div className="space-y-4">
+              <Card className="bg-navy-800/50 border-navy-600">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-white text-sm">New Project Dive Plan</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-navy-400 mb-1 block">Project Name</label>
+                      <Input
+                        data-testid="input-project-name"
+                        value={formData.projectName}
+                        onChange={(e) => setFormData({ ...formData, projectName: e.target.value })}
+                        className="bg-navy-900 border-navy-600 text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-navy-400 mb-1 block">Project Number</label>
+                      <Input
+                        data-testid="input-project-number"
+                        value={formData.projectNumber}
+                        onChange={(e) => setFormData({ ...formData, projectNumber: e.target.value })}
+                        className="bg-navy-900 border-navy-600 text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-navy-400 mb-1 block">Client</label>
+                      <Input
+                        data-testid="input-client"
+                        value={formData.client}
+                        onChange={(e) => setFormData({ ...formData, client: e.target.value })}
+                        className="bg-navy-900 border-navy-600 text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-navy-400 mb-1 block">Location</label>
+                      <Input
+                        data-testid="input-location"
+                        value={formData.location}
+                        onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                        className="bg-navy-900 border-navy-600 text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-navy-400 mb-1 block">Dive Supervisor</label>
+                      <Input
+                        data-testid="input-dive-supervisor"
+                        value={formData.diveSupervisor}
+                        onChange={(e) => setFormData({ ...formData, diveSupervisor: e.target.value })}
+                        className="bg-navy-900 border-navy-600 text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-navy-400 mb-1 block">Diving Mode</label>
+                      <Input
+                        data-testid="input-diving-mode"
+                        value={formData.divingMode}
+                        onChange={(e) => setFormData({ ...formData, divingMode: e.target.value })}
+                        placeholder="SCUBA, Surface Supplied, etc."
+                        className="bg-navy-900 border-navy-600 text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-navy-400 mb-1 block">Max Depth (FSW)</label>
+                      <Input
+                        data-testid="input-max-depth"
+                        type="number"
+                        value={formData.maxDepthFsw || ""}
+                        onChange={(e) => setFormData({ ...formData, maxDepthFsw: parseInt(e.target.value) || 0 })}
+                        className="bg-navy-900 border-navy-600 text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-navy-400 mb-1 block">Est. Bottom Time</label>
+                      <Input
+                        data-testid="input-bottom-time"
+                        value={formData.estimatedBottomTime}
+                        onChange={(e) => setFormData({ ...formData, estimatedBottomTime: e.target.value })}
+                        placeholder="e.g., 30 minutes"
+                        className="bg-navy-900 border-navy-600 text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-navy-400 mb-1 block">Scope of Work</label>
+                    <Textarea
+                      data-testid="input-scope"
+                      value={formData.scopeOfWork}
+                      onChange={(e) => setFormData({ ...formData, scopeOfWork: e.target.value })}
+                      className="bg-navy-900 border-navy-600 text-white min-h-[80px]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-navy-400 mb-1 block">Equipment Required</label>
+                    <div className="flex gap-2 mb-2">
+                      <Input
+                        data-testid="input-new-equipment"
+                        value={newEquipment}
+                        onChange={(e) => setNewEquipment(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && addToList("equipmentRequired", newEquipment, setNewEquipment)}
+                        placeholder="Add equipment item..."
+                        className="bg-navy-900 border-navy-600 text-white"
+                      />
+                      <Button size="sm" onClick={() => addToList("equipmentRequired", newEquipment, setNewEquipment)}>
+                        <Plus className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {formData.equipmentRequired?.map((item, idx) => (
+                        <Badge key={idx} variant="secondary" className="cursor-pointer" onClick={() => removeFromList("equipmentRequired", idx)}>
+                          {item} <Trash2 className="w-3 h-3 ml-1" />
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-navy-400 mb-1 block">Personnel Required</label>
+                    <div className="flex gap-2 mb-2">
+                      <Input
+                        data-testid="input-new-personnel"
+                        value={newPersonnel}
+                        onChange={(e) => setNewPersonnel(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && addToList("personnelRequired", newPersonnel, setNewPersonnel)}
+                        placeholder="Add personnel..."
+                        className="bg-navy-900 border-navy-600 text-white"
+                      />
+                      <Button size="sm" onClick={() => addToList("personnelRequired", newPersonnel, setNewPersonnel)}>
+                        <Plus className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {formData.personnelRequired?.map((item, idx) => (
+                        <Badge key={idx} variant="secondary" className="cursor-pointer" onClick={() => removeFromList("personnelRequired", idx)}>
+                          {item} <Trash2 className="w-3 h-3 ml-1" />
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-navy-400 mb-1 block">Decompression Procedure</label>
+                    <Textarea
+                      data-testid="input-decomp"
+                      value={formData.decompProcedure}
+                      onChange={(e) => setFormData({ ...formData, decompProcedure: e.target.value })}
+                      className="bg-navy-900 border-navy-600 text-white min-h-[60px]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-navy-400 mb-1 block">Emergency Procedures</label>
+                    <Textarea
+                      data-testid="input-emergency"
+                      value={formData.emergencyProcedures}
+                      onChange={(e) => setFormData({ ...formData, emergencyProcedures: e.target.value })}
+                      className="bg-navy-900 border-navy-600 text-white min-h-[60px]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-navy-400 mb-1 block">Communication Plan</label>
+                    <Textarea
+                      data-testid="input-communication"
+                      value={formData.communicationPlan}
+                      onChange={(e) => setFormData({ ...formData, communicationPlan: e.target.value })}
+                      className="bg-navy-900 border-navy-600 text-white min-h-[60px]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-navy-400 mb-1 block">Environmental Conditions</label>
+                    <Textarea
+                      data-testid="input-environment"
+                      value={formData.environmentalConditions}
+                      onChange={(e) => setFormData({ ...formData, environmentalConditions: e.target.value })}
+                      className="bg-navy-900 border-navy-600 text-white min-h-[60px]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-navy-400 mb-1 block">Safety Considerations</label>
+                    <div className="flex gap-2 mb-2">
+                      <Input
+                        data-testid="input-new-safety"
+                        value={newSafety}
+                        onChange={(e) => setNewSafety(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && addToList("safetyConsiderations", newSafety, setNewSafety)}
+                        placeholder="Add safety consideration..."
+                        className="bg-navy-900 border-navy-600 text-white"
+                      />
+                      <Button size="sm" onClick={() => addToList("safetyConsiderations", newSafety, setNewSafety)}>
+                        <Plus className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {formData.safetyConsiderations?.map((item, idx) => (
+                        <Badge key={idx} variant="secondary" className="cursor-pointer" onClick={() => removeFromList("safetyConsiderations", idx)}>
+                          {item} <Trash2 className="w-3 h-3 ml-1" />
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-navy-400 mb-1 block">Additional Notes</label>
+                    <Textarea
+                      data-testid="input-notes"
+                      value={formData.additionalNotes}
+                      onChange={(e) => setFormData({ ...formData, additionalNotes: e.target.value })}
+                      className="bg-navy-900 border-navy-600 text-white min-h-[60px]"
+                    />
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button
+                      data-testid="button-save-project-plan"
+                      onClick={() => createPlanMutation.mutate()}
+                      disabled={createPlanMutation.isPending}
+                      className="flex-1 bg-blue-600 hover:bg-blue-700"
+                    >
+                      Create Draft
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsCreating(false)}
+                      className="border-navy-600"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {projectPlans.length === 0 ? (
+                <div className="text-center py-12">
+                  <FileText className="w-16 h-16 mx-auto text-navy-600 mb-4" />
+                  <p className="text-navy-400">No project dive plans yet</p>
+                  <p className="text-sm text-navy-500 mt-1">
+                    Create a new dive plan document to get started
+                  </p>
+                </div>
+              ) : (
+                projectPlans.map((plan) => (
+                  <Card
+                    key={plan.id}
+                    data-testid={`card-project-plan-${plan.id}`}
+                    className={`bg-navy-800/50 border-navy-600 cursor-pointer hover:border-navy-500 transition-colors ${
+                      selectedPlan?.id === plan.id ? "border-blue-500" : ""
+                    }`}
+                    onClick={() => setSelectedPlan(plan)}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-white font-medium">Rev {plan.revision}</h3>
+                            {getStatusBadge(plan.status)}
+                          </div>
+                          <p className="text-sm text-navy-400 mt-1">
+                            Created {new Date(plan.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              downloadPlan(plan.id, plan.revision);
+                            }}
+                            className="border-navy-600"
+                          >
+                            <Download className="w-4 h-4" />
+                          </Button>
+                          {plan.status === "Draft" && canEdit && (
+                            <Button
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                submitPlanMutation.mutate(plan.id);
+                              }}
+                              disabled={submitPlanMutation.isPending}
+                              className="bg-blue-600 hover:bg-blue-700"
+                            >
+                              <Send className="w-4 h-4 mr-1" />
+                              Submit
+                            </Button>
+                          )}
+                          {plan.status === "Submitted" && isAdmin && (
+                            <Button
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                approvePlanMutation.mutate(plan.id);
+                              }}
+                              disabled={approvePlanMutation.isPending}
+                              className="bg-green-600 hover:bg-green-700"
+                            >
+                              <CheckCircle className="w-4 h-4 mr-1" />
+                              Approve
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </div>
+          )}
+        </ScrollArea>
+      </div>
+
+      <div className="w-1/2 flex flex-col">
+        <div className="bg-navy-800/50 p-3 border-b border-navy-600">
+          <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+            <History className="w-4 h-4" />
+            Plan Details
+          </h2>
+          <p className="text-xs text-navy-400">View plan content and revision history</p>
+        </div>
+
+        <ScrollArea className="flex-1 p-4">
+          {selectedPlan ? (
+            <div className="space-y-4">
+              <Card className="bg-navy-800/50 border-navy-600">
+                <CardHeader className="pb-2">
+                  <div className="flex justify-between items-center">
+                    <CardTitle className="text-white text-base">
+                      Dive Plan Rev {selectedPlan.revision}
+                    </CardTitle>
+                    {getStatusBadge(selectedPlan.status)}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {(() => {
+                    const data = selectedPlan.planData as ProjectDivePlanData;
+                    return (
+                      <>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div>
+                            <span className="text-navy-400">Project:</span>{" "}
+                            <span className="text-white">{data.projectName}</span>
+                          </div>
+                          <div>
+                            <span className="text-navy-400">Client:</span>{" "}
+                            <span className="text-white">{data.client}</span>
+                          </div>
+                          <div>
+                            <span className="text-navy-400">Location:</span>{" "}
+                            <span className="text-white">{data.location}</span>
+                          </div>
+                          <div>
+                            <span className="text-navy-400">Supervisor:</span>{" "}
+                            <span className="text-white">{data.diveSupervisor}</span>
+                          </div>
+                          <div>
+                            <span className="text-navy-400">Diving Mode:</span>{" "}
+                            <span className="text-white">{data.divingMode}</span>
+                          </div>
+                          <div>
+                            <span className="text-navy-400">Max Depth:</span>{" "}
+                            <span className="text-white">{data.maxDepthFsw} FSW</span>
+                          </div>
+                        </div>
+                        
+                        {data.scopeOfWork && (
+                          <div>
+                            <h4 className="text-navy-400 text-xs mb-1">Scope of Work</h4>
+                            <p className="text-white text-sm">{data.scopeOfWork}</p>
+                          </div>
+                        )}
+
+                        {data.equipmentRequired && data.equipmentRequired.length > 0 && (
+                          <div>
+                            <h4 className="text-navy-400 text-xs mb-1">Equipment Required</h4>
+                            <div className="flex flex-wrap gap-1">
+                              {data.equipmentRequired.map((item, idx) => (
+                                <Badge key={idx} variant="secondary" className="text-xs">{item}</Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {data.personnelRequired && data.personnelRequired.length > 0 && (
+                          <div>
+                            <h4 className="text-navy-400 text-xs mb-1">Personnel Required</h4>
+                            <div className="flex flex-wrap gap-1">
+                              {data.personnelRequired.map((item, idx) => (
+                                <Badge key={idx} variant="secondary" className="text-xs">{item}</Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {data.safetyConsiderations && data.safetyConsiderations.length > 0 && (
+                          <div>
+                            <h4 className="text-navy-400 text-xs mb-1">Safety Considerations</h4>
+                            <div className="flex flex-wrap gap-1">
+                              {data.safetyConsiderations.map((item, idx) => (
+                                <Badge key={idx} variant="outline" className="text-xs border-yellow-500 text-yellow-400">{item}</Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
+
+              {selectedPlan.status === "Approved" && (
+                <div className="bg-green-900/20 border border-green-600/30 rounded-lg p-3">
+                  <div className="flex items-center gap-2 text-green-400 text-sm">
+                    <CheckCircle className="w-4 h-4" />
+                    <span>This is the current approved dive plan</span>
+                  </div>
+                </div>
+              )}
+
+              {selectedPlan.status === "Superseded" && (
+                <div className="bg-gray-900/20 border border-gray-600/30 rounded-lg p-3">
+                  <div className="flex items-center gap-2 text-gray-400 text-sm">
+                    <History className="w-4 h-4" />
+                    <span>This plan has been superseded by a newer revision</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <FileText className="w-16 h-16 mx-auto text-navy-600 mb-4" />
+              <p className="text-navy-400">Select a plan to view details</p>
             </div>
           )}
         </ScrollArea>
