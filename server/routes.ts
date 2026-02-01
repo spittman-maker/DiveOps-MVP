@@ -1026,6 +1026,161 @@ export async function registerRoutes(
   });
 
   // ──────────────────────────────────────────────────────────────────────────
+  // DIVE PLAN TEMPLATES
+  // ──────────────────────────────────────────────────────────────────────────
+
+  app.get("/api/dive-plan-templates", requireAuth, async (req: Request, res: Response) => {
+    const templates = await storage.getDivePlanTemplates();
+    res.json(templates);
+  });
+
+  app.post("/api/dive-plan-templates", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+    const user = getUser(req);
+    const template = await storage.createDivePlanTemplate({
+      ...req.body,
+      uploadedBy: user.id,
+    });
+    res.status(201).json(template);
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // PROJECT DIVE PLANS (Project-level document generator)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  app.get("/api/projects/:projectId/project-dive-plans", requireAuth, async (req: Request, res: Response) => {
+    const plans = await storage.getProjectDivePlansByProject(req.params.projectId);
+    res.json(plans);
+  });
+
+  app.get("/api/projects/:projectId/project-dive-plans/active", requireAuth, async (req: Request, res: Response) => {
+    const plan = await storage.getActiveProjectDivePlan(req.params.projectId);
+    if (!plan) return res.status(404).json({ message: "No approved dive plan found" });
+    res.json(plan);
+  });
+
+  app.get("/api/project-dive-plans/:id", requireAuth, async (req: Request, res: Response) => {
+    const plan = await storage.getProjectDivePlan(req.params.id);
+    if (!plan) return res.status(404).json({ message: "Project dive plan not found" });
+    res.json(plan);
+  });
+
+  app.post("/api/projects/:projectId/project-dive-plans", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    const user = getUser(req);
+    const project = await storage.getProject(req.params.projectId);
+    if (!project) return res.status(404).json({ message: "Project not found" });
+    
+    const latestRevision = await storage.getLatestProjectDivePlanRevision(req.params.projectId);
+    const newRevision = latestRevision + 1;
+    
+    const plan = await storage.createProjectDivePlan({
+      ...req.body,
+      projectId: req.params.projectId,
+      revision: newRevision,
+      createdBy: user.id,
+    });
+    
+    res.status(201).json(plan);
+  });
+
+  app.patch("/api/project-dive-plans/:id", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    const plan = await storage.getProjectDivePlan(req.params.id);
+    if (!plan) return res.status(404).json({ message: "Project dive plan not found" });
+    
+    if (plan.status === "Approved" || plan.status === "Superseded") {
+      return res.status(400).json({ message: "Cannot modify approved or superseded plans" });
+    }
+    
+    const updated = await storage.updateProjectDivePlan(req.params.id, req.body);
+    res.json(updated);
+  });
+
+  app.post("/api/project-dive-plans/:id/submit", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    const user = getUser(req);
+    const plan = await storage.getProjectDivePlan(req.params.id);
+    if (!plan) return res.status(404).json({ message: "Project dive plan not found" });
+    
+    if (plan.status !== "Draft") {
+      return res.status(400).json({ message: "Only draft plans can be submitted" });
+    }
+    
+    const updated = await storage.updateProjectDivePlan(req.params.id, {
+      status: "Submitted",
+      submittedBy: user.id,
+      submittedAt: new Date(),
+    });
+    
+    res.json(updated);
+  });
+
+  app.post("/api/project-dive-plans/:id/approve", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+    const user = getUser(req);
+    const plan = await storage.getProjectDivePlan(req.params.id);
+    if (!plan) return res.status(404).json({ message: "Project dive plan not found" });
+    
+    if (plan.status !== "Submitted") {
+      return res.status(400).json({ message: "Only submitted plans can be approved" });
+    }
+    
+    const currentActive = await storage.getActiveProjectDivePlan(plan.projectId);
+    if (currentActive && currentActive.id !== plan.id) {
+      await storage.updateProjectDivePlan(currentActive.id, {
+        status: "Superseded",
+        supersededBy: plan.id,
+      });
+    }
+    
+    const updated = await storage.updateProjectDivePlan(req.params.id, {
+      status: "Approved",
+      approvedBy: user.id,
+      approvedAt: new Date(),
+    });
+    
+    res.json(updated);
+  });
+
+  app.post("/api/project-dive-plans/:id/new-revision", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    const user = getUser(req);
+    const existingPlan = await storage.getProjectDivePlan(req.params.id);
+    if (!existingPlan) return res.status(404).json({ message: "Project dive plan not found" });
+    
+    const latestRevision = await storage.getLatestProjectDivePlanRevision(existingPlan.projectId);
+    const newRevision = latestRevision + 1;
+    
+    const newPlan = await storage.createProjectDivePlan({
+      projectId: existingPlan.projectId,
+      templateId: existingPlan.templateId,
+      revision: newRevision,
+      status: "Draft",
+      planData: existingPlan.planData,
+      createdBy: user.id,
+    });
+    
+    res.status(201).json(newPlan);
+  });
+
+  app.get("/api/project-dive-plans/:id/download", requireAuth, async (req: Request, res: Response) => {
+    const { generateDivePlanDocx } = await import("./dive-plan-generator");
+    
+    const plan = await storage.getProjectDivePlan(req.params.id);
+    if (!plan) return res.status(404).json({ message: "Project dive plan not found" });
+    
+    const creator = await storage.getUser(plan.createdBy);
+    const preparedBy = creator?.displayName || creator?.username || "Unknown";
+    
+    const buffer = await generateDivePlanDocx(
+      plan.planData as any,
+      plan.revision,
+      preparedBy
+    );
+    
+    const fileName = `DivePlan_Rev${plan.revision}.docx`;
+    
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    res.send(buffer);
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
   // DIRECTORY FACILITIES
   // ──────────────────────────────────────────────────────────────────────────
 
