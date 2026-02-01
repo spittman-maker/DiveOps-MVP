@@ -9,8 +9,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Trash2, MapPin, Users, ClipboardList, Anchor, FileText, Download, Send, CheckCircle, History, ChevronDown, ChevronRight } from "lucide-react";
-import type { DivePlan, Station, StationCrew, ProjectDivePlan, ProjectDivePlanData } from "@shared/schema";
+import { Plus, Trash2, MapPin, Users, ClipboardList, Anchor, FileText, Download, Send, CheckCircle, History, ChevronDown, ChevronRight, Check } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import type { DivePlan, Station, StationCrew, ProjectDivePlan, ProjectDivePlanData, DD5Contact } from "@shared/schema";
+import { DD5_CONTROLLED_TASK_LIBRARY } from "@shared/schema";
 
 interface StationFormData {
   stationId: string;
@@ -614,29 +616,36 @@ function ProjectDivePlanSection() {
   const [isCreating, setIsCreating] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<ProjectDivePlan | null>(null);
   
-  const [formData, setFormData] = useState<Partial<ProjectDivePlanData>>({
-    projectName: activeProject?.name || "",
-    projectNumber: activeProject?.id?.substring(0, 8).toUpperCase() || "",
-    client: activeProject?.clientName || "",
-    location: "",
-    diveSupervisor: "",
-    divingMode: "SCUBA",
-    maxDepthFsw: 0,
-    estimatedBottomTime: "",
-    scopeOfWork: "",
-    equipmentRequired: [],
-    personnelRequired: [],
-    emergencyProcedures: "Follow Emergency Action Plan (EAP) on file. Contact Dive Supervisor immediately for any emergency.",
-    communicationPlan: "",
-    decompProcedure: "All dives to be conducted within no-decompression limits per U.S. Navy Dive Tables. No in-water decompression planned.",
-    safetyConsiderations: [],
-    environmentalConditions: "",
-    additionalNotes: "",
+  const today = new Date().toISOString().split("T")[0];
+  
+  const [formData, setFormData] = useState<ProjectDivePlanData>({
+    coverPage: {
+      companyName: "Precision Subsea Group LLC",
+      projectTitle: activeProject?.name || "",
+      jobNumber: activeProject?.id?.substring(0, 8).toUpperCase() || "",
+      client: activeProject?.clientName || "",
+      siteLocation: "",
+      submissionDate: today,
+      revisionNumber: 0,
+    },
+    projectContacts: {
+      primeContractor: "",
+      siteAddress: "",
+      keyContacts: [],
+    },
+    natureOfWork: {
+      selectedTasks: [],
+    },
+    revisionHistory: [{
+      revision: 0,
+      date: today,
+      description: "Initial release",
+      section: "All",
+      changedBy: user?.fullName || user?.username || "",
+    }],
   });
   
-  const [newEquipment, setNewEquipment] = useState("");
-  const [newPersonnel, setNewPersonnel] = useState("");
-  const [newSafety, setNewSafety] = useState("");
+  const [newContact, setNewContact] = useState<DD5Contact>({ name: "", role: "", phone: "", email: "" });
 
   const { data: projectPlans = [] } = useQuery<ProjectDivePlan[]>({
     queryKey: ["project-dive-plans", activeProject?.id],
@@ -709,20 +718,38 @@ function ProjectDivePlanSection() {
 
   const canEdit = isSupervisor || isAdmin;
 
-  const addToList = (list: "equipmentRequired" | "personnelRequired" | "safetyConsiderations", value: string, setValue: (v: string) => void) => {
-    if (value.trim()) {
+  const toggleTask = (task: string) => {
+    const currentTasks = formData.natureOfWork.selectedTasks;
+    const newTasks = currentTasks.includes(task)
+      ? currentTasks.filter(t => t !== task)
+      : [...currentTasks, task];
+    
+    setFormData({
+      ...formData,
+      natureOfWork: { selectedTasks: newTasks },
+    });
+  };
+
+  const addContact = () => {
+    if (newContact.name && newContact.role && newContact.phone) {
       setFormData({
         ...formData,
-        [list]: [...(formData[list] || []), value.trim()],
+        projectContacts: {
+          ...formData.projectContacts,
+          keyContacts: [...formData.projectContacts.keyContacts, { ...newContact }],
+        },
       });
-      setValue("");
+      setNewContact({ name: "", role: "", phone: "", email: "" });
     }
   };
 
-  const removeFromList = (list: "equipmentRequired" | "personnelRequired" | "safetyConsiderations", index: number) => {
+  const removeContact = (index: number) => {
     setFormData({
       ...formData,
-      [list]: (formData[list] || []).filter((_, i) => i !== index),
+      projectContacts: {
+        ...formData.projectContacts,
+        keyContacts: formData.projectContacts.keyContacts.filter((_, i) => i !== index),
+      },
     });
   };
 
@@ -781,236 +808,216 @@ function ProjectDivePlanSection() {
             <div className="space-y-4">
               <Card className="bg-navy-800/50 border-navy-600">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-white text-sm">New Project Dive Plan</CardTitle>
+                  <CardTitle className="text-white text-sm">DD5 Dive Plan - Controlled Fill Zones</CardTitle>
+                  <p className="text-xs text-navy-400">Only editable fields shown. Locked boilerplate sections preserved from master template.</p>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs text-navy-400 mb-1 block">Project Name</label>
-                      <Input
-                        data-testid="input-project-name"
-                        value={formData.projectName}
-                        onChange={(e) => setFormData({ ...formData, projectName: e.target.value })}
-                        className="bg-navy-900 border-navy-600 text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-navy-400 mb-1 block">Project Number</label>
-                      <Input
-                        data-testid="input-project-number"
-                        value={formData.projectNumber}
-                        onChange={(e) => setFormData({ ...formData, projectNumber: e.target.value })}
-                        className="bg-navy-900 border-navy-600 text-white"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs text-navy-400 mb-1 block">Client</label>
-                      <Input
-                        data-testid="input-client"
-                        value={formData.client}
-                        onChange={(e) => setFormData({ ...formData, client: e.target.value })}
-                        className="bg-navy-900 border-navy-600 text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-navy-400 mb-1 block">Location</label>
-                      <Input
-                        data-testid="input-location"
-                        value={formData.location}
-                        onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                        className="bg-navy-900 border-navy-600 text-white"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs text-navy-400 mb-1 block">Dive Supervisor</label>
-                      <Input
-                        data-testid="input-dive-supervisor"
-                        value={formData.diveSupervisor}
-                        onChange={(e) => setFormData({ ...formData, diveSupervisor: e.target.value })}
-                        className="bg-navy-900 border-navy-600 text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-navy-400 mb-1 block">Diving Mode</label>
-                      <Input
-                        data-testid="input-diving-mode"
-                        value={formData.divingMode}
-                        onChange={(e) => setFormData({ ...formData, divingMode: e.target.value })}
-                        placeholder="SCUBA, Surface Supplied, etc."
-                        className="bg-navy-900 border-navy-600 text-white"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs text-navy-400 mb-1 block">Max Depth (FSW)</label>
-                      <Input
-                        data-testid="input-max-depth"
-                        type="number"
-                        value={formData.maxDepthFsw || ""}
-                        onChange={(e) => setFormData({ ...formData, maxDepthFsw: parseInt(e.target.value) || 0 })}
-                        className="bg-navy-900 border-navy-600 text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-navy-400 mb-1 block">Est. Bottom Time</label>
-                      <Input
-                        data-testid="input-bottom-time"
-                        value={formData.estimatedBottomTime}
-                        onChange={(e) => setFormData({ ...formData, estimatedBottomTime: e.target.value })}
-                        placeholder="e.g., 30 minutes"
-                        className="bg-navy-900 border-navy-600 text-white"
-                      />
+                  <div className="bg-navy-900/50 p-3 rounded border border-navy-700">
+                    <h3 className="text-sm font-medium text-white mb-3">Cover Page</h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-navy-400 mb-1 block">Company Name</label>
+                        <Input
+                          data-testid="input-company-name"
+                          value={formData.coverPage.companyName}
+                          onChange={(e) => setFormData({ 
+                            ...formData, 
+                            coverPage: { ...formData.coverPage, companyName: e.target.value } 
+                          })}
+                          className="bg-navy-900 border-navy-600 text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-navy-400 mb-1 block">Project Title</label>
+                        <Input
+                          data-testid="input-project-title"
+                          value={formData.coverPage.projectTitle}
+                          onChange={(e) => setFormData({ 
+                            ...formData, 
+                            coverPage: { ...formData.coverPage, projectTitle: e.target.value } 
+                          })}
+                          className="bg-navy-900 border-navy-600 text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-navy-400 mb-1 block">Job Number</label>
+                        <Input
+                          data-testid="input-job-number"
+                          value={formData.coverPage.jobNumber}
+                          onChange={(e) => setFormData({ 
+                            ...formData, 
+                            coverPage: { ...formData.coverPage, jobNumber: e.target.value } 
+                          })}
+                          className="bg-navy-900 border-navy-600 text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-navy-400 mb-1 block">Client</label>
+                        <Input
+                          data-testid="input-client"
+                          value={formData.coverPage.client}
+                          onChange={(e) => setFormData({ 
+                            ...formData, 
+                            coverPage: { ...formData.coverPage, client: e.target.value } 
+                          })}
+                          className="bg-navy-900 border-navy-600 text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-navy-400 mb-1 block">Site Location</label>
+                        <Input
+                          data-testid="input-site-location"
+                          value={formData.coverPage.siteLocation}
+                          onChange={(e) => setFormData({ 
+                            ...formData, 
+                            coverPage: { ...formData.coverPage, siteLocation: e.target.value } 
+                          })}
+                          className="bg-navy-900 border-navy-600 text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-navy-400 mb-1 block">Submission Date</label>
+                        <Input
+                          data-testid="input-submission-date"
+                          type="date"
+                          value={formData.coverPage.submissionDate}
+                          onChange={(e) => setFormData({ 
+                            ...formData, 
+                            coverPage: { ...formData.coverPage, submissionDate: e.target.value } 
+                          })}
+                          className="bg-navy-900 border-navy-600 text-white"
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  <div>
-                    <label className="text-xs text-navy-400 mb-1 block">Scope of Work</label>
-                    <Textarea
-                      data-testid="input-scope"
-                      value={formData.scopeOfWork}
-                      onChange={(e) => setFormData({ ...formData, scopeOfWork: e.target.value })}
-                      className="bg-navy-900 border-navy-600 text-white min-h-[80px]"
-                    />
+                  <div className="bg-navy-900/50 p-3 rounded border border-navy-700">
+                    <h3 className="text-sm font-medium text-white mb-3">Project Contacts (Section 2.13-2.14)</h3>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs text-navy-400 mb-1 block">Prime Contractor</label>
+                        <Input
+                          data-testid="input-prime-contractor"
+                          value={formData.projectContacts.primeContractor}
+                          onChange={(e) => setFormData({ 
+                            ...formData, 
+                            projectContacts: { ...formData.projectContacts, primeContractor: e.target.value } 
+                          })}
+                          className="bg-navy-900 border-navy-600 text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-navy-400 mb-1 block">Site Address</label>
+                        <Input
+                          data-testid="input-site-address"
+                          value={formData.projectContacts.siteAddress || ""}
+                          onChange={(e) => setFormData({ 
+                            ...formData, 
+                            projectContacts: { ...formData.projectContacts, siteAddress: e.target.value } 
+                          })}
+                          className="bg-navy-900 border-navy-600 text-white"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="text-xs text-navy-400 mb-2 block">Key Contacts</label>
+                        <div className="grid grid-cols-4 gap-2 mb-2">
+                          <Input
+                            data-testid="input-contact-name"
+                            value={newContact.name}
+                            onChange={(e) => setNewContact({ ...newContact, name: e.target.value })}
+                            placeholder="Name"
+                            className="bg-navy-900 border-navy-600 text-white text-sm"
+                          />
+                          <Input
+                            data-testid="input-contact-role"
+                            value={newContact.role}
+                            onChange={(e) => setNewContact({ ...newContact, role: e.target.value })}
+                            placeholder="Role"
+                            className="bg-navy-900 border-navy-600 text-white text-sm"
+                          />
+                          <Input
+                            data-testid="input-contact-phone"
+                            value={newContact.phone}
+                            onChange={(e) => setNewContact({ ...newContact, phone: e.target.value })}
+                            placeholder="Phone"
+                            className="bg-navy-900 border-navy-600 text-white text-sm"
+                          />
+                          <Button size="sm" onClick={addContact} className="bg-blue-600 hover:bg-blue-700">
+                            <Plus className="w-4 h-4" />
+                          </Button>
+                        </div>
+                        <div className="space-y-1">
+                          {formData.projectContacts.keyContacts.map((contact, idx) => (
+                            <div key={idx} className="flex items-center justify-between bg-navy-900 p-2 rounded text-sm">
+                              <span className="text-white">{contact.name} ({contact.role}): {contact.phone}</span>
+                              <Button size="sm" variant="ghost" onClick={() => removeContact(idx)}>
+                                <Trash2 className="w-3 h-3 text-red-400" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="text-xs text-navy-400 mb-1 block">Equipment Required</label>
-                    <div className="flex gap-2 mb-2">
-                      <Input
-                        data-testid="input-new-equipment"
-                        value={newEquipment}
-                        onChange={(e) => setNewEquipment(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && addToList("equipmentRequired", newEquipment, setNewEquipment)}
-                        placeholder="Add equipment item..."
-                        className="bg-navy-900 border-navy-600 text-white"
-                      />
-                      <Button size="sm" onClick={() => addToList("equipmentRequired", newEquipment, setNewEquipment)}>
-                        <Plus className="w-4 h-4" />
-                      </Button>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {formData.equipmentRequired?.map((item, idx) => (
-                        <Badge key={idx} variant="secondary" className="cursor-pointer" onClick={() => removeFromList("equipmentRequired", idx)}>
-                          {item} <Trash2 className="w-3 h-3 ml-1" />
-                        </Badge>
+                  <div className="bg-navy-900/50 p-3 rounded border border-navy-700">
+                    <h3 className="text-sm font-medium text-white mb-2">Section 2.9 - Nature of Work</h3>
+                    <p className="text-xs text-navy-400 mb-3">Select authorized diver tasks from controlled library (no freewriting)</p>
+                    <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto">
+                      {DD5_CONTROLLED_TASK_LIBRARY.map((task) => (
+                        <div
+                          key={task}
+                          data-testid={`task-${task.replace(/\s+/g, "-").toLowerCase()}`}
+                          onClick={() => toggleTask(task)}
+                          className={`flex items-center gap-2 p-2 rounded cursor-pointer text-sm transition-colors ${
+                            formData.natureOfWork.selectedTasks.includes(task)
+                              ? "bg-blue-600/20 border border-blue-500"
+                              : "bg-navy-800 border border-navy-700 hover:border-navy-500"
+                          }`}
+                        >
+                          <div className={`w-4 h-4 rounded flex items-center justify-center ${
+                            formData.natureOfWork.selectedTasks.includes(task)
+                              ? "bg-blue-600"
+                              : "bg-navy-700"
+                          }`}>
+                            {formData.natureOfWork.selectedTasks.includes(task) && (
+                              <Check className="w-3 h-3 text-white" />
+                            )}
+                          </div>
+                          <span className="text-white text-xs">{task}</span>
+                        </div>
                       ))}
                     </div>
-                  </div>
-
-                  <div>
-                    <label className="text-xs text-navy-400 mb-1 block">Personnel Required</label>
-                    <div className="flex gap-2 mb-2">
-                      <Input
-                        data-testid="input-new-personnel"
-                        value={newPersonnel}
-                        onChange={(e) => setNewPersonnel(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && addToList("personnelRequired", newPersonnel, setNewPersonnel)}
-                        placeholder="Add personnel..."
-                        className="bg-navy-900 border-navy-600 text-white"
-                      />
-                      <Button size="sm" onClick={() => addToList("personnelRequired", newPersonnel, setNewPersonnel)}>
-                        <Plus className="w-4 h-4" />
-                      </Button>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {formData.personnelRequired?.map((item, idx) => (
-                        <Badge key={idx} variant="secondary" className="cursor-pointer" onClick={() => removeFromList("personnelRequired", idx)}>
-                          {item} <Trash2 className="w-3 h-3 ml-1" />
-                        </Badge>
-                      ))}
+                    <div className="mt-2 text-xs text-navy-400">
+                      {formData.natureOfWork.selectedTasks.length} task(s) selected
                     </div>
                   </div>
 
-                  <div>
-                    <label className="text-xs text-navy-400 mb-1 block">Decompression Procedure</label>
-                    <Textarea
-                      data-testid="input-decomp"
-                      value={formData.decompProcedure}
-                      onChange={(e) => setFormData({ ...formData, decompProcedure: e.target.value })}
-                      className="bg-navy-900 border-navy-600 text-white min-h-[60px]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs text-navy-400 mb-1 block">Emergency Procedures</label>
-                    <Textarea
-                      data-testid="input-emergency"
-                      value={formData.emergencyProcedures}
-                      onChange={(e) => setFormData({ ...formData, emergencyProcedures: e.target.value })}
-                      className="bg-navy-900 border-navy-600 text-white min-h-[60px]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs text-navy-400 mb-1 block">Communication Plan</label>
-                    <Textarea
-                      data-testid="input-communication"
-                      value={formData.communicationPlan}
-                      onChange={(e) => setFormData({ ...formData, communicationPlan: e.target.value })}
-                      className="bg-navy-900 border-navy-600 text-white min-h-[60px]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs text-navy-400 mb-1 block">Environmental Conditions</label>
-                    <Textarea
-                      data-testid="input-environment"
-                      value={formData.environmentalConditions}
-                      onChange={(e) => setFormData({ ...formData, environmentalConditions: e.target.value })}
-                      className="bg-navy-900 border-navy-600 text-white min-h-[60px]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs text-navy-400 mb-1 block">Safety Considerations</label>
-                    <div className="flex gap-2 mb-2">
-                      <Input
-                        data-testid="input-new-safety"
-                        value={newSafety}
-                        onChange={(e) => setNewSafety(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && addToList("safetyConsiderations", newSafety, setNewSafety)}
-                        placeholder="Add safety consideration..."
-                        className="bg-navy-900 border-navy-600 text-white"
-                      />
-                      <Button size="sm" onClick={() => addToList("safetyConsiderations", newSafety, setNewSafety)}>
-                        <Plus className="w-4 h-4" />
-                      </Button>
+                  <div className="bg-amber-900/20 border border-amber-600/30 rounded p-3">
+                    <div className="flex items-start gap-2">
+                      <FileText className="w-4 h-4 text-amber-400 mt-0.5" />
+                      <div className="text-xs text-amber-200">
+                        <strong>Locked Sections (preserved from DD5 template):</strong>
+                        <ul className="mt-1 space-y-0.5 text-amber-300">
+                          <li>Section 2.5 - Team Members and Duties</li>
+                          <li>Section 2.12 - Equipment Procedures Checklist</li>
+                          <li>Sections 4.9-4.18 - Emergency Procedures</li>
+                          <li>Section 5 - Reporting + Forms</li>
+                          <li>All EM385 tables, USN tables, appendices</li>
+                        </ul>
+                      </div>
                     </div>
-                    <div className="flex flex-wrap gap-1">
-                      {formData.safetyConsiderations?.map((item, idx) => (
-                        <Badge key={idx} variant="secondary" className="cursor-pointer" onClick={() => removeFromList("safetyConsiderations", idx)}>
-                          {item} <Trash2 className="w-3 h-3 ml-1" />
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-xs text-navy-400 mb-1 block">Additional Notes</label>
-                    <Textarea
-                      data-testid="input-notes"
-                      value={formData.additionalNotes}
-                      onChange={(e) => setFormData({ ...formData, additionalNotes: e.target.value })}
-                      className="bg-navy-900 border-navy-600 text-white min-h-[60px]"
-                    />
                   </div>
 
                   <div className="flex gap-2">
                     <Button
                       data-testid="button-save-project-plan"
                       onClick={() => createPlanMutation.mutate()}
-                      disabled={createPlanMutation.isPending}
+                      disabled={createPlanMutation.isPending || formData.natureOfWork.selectedTasks.length === 0}
                       className="flex-1 bg-blue-600 hover:bg-blue-700"
                     >
-                      Create Draft
+                      Create Draft (Rev 0)
                     </Button>
                     <Button
                       variant="outline"
@@ -1131,72 +1138,81 @@ function ProjectDivePlanSection() {
                     const data = selectedPlan.planData as ProjectDivePlanData;
                     return (
                       <>
-                        <div className="grid grid-cols-2 gap-2 text-sm">
-                          <div>
-                            <span className="text-navy-400">Project:</span>{" "}
-                            <span className="text-white">{data.projectName}</span>
-                          </div>
-                          <div>
-                            <span className="text-navy-400">Client:</span>{" "}
-                            <span className="text-white">{data.client}</span>
-                          </div>
-                          <div>
-                            <span className="text-navy-400">Location:</span>{" "}
-                            <span className="text-white">{data.location}</span>
-                          </div>
-                          <div>
-                            <span className="text-navy-400">Supervisor:</span>{" "}
-                            <span className="text-white">{data.diveSupervisor}</span>
-                          </div>
-                          <div>
-                            <span className="text-navy-400">Diving Mode:</span>{" "}
-                            <span className="text-white">{data.divingMode}</span>
-                          </div>
-                          <div>
-                            <span className="text-navy-400">Max Depth:</span>{" "}
-                            <span className="text-white">{data.maxDepthFsw} FSW</span>
+                        <div className="bg-navy-900/50 p-2 rounded">
+                          <h4 className="text-navy-400 text-xs mb-2">Cover Page</h4>
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <div>
+                              <span className="text-navy-400">Company:</span>{" "}
+                              <span className="text-white">{data.coverPage?.companyName}</span>
+                            </div>
+                            <div>
+                              <span className="text-navy-400">Project:</span>{" "}
+                              <span className="text-white">{data.coverPage?.projectTitle}</span>
+                            </div>
+                            <div>
+                              <span className="text-navy-400">Job #:</span>{" "}
+                              <span className="text-white">{data.coverPage?.jobNumber}</span>
+                            </div>
+                            <div>
+                              <span className="text-navy-400">Client:</span>{" "}
+                              <span className="text-white">{data.coverPage?.client}</span>
+                            </div>
+                            <div>
+                              <span className="text-navy-400">Location:</span>{" "}
+                              <span className="text-white">{data.coverPage?.siteLocation}</span>
+                            </div>
+                            <div>
+                              <span className="text-navy-400">Submitted:</span>{" "}
+                              <span className="text-white">{data.coverPage?.submissionDate}</span>
+                            </div>
                           </div>
                         </div>
-                        
-                        {data.scopeOfWork && (
-                          <div>
-                            <h4 className="text-navy-400 text-xs mb-1">Scope of Work</h4>
-                            <p className="text-white text-sm">{data.scopeOfWork}</p>
-                          </div>
-                        )}
 
-                        {data.equipmentRequired && data.equipmentRequired.length > 0 && (
-                          <div>
-                            <h4 className="text-navy-400 text-xs mb-1">Equipment Required</h4>
-                            <div className="flex flex-wrap gap-1">
-                              {data.equipmentRequired.map((item, idx) => (
-                                <Badge key={idx} variant="secondary" className="text-xs">{item}</Badge>
+                        {data.projectContacts && (
+                          <div className="bg-navy-900/50 p-2 rounded">
+                            <h4 className="text-navy-400 text-xs mb-2">Project Contacts</h4>
+                            <div className="text-sm">
+                              <div className="mb-1">
+                                <span className="text-navy-400">Prime Contractor:</span>{" "}
+                                <span className="text-white">{data.projectContacts.primeContractor}</span>
+                              </div>
+                              {data.projectContacts.keyContacts?.map((contact, idx) => (
+                                <div key={idx} className="text-white text-xs">
+                                  {contact.name} ({contact.role}): {contact.phone}
+                                </div>
                               ))}
                             </div>
                           </div>
                         )}
 
-                        {data.personnelRequired && data.personnelRequired.length > 0 && (
-                          <div>
-                            <h4 className="text-navy-400 text-xs mb-1">Personnel Required</h4>
+                        {data.natureOfWork?.selectedTasks && data.natureOfWork.selectedTasks.length > 0 && (
+                          <div className="bg-navy-900/50 p-2 rounded">
+                            <h4 className="text-navy-400 text-xs mb-2">Section 2.9 - Nature of Work</h4>
                             <div className="flex flex-wrap gap-1">
-                              {data.personnelRequired.map((item, idx) => (
-                                <Badge key={idx} variant="secondary" className="text-xs">{item}</Badge>
+                              {data.natureOfWork.selectedTasks.map((task, idx) => (
+                                <Badge key={idx} variant="secondary" className="text-xs">{task}</Badge>
                               ))}
                             </div>
                           </div>
                         )}
 
-                        {data.safetyConsiderations && data.safetyConsiderations.length > 0 && (
-                          <div>
-                            <h4 className="text-navy-400 text-xs mb-1">Safety Considerations</h4>
-                            <div className="flex flex-wrap gap-1">
-                              {data.safetyConsiderations.map((item, idx) => (
-                                <Badge key={idx} variant="outline" className="text-xs border-yellow-500 text-yellow-400">{item}</Badge>
+                        {data.revisionHistory && data.revisionHistory.length > 0 && (
+                          <div className="bg-navy-900/50 p-2 rounded">
+                            <h4 className="text-navy-400 text-xs mb-2">Revision History</h4>
+                            <div className="space-y-1">
+                              {data.revisionHistory.map((entry, idx) => (
+                                <div key={idx} className="text-xs text-white flex justify-between">
+                                  <span>Rev {entry.revision}: {entry.description}</span>
+                                  <span className="text-navy-400">{entry.section} - {entry.date}</span>
+                                </div>
                               ))}
                             </div>
                           </div>
                         )}
+
+                        <div className="text-xs text-navy-500 italic">
+                          Locked sections (2.5, 2.12, 4.9-4.18, Section 5) preserved from DD5 template
+                        </div>
                       </>
                     );
                   })()}

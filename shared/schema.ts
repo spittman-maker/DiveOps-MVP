@@ -463,25 +463,101 @@ export type DivePlanTemplate = typeof divePlanTemplates.$inferSelect;
 export const projectDivePlanStatusEnum = z.enum(["Draft", "Submitted", "Approved", "Superseded"]);
 export type ProjectDivePlanStatus = z.infer<typeof projectDivePlanStatusEnum>;
 
-export interface ProjectDivePlanData {
-  projectName: string;
-  projectNumber: string;
+// DD5 Dive Plan - CONTROLLED FILL ZONES ONLY
+// LOCKED SECTIONS (never modified): 2.5, 2.12, 4.9-4.18, Section 5, all EM385/USN tables
+export interface DD5CoverPage {
+  companyName: string;
+  companyLogo?: string;
+  projectTitle: string;
+  jobNumber: string;
   client: string;
-  location: string;
-  diveSupervisor: string;
-  divingMode: string;
-  maxDepthFsw: number;
-  estimatedBottomTime: string;
-  scopeOfWork: string;
-  equipmentRequired: string[];
-  personnelRequired: string[];
-  emergencyProcedures: string;
-  communicationPlan: string;
-  decompProcedure: string;
-  safetyConsiderations: string[];
-  environmentalConditions: string;
-  additionalNotes: string;
+  siteLocation: string;
+  submissionDate: string;
+  revisionNumber: number;
 }
+
+export interface DD5Contact {
+  name: string;
+  role: string;
+  phone: string;
+  email?: string;
+}
+
+export interface DD5ProjectContacts {
+  primeContractor: string;
+  siteAddress?: string;
+  keyContacts: DD5Contact[];
+}
+
+// Section 2.9 - Nature of Work (selected from controlled task library, no freewriting)
+export interface DD5NatureOfWork {
+  selectedTasks: string[];  // From controlled task library only
+}
+
+// Revision tracker entry
+export interface DD5RevisionEntry {
+  revision: number;
+  date: string;
+  description: string;
+  section: string;
+  changedBy: string;
+}
+
+export interface ProjectDivePlanData {
+  coverPage: DD5CoverPage;
+  projectContacts: DD5ProjectContacts;
+  natureOfWork: DD5NatureOfWork;
+  revisionHistory: DD5RevisionEntry[];
+  previousPayloadHash?: string;
+}
+
+// Controlled task library for Section 2.9 Nature of Work
+export const DD5_CONTROLLED_TASK_LIBRARY = [
+  "Underwater inspection",
+  "Hull cleaning",
+  "Underwater welding",
+  "Underwater cutting",
+  "Pipeline inspection",
+  "Pipeline repair",
+  "Debris removal",
+  "Salvage operations",
+  "Underwater photography/video",
+  "Cathodic protection survey",
+  "Anode installation/replacement",
+  "Structural inspection",
+  "NDT (Non-Destructive Testing)",
+  "Concrete repair",
+  "Jacket leg inspection",
+  "Riser inspection",
+  "Pile inspection",
+  "Mooring inspection",
+  "Anchor handling",
+  "Subsea equipment installation",
+  "Subsea equipment recovery",
+  "Valve operation",
+  "Flange connection/disconnection",
+  "Hot tap operations",
+  "Cold tap operations",
+  "Hydro-jetting",
+  "Marine growth removal",
+  "Sacrificial anode survey",
+  "Confined space entry",
+  "Search and recovery",
+] as const;
+
+// Deterministic revision description mapping
+export const DD5_REVISION_MAPPING: Record<string, { description: string; section: string }> = {
+  "coverPage.companyName": { description: "Updated company name", section: "Cover" },
+  "coverPage.projectTitle": { description: "Updated project title", section: "Cover" },
+  "coverPage.jobNumber": { description: "Updated job number", section: "Cover" },
+  "coverPage.client": { description: "Updated client", section: "Cover" },
+  "coverPage.siteLocation": { description: "Updated site location", section: "Cover" },
+  "coverPage.submissionDate": { description: "Updated submission date", section: "Cover" },
+  "projectContacts.primeContractor": { description: "Updated prime contractor", section: "2.13-2.14" },
+  "projectContacts.keyContacts": { description: "Updated contact list", section: "2.13-2.14" },
+  "projectContacts.siteAddress": { description: "Updated site address", section: "2.13-2.14" },
+  "natureOfWork.selectedTasks": { description: "Updated scope of diver tasks", section: "2.9" },
+};
 
 export const projectDivePlans = pgTable("project_dive_plans", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

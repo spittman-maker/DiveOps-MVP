@@ -1159,7 +1159,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/project-dive-plans/:id/download", requireAuth, async (req: Request, res: Response) => {
-    const { generateDivePlanDocx } = await import("./dive-plan-generator");
+    const { generateDD5DivePlanDocx } = await import("./dive-plan-generator");
     
     const plan = await storage.getProjectDivePlan(req.params.id);
     if (!plan) return res.status(404).json({ message: "Project dive plan not found" });
@@ -1167,13 +1167,12 @@ export async function registerRoutes(
     const creator = await storage.getUser(plan.createdBy);
     const preparedBy = creator?.displayName || creator?.username || "Unknown";
     
-    const buffer = await generateDivePlanDocx(
+    const buffer = await generateDD5DivePlanDocx(
       plan.planData as any,
-      plan.revision,
       preparedBy
     );
     
-    const fileName = `DivePlan_Rev${plan.revision}.docx`;
+    const fileName = `DD5_DivePlan_Rev${plan.revision}.docx`;
     
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
