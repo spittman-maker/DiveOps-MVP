@@ -434,3 +434,75 @@ export const dailySummaries = pgTable("daily_summaries", {
 export const insertDailySummarySchema = createInsertSchema(dailySummaries).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertDailySummary = z.infer<typeof insertDailySummarySchema>;
 export type DailySummary = typeof dailySummaries.$inferSelect;
+
+// ────────────────────────────────────────────────────────────────────────────
+// DIVE PLAN TEMPLATES (Locked document templates like DD5)
+// ────────────────────────────────────────────────────────────────────────────
+
+export const divePlanTemplates = pgTable("dive_plan_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  templateType: text("template_type").notNull().$type<"DD5" | "COMPANY" | "CLIENT">().default("DD5"),
+  templateData: text("template_data").notNull(),
+  placeholders: jsonb("placeholders").$type<string[]>().notNull().default([]),
+  isLocked: boolean("is_locked").notNull().default(true),
+  uploadedBy: varchar("uploaded_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertDivePlanTemplateSchema = createInsertSchema(divePlanTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDivePlanTemplate = z.infer<typeof insertDivePlanTemplateSchema>;
+export type DivePlanTemplate = typeof divePlanTemplates.$inferSelect;
+
+// ────────────────────────────────────────────────────────────────────────────
+// PROJECT DIVE PLANS (Project-level document with revisions)
+// ────────────────────────────────────────────────────────────────────────────
+
+export const projectDivePlanStatusEnum = z.enum(["Draft", "Submitted", "Approved", "Superseded"]);
+export type ProjectDivePlanStatus = z.infer<typeof projectDivePlanStatusEnum>;
+
+export interface ProjectDivePlanData {
+  projectName: string;
+  projectNumber: string;
+  client: string;
+  location: string;
+  diveSupervisor: string;
+  divingMode: string;
+  maxDepthFsw: number;
+  estimatedBottomTime: string;
+  scopeOfWork: string;
+  equipmentRequired: string[];
+  personnelRequired: string[];
+  emergencyProcedures: string;
+  communicationPlan: string;
+  decompProcedure: string;
+  safetyConsiderations: string[];
+  environmentalConditions: string;
+  additionalNotes: string;
+}
+
+export const projectDivePlans = pgTable("project_dive_plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  templateId: varchar("template_id").references(() => divePlanTemplates.id),
+  revision: integer("revision").notNull().default(0),
+  status: text("status").notNull().$type<ProjectDivePlanStatus>().default("Draft"),
+  planData: jsonb("plan_data").$type<ProjectDivePlanData>().notNull(),
+  renderedDocx: text("rendered_docx"),
+  submittedBy: varchar("submitted_by").references(() => users.id),
+  submittedAt: timestamp("submitted_at"),
+  approvedBy: varchar("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  supersededBy: varchar("superseded_by").references(() => projectDivePlans.id),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  projectRevisionIdx: index("project_dive_plans_project_revision_idx").on(t.projectId, t.revision),
+}));
+
+export const insertProjectDivePlanSchema = createInsertSchema(projectDivePlans).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertProjectDivePlan = z.infer<typeof insertProjectDivePlanSchema>;
+export type ProjectDivePlan = typeof projectDivePlans.$inferSelect;
