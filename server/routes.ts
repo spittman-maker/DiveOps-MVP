@@ -4,6 +4,7 @@ import express from "express";
 import { storage } from "./storage";
 import { passport, hashPassword, requireAuth, requireRole, canWriteLogEvents, isGod, isAdminOrHigher } from "./auth";
 import { classifyEvent, extractData, parseEventTime, generateRiskId, getMasterLogSection, renderInternalCanvasLine } from "./extraction";
+import { processStructuredLog } from "./logging";
 import { generateAIRenders } from "./ai-drafting";
 import { generateShiftExport } from "./document-export";
 import { speechToTextStream, ensureCompatibleFormat } from "./replit_integrations/audio/client";
@@ -463,6 +464,43 @@ export async function registerRoutes(
       if (day.status === "DRAFT") {
         await storage.updateDay(day.id, { status: "ACTIVE" });
       }
+      
+      // Process structured log asynchronously (normalize, classify, validate)
+      processStructuredLog(data.rawText)
+        .then(async (result) => {
+          // Only store structured payload if validation passed
+          if (result.validationPassed) {
+            await storage.updateLogEvent(logEvent.id, {
+              structuredPayload: result.payload as any,
+              validationPassed: true,
+            });
+            
+            // Create risk items only from validated payload
+            if (result.payload.risks && result.payload.risks.length > 0) {
+              const existingRisks = await storage.getRiskItemsByDay(day.id);
+              for (let i = 0; i < result.payload.risks.length; i++) {
+                const risk = result.payload.risks[i];
+                const riskId = generateRiskId(day.date, existingRisks.length + i + 1);
+                await storage.createRiskItem({
+                  dayId: day.id,
+                  projectId: data.projectId,
+                  riskId,
+                  triggerEventId: logEvent.id,
+                  description: risk.description,
+                  category: "operational",
+                  status: "open",
+                });
+              }
+            }
+          } else {
+            // Mark as failed validation without storing bad payload
+            await storage.updateLogEvent(logEvent.id, {
+              validationPassed: false,
+            });
+            console.warn("Structured log validation failed:", result.error);
+          }
+        })
+        .catch(err => console.error("Structured log processing failed:", err));
       
       // Generate AI renders asynchronously (don't block the response)
       generateAIRenders(data.rawText, eventTime, category)

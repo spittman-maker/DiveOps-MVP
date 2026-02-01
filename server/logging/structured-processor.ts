@@ -97,21 +97,8 @@ export async function processStructuredLog(rawText: string): Promise<ProcessedLo
   } catch (error: any) {
     console.error("Structured log processing failed:", error.message);
     
-    const fallbackPayload: StructuredLogPayload = {
-      directives: classified.directives
-        .filter(d => d.time)
-        .map(d => ({
-          time: d.time!,
-          text: d.raw.replace(/\[?\d{2}:\d{2}\]?\s*/g, "").trim(),
-        })),
-      station_logs: classified.station.map(s => ({
-        text: s.raw.replace(/\[?\d{2}:\d{2}\]?\s*/g, "").trim(),
-      })),
-      risks: [],
-    };
-    
     return {
-      payload: fallbackPayload,
+      payload: { directives: [], station_logs: [], risks: [] },
       rawInput: rawText,
       classified,
       validationPassed: false,

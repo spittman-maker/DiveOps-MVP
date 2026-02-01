@@ -287,6 +287,12 @@ export const logEvents = pgTable("log_events", {
   rawText: text("raw_text").notNull(),
   category: text("category").$type<"dive_op" | "directive" | "safety" | "ops" | "general">(),
   extractedJson: jsonb("extracted_json").$type<Record<string, any>>(),
+  structuredPayload: jsonb("structured_payload").$type<{
+    directives: Array<{ time: string; text: string }>;
+    station_logs: Array<{ text: string }>;
+    risks: Array<{ riskId: string; description: string; source: string }>;
+  }>(),
+  validationPassed: boolean("validation_passed"),
   editReason: text("edit_reason"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
