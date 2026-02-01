@@ -81,6 +81,9 @@ Timestamps are OPTIONAL for routine production:
 For timestamped: "At HH:MM, [action with full detail]."
 For non-timestamped: "[Action with full detail]."
 
+## CRITICAL VALIDATION
+If you place a timestamp anywhere inside station_logs, return an error instead of output. Output JSON only.
+
 ## RULES
 - Keep ALL diver names/initials - this is critical for accountability
 - Keep ALL task specifics - no generic descriptions like "performed tasks"
