@@ -1026,6 +1026,59 @@ export async function registerRoutes(
   });
 
   // ──────────────────────────────────────────────────────────────────────────
+  // WORK LIBRARY & COMPANY DATA
+  // ──────────────────────────────────────────────────────────────────────────
+
+  app.get("/api/work-library", requireAuth, async (_req: Request, res: Response) => {
+    const items = await storage.getActiveWorkLibraryItems();
+    res.json(items);
+  });
+
+  app.get("/api/companies", requireAuth, async (_req: Request, res: Response) => {
+    const companies = await storage.getAllCompanies();
+    res.json(companies);
+  });
+
+  app.get("/api/companies/:companyId/roles", requireAuth, async (req: Request, res: Response) => {
+    const roles = await storage.getCompanyRoles(req.params.companyId as string);
+    res.json(roles);
+  });
+
+  app.get("/api/companies/:companyId/contact-defaults", requireAuth, async (req: Request, res: Response) => {
+    const defaults = await storage.getCompanyContactsDefaults(req.params.companyId as string);
+    res.json(defaults);
+  });
+
+  app.get("/api/projects/:projectId/work-selections", requireAuth, async (req: Request, res: Response) => {
+    const selections = await storage.getProjectWorkSelections(req.params.projectId as string);
+    res.json(selections);
+  });
+
+  app.put("/api/projects/:projectId/work-selections", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    const { workItemIds } = req.body;
+    await storage.setProjectWorkSelections(req.params.projectId as string, workItemIds || []);
+    const selections = await storage.getProjectWorkSelections(req.params.projectId as string);
+    res.json(selections);
+  });
+
+  app.get("/api/projects/:projectId/contacts", requireAuth, async (req: Request, res: Response) => {
+    const contacts = await storage.getProjectContacts(req.params.projectId as string);
+    res.json(contacts);
+  });
+
+  app.put("/api/projects/:projectId/contacts/:roleId", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    const { name, phone, email } = req.body;
+    const contact = await storage.setProjectContact(
+      req.params.projectId as string,
+      req.params.roleId as string,
+      name,
+      phone,
+      email
+    );
+    res.json(contact);
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
   // DIVE PLAN TEMPLATES
   // ──────────────────────────────────────────────────────────────────────────
 

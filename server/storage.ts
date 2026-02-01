@@ -25,6 +25,12 @@ import type {
   UserPreferences, InsertUserPreferences,
   LibraryDocument, InsertLibraryDocument,
   LibraryExport, InsertLibraryExport,
+  Company, InsertCompany,
+  WorkLibraryItem, InsertWorkLibraryItem,
+  CompanyRole, InsertCompanyRole,
+  CompanyContactsDefault, InsertCompanyContactsDefault,
+  ProjectWorkSelection, InsertProjectWorkSelection,
+  ProjectContact, InsertProjectContact,
 } from "@shared/schema";
 
 const pool = new Pool({
@@ -155,6 +161,28 @@ export interface IStorage {
   getActiveProjectDivePlan(projectId: string): Promise<ProjectDivePlan | undefined>;
   getLatestProjectDivePlanRevision(projectId: string): Promise<number>;
   updateProjectDivePlan(id: string, updates: Partial<InsertProjectDivePlan>): Promise<ProjectDivePlan | undefined>;
+
+  // Companies
+  getCompany(id: string): Promise<Company | undefined>;
+  getAllCompanies(): Promise<Company[]>;
+
+  // Work Library
+  getAllWorkLibraryItems(): Promise<WorkLibraryItem[]>;
+  getActiveWorkLibraryItems(): Promise<WorkLibraryItem[]>;
+
+  // Company Roles
+  getCompanyRoles(companyId: string): Promise<CompanyRole[]>;
+
+  // Company Contact Defaults
+  getCompanyContactsDefaults(companyId: string): Promise<(CompanyContactsDefault & { roleName: string; sortOrder: number })[]>;
+
+  // Project Work Selections
+  getProjectWorkSelections(projectId: string): Promise<(ProjectWorkSelection & { category: string; label: string })[]>;
+  setProjectWorkSelections(projectId: string, workItemIds: string[]): Promise<void>;
+
+  // Project Contacts
+  getProjectContacts(projectId: string): Promise<(ProjectContact & { roleName: string; sortOrder: number })[]>;
+  setProjectContact(projectId: string, roleId: string, name: string, phone: string, email?: string): Promise<ProjectContact>;
 }
 
 export class DbStorage implements IStorage {
@@ -723,6 +751,128 @@ export class DbStorage implements IStorage {
       .where(eq(schema.projectDivePlans.id, id))
       .returning();
     return updated;
+  }
+
+  // Companies
+  async getCompany(id: string): Promise<Company | undefined> {
+    const [company] = await db.select().from(schema.companies)
+      .where(eq(schema.companies.companyId, id));
+    return company;
+  }
+
+  async getAllCompanies(): Promise<Company[]> {
+    return await db.select().from(schema.companies);
+  }
+
+  // Work Library
+  async getAllWorkLibraryItems(): Promise<WorkLibraryItem[]> {
+    return await db.select().from(schema.workLibraryItems)
+      .orderBy(schema.workLibraryItems.category, schema.workLibraryItems.label);
+  }
+
+  async getActiveWorkLibraryItems(): Promise<WorkLibraryItem[]> {
+    return await db.select().from(schema.workLibraryItems)
+      .where(eq(schema.workLibraryItems.isActive, true))
+      .orderBy(schema.workLibraryItems.category, schema.workLibraryItems.label);
+  }
+
+  // Company Roles
+  async getCompanyRoles(companyId: string): Promise<CompanyRole[]> {
+    return await db.select().from(schema.companyRoles)
+      .where(eq(schema.companyRoles.companyId, companyId))
+      .orderBy(schema.companyRoles.sortOrder);
+  }
+
+  // Company Contact Defaults
+  async getCompanyContactsDefaults(companyId: string): Promise<(CompanyContactsDefault & { roleName: string; sortOrder: number })[]> {
+    const results = await db.select({
+      companyId: schema.companyContactsDefaults.companyId,
+      roleId: schema.companyContactsDefaults.roleId,
+      defaultName: schema.companyContactsDefaults.defaultName,
+      defaultPhone: schema.companyContactsDefaults.defaultPhone,
+      defaultEmail: schema.companyContactsDefaults.defaultEmail,
+      roleName: schema.companyRoles.roleName,
+      sortOrder: schema.companyRoles.sortOrder,
+    })
+      .from(schema.companyContactsDefaults)
+      .innerJoin(schema.companyRoles, eq(schema.companyContactsDefaults.roleId, schema.companyRoles.roleId))
+      .where(eq(schema.companyContactsDefaults.companyId, companyId))
+      .orderBy(schema.companyRoles.sortOrder);
+    return results;
+  }
+
+  // Project Work Selections
+  async getProjectWorkSelections(projectId: string): Promise<(ProjectWorkSelection & { category: string; label: string })[]> {
+    const results = await db.select({
+      id: schema.projectWorkSelections.id,
+      projectId: schema.projectWorkSelections.projectId,
+      workItemId: schema.projectWorkSelections.workItemId,
+      sortOrder: schema.projectWorkSelections.sortOrder,
+      createdAt: schema.projectWorkSelections.createdAt,
+      category: schema.workLibraryItems.category,
+      label: schema.workLibraryItems.label,
+    })
+      .from(schema.projectWorkSelections)
+      .innerJoin(schema.workLibraryItems, eq(schema.projectWorkSelections.workItemId, schema.workLibraryItems.workItemId))
+      .where(eq(schema.projectWorkSelections.projectId, projectId))
+      .orderBy(schema.projectWorkSelections.sortOrder);
+    return results;
+  }
+
+  async setProjectWorkSelections(projectId: string, workItemIds: string[]): Promise<void> {
+    await db.delete(schema.projectWorkSelections)
+      .where(eq(schema.projectWorkSelections.projectId, projectId));
+    
+    if (workItemIds.length > 0) {
+      await db.insert(schema.projectWorkSelections).values(
+        workItemIds.map((workItemId, idx) => ({
+          projectId,
+          workItemId,
+          sortOrder: idx,
+        }))
+      );
+    }
+  }
+
+  // Project Contacts
+  async getProjectContacts(projectId: string): Promise<(ProjectContact & { roleName: string; sortOrder: number })[]> {
+    const results = await db.select({
+      id: schema.projectContacts.id,
+      projectId: schema.projectContacts.projectId,
+      roleId: schema.projectContacts.roleId,
+      contactName: schema.projectContacts.contactName,
+      contactPhone: schema.projectContacts.contactPhone,
+      contactEmail: schema.projectContacts.contactEmail,
+      createdAt: schema.projectContacts.createdAt,
+      roleName: schema.companyRoles.roleName,
+      sortOrder: schema.companyRoles.sortOrder,
+    })
+      .from(schema.projectContacts)
+      .innerJoin(schema.companyRoles, eq(schema.projectContacts.roleId, schema.companyRoles.roleId))
+      .where(eq(schema.projectContacts.projectId, projectId))
+      .orderBy(schema.companyRoles.sortOrder);
+    return results;
+  }
+
+  async setProjectContact(projectId: string, roleId: string, name: string, phone: string, email?: string): Promise<ProjectContact> {
+    const existing = await db.select().from(schema.projectContacts)
+      .where(and(
+        eq(schema.projectContacts.projectId, projectId),
+        eq(schema.projectContacts.roleId, roleId)
+      ));
+    
+    if (existing.length > 0) {
+      const [updated] = await db.update(schema.projectContacts)
+        .set({ contactName: name, contactPhone: phone, contactEmail: email })
+        .where(eq(schema.projectContacts.id, existing[0].id))
+        .returning();
+      return updated!;
+    } else {
+      const [created] = await db.insert(schema.projectContacts)
+        .values({ projectId, roleId, contactName: name, contactPhone: phone, contactEmail: email })
+        .returning();
+      return created!;
+    }
   }
 }
 

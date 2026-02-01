@@ -1,0 +1,52 @@
+import {
+  pgTable,
+  uuid,
+  text,
+  integer,
+  boolean,
+  timestamp,
+  primaryKey,
+} from "drizzle-orm/pg-core";
+
+// ========== Companies (tenants) ==========
+export const companies = pgTable("companies", {
+  companyId: uuid("company_id").defaultRandom().primaryKey(),
+  companyName: text("company_name").notNull(),
+  // Store logo as a path or object storage key.
+  logoAssetKey: text("logo_asset_key"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ========== Work library (global, shared across tenants) ==========
+export const workLibraryItems = pgTable("work_library_items", {
+  workItemId: uuid("work_item_id").defaultRandom().primaryKey(),
+  category: text("category").notNull(), // e.g., "Demolition"
+  label: text("label").notNull(),       // e.g., "Underwater demolition"
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ========== Company roles (per tenant) ==========
+export const companyRoles = pgTable("company_roles", {
+  roleId: uuid("role_id").defaultRandom().primaryKey(),
+  companyId: uuid("company_id").notNull().references(() => companies.companyId, { onDelete: "cascade" }),
+  roleName: text("role_name").notNull(),   // e.g., "Ops/PM"
+  sortOrder: integer("sort_order").notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+});
+
+// Defaults per role (fallback if project-level contact not set)
+export const companyContactsDefaults = pgTable(
+  "company_contacts_defaults",
+  {
+    companyId: uuid("company_id").notNull().references(() => companies.companyId, { onDelete: "cascade" }),
+    roleId: uuid("role_id").notNull().references(() => companyRoles.roleId, { onDelete: "cascade" }),
+    defaultName: text("default_name").notNull().default("TBD"),
+    defaultPhone: text("default_phone").notNull().default("TBD"),
+    defaultEmail: text("default_email").notNull().default("TBD"),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.companyId, t.roleId] }),
+  })
+);

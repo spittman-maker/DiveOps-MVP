@@ -1,0 +1,103 @@
+import { db } from "./client"; // your drizzle client export
+import {
+  companies,
+  companyRoles,
+  companyContactsDefaults,
+  workLibraryItems,
+} from "./schema";
+import { eq, and } from "drizzle-orm";
+
+/**
+ * Seeds:
+ * - global work library (once)
+ * - one company tenant + default roles + TBD contact defaults (per company)
+ *
+ * Run it per environment as needed.
+ */
+
+const WORK_LIBRARY = [
+  { category: "Demolition", label: "Underwater demolition" },
+  { category: "Construction", label: "Underwater construction" },
+  { category: "Inspection", label: "Underwater inspection" },
+  { category: "Rigging", label: "Underwater rigging" },
+  { category: "Concrete", label: "Concrete tremie placement" },
+  { category: "Welding-Burning", label: "Underwater welding" },
+  { category: "Welding-Burning", label: "Underwater burning" },
+  { category: "Emergency Support", label: "Emergency dive support / call-out" },
+  { category: "Salvage", label: "Salvage support" },
+  { category: "Jetting-Dredging", label: "Jetting / dredging support" },
+  { category: "Pipeline Repair", label: "Pipeline repair" },
+  { category: "Pile Jacket Installation", label: "Pile jacket installation" },
+  { category: "Flange Up", label: "Flange-up / fit-up" },
+] as const;
+
+const DEFAULT_ROLES = [
+  { roleName: "Ops/PM", sortOrder: 10 },
+  { roleName: "Diving Superintendent", sortOrder: 20 },
+  { roleName: "Dive Supervisor", sortOrder: 30 },
+  { roleName: "HSE", sortOrder: 40 },
+  { roleName: "Chamber Operator", sortOrder: 50 },
+] as const;
+
+async function seedWorkLibraryOnce() {
+  // Insert only missing labels (idempotent-ish).
+  // If you want strict idempotency, add a unique index on (category,label).
+  for (const item of WORK_LIBRARY) {
+    const existing = await db
+      .select({ label: workLibraryItems.label })
+      .from(workLibraryItems)
+      .where(and(eq(workLibraryItems.category, item.category), eq(workLibraryItems.label, item.label)))
+      .limit(1);
+
+    if (existing.length === 0) {
+      await db.insert(workLibraryItems).values(item);
+    }
+  }
+}
+
+async function seedCompanyWithDefaultRoles(companyName: string, logoAssetKey?: string) {
+  // Create company
+  const [company] = await db
+    .insert(companies)
+    .values({ companyName, logoAssetKey })
+    .returning({ companyId: companies.companyId });
+
+  // Insert roles and defaults
+  const insertedRoles = await db
+    .insert(companyRoles)
+    .values(DEFAULT_ROLES.map((r) => ({ ...r, companyId: company.companyId })))
+    .returning({ roleId: companyRoles.roleId });
+
+  // Role defaults: TBD
+  await db.insert(companyContactsDefaults).values(
+    insertedRoles.map((r) => ({
+      companyId: company.companyId,
+      roleId: r.roleId,
+      defaultName: "TBD",
+      defaultPhone: "TBD",
+      defaultEmail: "TBD",
+    }))
+  );
+
+  return company.companyId;
+}
+
+async function main() {
+  await seedWorkLibraryOnce();
+
+  // Example: seed one tenant.
+  // For your product, call seedCompanyWithDefaultRoles when onboarding a new company.
+  const companyId = await seedCompanyWithDefaultRoles(
+    "Precision SubSea Group LLC",
+    "assets/logos/precision.jpg"
+  );
+
+  // eslint-disable-next-line no-console
+  console.log("Seed complete. company_id =", companyId);
+}
+
+main().catch((e) => {
+  // eslint-disable-next-line no-console
+  console.error(e);
+  process.exit(1);
+});

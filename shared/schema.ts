@@ -1,7 +1,115 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, jsonb, boolean, index, primaryKey, serial } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, jsonb, boolean, index, primaryKey, serial, uuid, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+// ────────────────────────────────────────────────────────────────────────────
+// COMPANIES (multi-tenant support)
+// ────────────────────────────────────────────────────────────────────────────
+
+export const companies = pgTable("companies", {
+  companyId: uuid("company_id").defaultRandom().primaryKey(),
+  companyName: text("company_name").notNull(),
+  logoAssetKey: text("logo_asset_key"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const insertCompanySchema = createInsertSchema(companies).omit({ companyId: true, createdAt: true, updatedAt: true });
+export type InsertCompany = z.infer<typeof insertCompanySchema>;
+export type Company = typeof companies.$inferSelect;
+
+// ────────────────────────────────────────────────────────────────────────────
+// WORK LIBRARY ITEMS (global shared task library)
+// ────────────────────────────────────────────────────────────────────────────
+
+export const workLibraryItems = pgTable("work_library_items", {
+  workItemId: uuid("work_item_id").defaultRandom().primaryKey(),
+  category: text("category").notNull(),
+  label: text("label").notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  categoryLabelUnique: uniqueIndex("uq_work_library_category_label").on(t.category, t.label),
+}));
+
+export const insertWorkLibraryItemSchema = createInsertSchema(workLibraryItems).omit({ workItemId: true, createdAt: true });
+export type InsertWorkLibraryItem = z.infer<typeof insertWorkLibraryItemSchema>;
+export type WorkLibraryItem = typeof workLibraryItems.$inferSelect;
+
+// ────────────────────────────────────────────────────────────────────────────
+// COMPANY ROLES (per tenant, ordered)
+// ────────────────────────────────────────────────────────────────────────────
+
+export const companyRoles = pgTable("company_roles", {
+  roleId: uuid("role_id").defaultRandom().primaryKey(),
+  companyId: uuid("company_id").notNull().references(() => companies.companyId, { onDelete: "cascade" }),
+  roleName: text("role_name").notNull(),
+  sortOrder: integer("sort_order").notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+}, (t) => ({
+  companyRoleUnique: uniqueIndex("uq_company_roles_company_role").on(t.companyId, t.roleName),
+}));
+
+export const insertCompanyRoleSchema = createInsertSchema(companyRoles).omit({ roleId: true });
+export type InsertCompanyRole = z.infer<typeof insertCompanyRoleSchema>;
+export type CompanyRole = typeof companyRoles.$inferSelect;
+
+// ────────────────────────────────────────────────────────────────────────────
+// COMPANY CONTACTS DEFAULTS (fallback contacts per role)
+// ────────────────────────────────────────────────────────────────────────────
+
+export const companyContactsDefaults = pgTable("company_contacts_defaults", {
+  companyId: uuid("company_id").notNull().references(() => companies.companyId, { onDelete: "cascade" }),
+  roleId: uuid("role_id").notNull().references(() => companyRoles.roleId, { onDelete: "cascade" }),
+  defaultName: text("default_name").notNull().default("TBD"),
+  defaultPhone: text("default_phone").notNull().default("TBD"),
+  defaultEmail: text("default_email").notNull().default("TBD"),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.companyId, t.roleId] }),
+}));
+
+export const insertCompanyContactsDefaultSchema = createInsertSchema(companyContactsDefaults);
+export type InsertCompanyContactsDefault = z.infer<typeof insertCompanyContactsDefaultSchema>;
+export type CompanyContactsDefault = typeof companyContactsDefaults.$inferSelect;
+
+// ────────────────────────────────────────────────────────────────────────────
+// PROJECT WORK SELECTIONS (links project to work library items)
+// ────────────────────────────────────────────────────────────────────────────
+
+export const projectWorkSelections = pgTable("project_work_selections", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  workItemId: uuid("work_item_id").notNull().references(() => workLibraryItems.workItemId, { onDelete: "cascade" }),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  projectWorkUnique: uniqueIndex("uq_project_work_selection").on(t.projectId, t.workItemId),
+}));
+
+export const insertProjectWorkSelectionSchema = createInsertSchema(projectWorkSelections).omit({ id: true, createdAt: true });
+export type InsertProjectWorkSelection = z.infer<typeof insertProjectWorkSelectionSchema>;
+export type ProjectWorkSelection = typeof projectWorkSelections.$inferSelect;
+
+// ────────────────────────────────────────────────────────────────────────────
+// PROJECT CONTACTS (overrides for specific project)
+// ────────────────────────────────────────────────────────────────────────────
+
+export const projectContacts = pgTable("project_contacts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  roleId: uuid("role_id").notNull().references(() => companyRoles.roleId, { onDelete: "cascade" }),
+  contactName: text("contact_name").notNull(),
+  contactPhone: text("contact_phone").notNull(),
+  contactEmail: text("contact_email"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  projectRoleUnique: uniqueIndex("uq_project_contact_role").on(t.projectId, t.roleId),
+}));
+
+export const insertProjectContactSchema = createInsertSchema(projectContacts).omit({ id: true, createdAt: true });
+export type InsertProjectContact = z.infer<typeof insertProjectContactSchema>;
+export type ProjectContact = typeof projectContacts.$inferSelect;
 
 // ────────────────────────────────────────────────────────────────────────────
 // CHAT (for AI integration support)
