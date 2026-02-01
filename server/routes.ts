@@ -1214,15 +1214,38 @@ export async function registerRoutes(
   app.get("/api/project-dive-plans/:id/download", requireAuth, async (req: Request, res: Response) => {
     const { generateDD5DivePlanDocx } = await import("./dive-plan-generator");
     
-    const plan = await storage.getProjectDivePlan(req.params.id);
+    const plan = await storage.getProjectDivePlan(req.params.id as string);
     if (!plan) return res.status(404).json({ message: "Project dive plan not found" });
     
     const creator = await storage.getUser(plan.createdBy);
-    const preparedBy = creator?.displayName || creator?.username || "Unknown";
+    const preparedBy = creator?.fullName || creator?.username || "Unknown";
+    
+    const workSelections = await storage.getProjectWorkSelections(plan.projectId);
+    const projectContacts = await storage.getProjectContacts(plan.projectId);
+    
+    const companies = await storage.getAllCompanies();
+    const companyContactDefaults = companies.length > 0 
+      ? await storage.getCompanyContactsDefaults(companies[0].companyId)
+      : [];
+    
+    const dbData = {
+      workSelections: workSelections.map(w => ({ category: w.category, label: w.label })),
+      projectContacts: projectContacts.map(c => ({ 
+        roleName: c.roleName, 
+        contactName: c.contactName, 
+        contactPhone: c.contactPhone 
+      })),
+      companyContactDefaults: companyContactDefaults.map(c => ({
+        roleName: c.roleName,
+        defaultName: c.defaultName,
+        defaultPhone: c.defaultPhone,
+      })),
+    };
     
     const buffer = await generateDD5DivePlanDocx(
       plan.planData as any,
-      preparedBy
+      preparedBy,
+      dbData
     );
     
     const fileName = `DD5_DivePlan_Rev${plan.revision}.docx`;

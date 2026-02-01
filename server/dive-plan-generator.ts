@@ -296,16 +296,67 @@ function createLockedSectionNotice(sectionName: string): Paragraph[] {
   ];
 }
 
+export interface DBQueryResult {
+  workSelections: { category: string; label: string }[];
+  projectContacts: { roleName: string; contactName: string; contactPhone: string }[];
+  companyContactDefaults?: { roleName: string; defaultName: string; defaultPhone: string }[];
+}
+
 export async function generateDD5DivePlanDocx(
   data: ProjectDivePlanData,
-  preparedBy: string
+  preparedBy: string,
+  dbData?: DBQueryResult
 ): Promise<Buffer> {
+  const effectiveNatureOfWork = dbData?.workSelections && dbData.workSelections.length > 0
+    ? dbData.workSelections.map(w => w.label)
+    : data.natureOfWork.selectedTasks.length > 0
+      ? data.natureOfWork.selectedTasks
+      : ["TBD - No work items selected"];
+  
+  let effectiveContacts: { name: string; role: string; phone: string; email: string }[] = [];
+  
+  if (dbData?.projectContacts && dbData.projectContacts.length > 0) {
+    effectiveContacts = dbData.projectContacts.map(c => ({
+      name: c.contactName || 'TBD',
+      role: c.roleName,
+      phone: c.contactPhone || 'TBD',
+      email: '',
+    }));
+  } else if (dbData?.companyContactDefaults && dbData.companyContactDefaults.length > 0) {
+    effectiveContacts = dbData.companyContactDefaults.map(c => ({
+      name: c.defaultName || 'TBD',
+      role: c.roleName,
+      phone: c.defaultPhone || 'TBD',
+      email: '',
+    }));
+  } else if (data.projectContacts.keyContacts && data.projectContacts.keyContacts.length > 0) {
+    effectiveContacts = data.projectContacts.keyContacts;
+  } else {
+    effectiveContacts = [
+      { name: 'TBD', role: 'Ops/PM', phone: 'TBD', email: '' },
+      { name: 'TBD', role: 'Diving Superintendent', phone: 'TBD', email: '' },
+      { name: 'TBD', role: 'Dive Supervisor', phone: 'TBD', email: '' },
+      { name: 'TBD', role: 'HSE', phone: 'TBD', email: '' },
+    ];
+  }
+  
+  const dataWithDBValues: ProjectDivePlanData = {
+    ...data,
+    natureOfWork: {
+      ...data.natureOfWork,
+      selectedTasks: effectiveNatureOfWork,
+    },
+    projectContacts: {
+      ...data.projectContacts,
+      keyContacts: effectiveContacts.length > 0 ? effectiveContacts : data.projectContacts.keyContacts,
+    },
+  };
   const doc = new Document({
     sections: [
       {
         properties: {},
         children: [
-          ...createCoverPage(data),
+          ...createCoverPage(dataWithDBValues),
           
           new Paragraph({ children: [new PageBreak()] }),
           
@@ -314,16 +365,16 @@ export async function generateDD5DivePlanDocx(
             heading: HeadingLevel.HEADING_1,
             spacing: { after: 200 },
           }),
-          createRevisionTrackerTable(data.revisionHistory),
+          createRevisionTrackerTable(dataWithDBValues.revisionHistory),
           
           new Paragraph({ children: [new PageBreak()] }),
           
           ...createLockedSectionNotice("2.5 TEAM MEMBERS AND DUTIES"),
           ...createLockedSectionNotice("2.12 EQUIPMENT PROCEDURES CHECKLIST AND REQUIREMENTS"),
           
-          ...createContactsSection(data),
+          ...createContactsSection(dataWithDBValues),
           
-          ...createNatureOfWorkSection(data),
+          ...createNatureOfWorkSection(dataWithDBValues),
           
           new Paragraph({ children: [new PageBreak()] }),
           
@@ -355,7 +406,7 @@ export async function generateDD5DivePlanDocx(
             spacing: { before: 200 },
           }),
           new Paragraph({
-            children: [new TextRun({ text: `Payload Hash: ${data.previousPayloadHash || computePayloadHash(data)}` })],
+            children: [new TextRun({ text: `Payload Hash: ${dataWithDBValues.previousPayloadHash || computePayloadHash(dataWithDBValues)}` })],
             alignment: AlignmentType.CENTER,
             spacing: { before: 100 },
           }),

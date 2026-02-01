@@ -13,7 +13,9 @@ export const companies = pgTable("companies", {
   logoAssetKey: text("logo_asset_key"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (t) => ({
+  companyNameUnique: uniqueIndex("uq_companies_name").on(t.companyName),
+}));
 
 export const insertCompanySchema = createInsertSchema(companies).omit({ companyId: true, createdAt: true, updatedAt: true });
 export type InsertCompany = z.infer<typeof insertCompanySchema>;
