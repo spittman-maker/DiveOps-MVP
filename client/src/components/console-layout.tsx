@@ -1,8 +1,10 @@
 import { ReactNode, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { useTheme } from "@/hooks/use-theme";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ChatAssistant } from "./chat-assistant";
+import { Sun, Moon } from "lucide-react";
 
 interface ConsoleLayoutProps {
   children: ReactNode;
@@ -22,6 +24,7 @@ const TABS = [
 
 export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayoutProps) {
   const { user, logout, isAdmin, isSupervisor } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [chatOpen, setChatOpen] = useState(false);
 
   const getRoleBadgeColor = (role: string) => {
@@ -48,6 +51,15 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
         </div>
 
         <div className="flex items-center gap-3">
+          <Button
+            data-testid="button-theme-toggle"
+            variant="ghost"
+            size="sm"
+            onClick={toggleTheme}
+            className="text-navy-300 hover:text-white hover:bg-navy-700"
+          >
+            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </Button>
           <Button
             data-testid="button-chat-assistant"
             variant="outline"

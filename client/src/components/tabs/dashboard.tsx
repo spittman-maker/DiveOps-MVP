@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Settings, GripVertical, X, Save, RotateCcw } from "lucide-react";
+import { Plus, Settings, GripVertical, X, Save, RotateCcw, Sun, Cloud, CloudRain, Wind, Droplets, Zap } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,6 +59,7 @@ const WIDGET_TYPES = [
   { type: "risk_register", label: "Risk Register", defaultW: 2, defaultH: 2 },
   { type: "dive_stats", label: "Dive Statistics", defaultW: 2, defaultH: 2 },
   { type: "project_status", label: "Project Status", defaultW: 2, defaultH: 1 },
+  { type: "weather", label: "Weather & Lightning", defaultW: 2, defaultH: 2 },
 ];
 
 function DailySummaryWidget({ stats }: { stats: DashboardStats }) {
@@ -170,6 +171,135 @@ function RecentLogsWidget() {
   );
 }
 
+interface WeatherData {
+  configured: boolean;
+  location?: string;
+  country?: string;
+  temp?: number;
+  feelsLike?: number;
+  humidity?: number;
+  windSpeed?: number;
+  conditions?: string;
+  description?: string;
+  icon?: string;
+  hasThunderstorm?: boolean;
+}
+
+interface LightningData {
+  configured: boolean;
+  hasUpcomingStorms?: boolean;
+  thunderstormAlerts?: Array<{
+    time: number;
+    timeText: string;
+    conditions: string;
+    probability: number;
+    temp: number;
+  }>;
+}
+
+function WeatherWidget() {
+  const [location, setLocation] = useState("Houston, TX");
+  const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
+
+  const { data: weather, isLoading: weatherLoading } = useQuery<WeatherData>({
+    queryKey: ["weather", location],
+    queryFn: async () => {
+      const res = await fetch(`/api/weather?location=${encodeURIComponent(location)}`, { credentials: "include" });
+      if (!res.ok) return { configured: false };
+      return res.json();
+    },
+    refetchInterval: 300000,
+    staleTime: 60000,
+  });
+
+  const { data: lightning } = useQuery<LightningData>({
+    queryKey: ["lightning", coords?.lat, coords?.lon],
+    queryFn: async () => {
+      if (!coords) return { configured: false };
+      const res = await fetch(`/api/weather/lightning?lat=${coords.lat}&lon=${coords.lon}`, { credentials: "include" });
+      if (!res.ok) return { configured: false };
+      return res.json();
+    },
+    enabled: !!coords,
+    refetchInterval: 300000,
+  });
+
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+        () => {}
+      );
+    }
+  }, []);
+
+  if (!weather?.configured) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-navy-400 text-sm">
+        <CloudRain className="h-8 w-8 mb-2 opacity-50" />
+        <p>Weather API not configured</p>
+        <p className="text-xs mt-1">Add OPENWEATHER_API_KEY secret</p>
+      </div>
+    );
+  }
+
+  if (weatherLoading) {
+    return <div className="flex items-center justify-center h-full text-navy-400">Loading...</div>;
+  }
+
+  const getWeatherIcon = (icon?: string) => {
+    if (!icon) return <Cloud className="h-8 w-8" />;
+    if (icon.includes("01")) return <Sun className="h-8 w-8 text-yellow-400" />;
+    if (icon.includes("02") || icon.includes("03") || icon.includes("04")) return <Cloud className="h-8 w-8 text-gray-400" />;
+    if (icon.includes("09") || icon.includes("10")) return <CloudRain className="h-8 w-8 text-blue-400" />;
+    if (icon.includes("11")) return <Zap className="h-8 w-8 text-yellow-400" />;
+    return <Cloud className="h-8 w-8" />;
+  };
+
+  return (
+    <div className="space-y-2 p-1">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {getWeatherIcon(weather.icon)}
+          <div>
+            <div className="text-xl font-bold text-white">{weather.temp}°C</div>
+            <div className="text-xs text-navy-300">{weather.conditions}</div>
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-sm text-navy-200">{weather.location}</div>
+          <div className="text-xs text-navy-400">Feels like {weather.feelsLike}°C</div>
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="flex items-center gap-1 text-navy-300">
+          <Wind className="h-3 w-3" />
+          {weather.windSpeed} m/s
+        </div>
+        <div className="flex items-center gap-1 text-navy-300">
+          <Droplets className="h-3 w-3" />
+          {weather.humidity}%
+        </div>
+      </div>
+
+      {weather.hasThunderstorm && (
+        <div className="flex items-center gap-2 bg-yellow-600/20 border border-yellow-600 rounded px-2 py-1">
+          <Zap className="h-4 w-4 text-yellow-400 animate-pulse" />
+          <span className="text-xs text-yellow-300">Thunderstorm Warning</span>
+        </div>
+      )}
+
+      {lightning?.hasUpcomingStorms && !weather.hasThunderstorm && (
+        <div className="flex items-center gap-2 bg-orange-600/20 border border-orange-600 rounded px-2 py-1">
+          <Zap className="h-4 w-4 text-orange-400" />
+          <span className="text-xs text-orange-300">Storms expected in forecast</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function renderWidget(type: string, stats: DashboardStats) {
   switch (type) {
     case "daily_summary":
@@ -186,6 +316,8 @@ function renderWidget(type: string, stats: DashboardStats) {
       return <RiskRegisterWidget stats={stats} />;
     case "recent_logs":
       return <RecentLogsWidget />;
+    case "weather":
+      return <WeatherWidget />;
     default:
       return <div className="text-navy-400 text-sm">Unknown widget type</div>;
   }
