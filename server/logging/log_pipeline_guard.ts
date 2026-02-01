@@ -399,3 +399,133 @@ export function validateNoBoilerplateStubTextOrThrow(docText: string): void {
     }
   }
 }
+
+// -------------------------
+// Auto Risk Creation from Directives
+// -------------------------
+
+export type AutoRisk = RiskOut & {
+  trigger_key: string;   // internal dedupe key
+  source_time?: string;  // directive time that caused it
+};
+
+function pad3(n: number): string {
+  return String(n).padStart(3, "0");
+}
+
+function yyyymmdd(dateIso: string): string {
+  return dateIso.replaceAll("-", "");
+}
+
+function normalizeTriggerKey(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+type RiskRule = {
+  key: string;
+  match: RegExp;
+  trigger: string;
+  impact: string;
+  owner: string;
+};
+
+const RISK_RULES: RiskRule[] = [
+  {
+    key: "manpower_reduction",
+    match: /\b(reduce|reduction)\b.*\b(crew|crews|personnel|manpower)\b|\bcrew sizes\b|\bonly two crews\b/i,
+    trigger: "Client/JV-directed manpower reduction",
+    impact: "Reduced production capacity; schedule and inefficiency exposure (lost diver-hours / re-sequencing risk).",
+    owner: "Ops/PM",
+  },
+  {
+    key: "early_release",
+    match: /\b(leave early|end .*shift early|cut .*shift|8\s*hours)\b/i,
+    trigger: "Client/JV-directed early release of crew",
+    impact: "Loss of planned work window; schedule impact and standby inefficiency exposure.",
+    owner: "Ops/PM",
+  },
+  {
+    key: "stop_work_hold",
+    match: /\b(stop work|hold|suspend|pause)\b/i,
+    trigger: "Client/JV-directed work stoppage/hold",
+    impact: "Immediate production loss; potential remobilization and rework exposure.",
+    owner: "Ops/PM",
+  },
+  {
+    key: "access_restriction",
+    match: /\b(tower cleared|tower .*hold|AIS shuffle|access restricted|restricted access|clearance)\b/i,
+    trigger: "Access control / tower clearance constraints impacting diving",
+    impact: "Delayed start windows and productivity loss due to access/clearance dependency.",
+    owner: "Diving Superintendent",
+  },
+  {
+    key: "equipment_directive_pump",
+    match: /\b(6\"|6-inch|6 inch)\b.*\bpump\b|\bcirculat(e|ing)\b.*\bwater\b/i,
+    trigger: "Client/JV-directed equipment change (pump/circulation)",
+    impact: "Unplanned equipment deployment; potential diversion from critical path and crew utilization inefficiency.",
+    owner: "Diving Superintendent",
+  },
+];
+
+function nextRiskId(dateIso: string, existing: RiskOut[] | undefined): string {
+  const prefix = `R-${yyyymmdd(dateIso)}-`;
+  const max = (existing ?? [])
+    .map(r => r.risk_id)
+    .filter(id => id.startsWith(prefix))
+    .map(id => Number(id.slice(prefix.length)))
+    .filter(n => Number.isFinite(n))
+    .reduce((a, b) => Math.max(a, b), 0);
+
+  return `${prefix}${pad3(max + 1)}`;
+}
+
+/**
+ * Auto-create risks from directive language.
+ * Call this AFTER validateModelOutputOrThrow() and BEFORE persisting.
+ *
+ * - Deterministic: no AI prose
+ * - Dedupe: prevents duplicates by trigger_key per day output
+ */
+export function autoCreateRisksFromDirectives(out: DailyLogModelOutput): DailyLogModelOutput {
+  const risks: (RiskOut & { trigger_key?: string })[] = Array.isArray(out.risks) ? [...out.risks] : [];
+
+  const existingKeys = new Set<string>(
+    risks.map(r => normalizeTriggerKey((r as any).trigger_key ?? r.trigger))
+  );
+
+  const directiveTexts = out.directives.map(d => ({
+    time: d.time,
+    text: `${d.who ?? ""} ${d.what ?? ""} ${d.impact ?? ""}`.trim(),
+  }));
+
+  for (const dt of directiveTexts) {
+    for (const rule of RISK_RULES) {
+      if (!rule.match.test(dt.text)) continue;
+
+      const trigger_key = normalizeTriggerKey(rule.key);
+      if (existingKeys.has(trigger_key)) continue;
+
+      const risk_id = nextRiskId(out.date, risks);
+
+      risks.push({
+        risk_id,
+        trigger: rule.trigger,
+        impact: rule.impact,
+        owner: rule.owner,
+        status: "Open",
+        trigger_key,
+      });
+
+      existingKeys.add(trigger_key);
+    }
+  }
+
+  return { ...out, risks: risks.map(({ trigger_key, ...rest }) => rest as RiskOut) };
+}
+
+/**
+ * Strip trigger_key before DB insert if your schema doesn't include it
+ */
+export function stripTriggerKeys(risks: RiskOut[]): RiskOut[] {
+  return risks.map(({ trigger_key, ...rest }: any) => rest as RiskOut);
+}

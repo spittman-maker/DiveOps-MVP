@@ -8,7 +8,9 @@ export {
   normalizeAndClassifyRawNotes, 
   buildModelInputPacket, 
   validateModelOutputOrThrow,
-  validateNoBoilerplateStubTextOrThrow 
+  validateNoBoilerplateStubTextOrThrow,
+  autoCreateRisksFromDirectives,
+  stripTriggerKeys
 } from "./log_pipeline_guard";
 export type { 
   RawEvent, 
@@ -17,5 +19,6 @@ export type {
   DailyLogModelOutput,
   DirectiveOut,
   StationLogOut,
-  RiskOut 
+  RiskOut,
+  AutoRisk
 } from "./log_pipeline_guard";

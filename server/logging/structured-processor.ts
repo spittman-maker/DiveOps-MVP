@@ -10,6 +10,7 @@ import {
   normalizeAndClassifyRawNotes,
   buildModelInputPacket,
   validateModelOutputOrThrow,
+  autoCreateRisksFromDirectives,
   type PrepBuckets,
   type ModelInputPacket,
   type DailyLogModelOutput,
@@ -180,15 +181,18 @@ export async function processStructuredLog(
     // 4) HARD FAIL if constitution violated
     validateModelOutputOrThrow(modelJson);
     
+    // 5) Auto-create risks from directive language (deterministic, deduped)
+    const withRisks = autoCreateRisksFromDirectives(modelJson);
+    
     // Convert to legacy format for backward compatibility
-    const payload = convertToLegacyPayload(modelJson);
+    const payload = convertToLegacyPayload(withRisks);
     
     return {
       payload,
       rawInput: rawText,
       prep,
       modelInput,
-      fullModelOutput: modelJson,
+      fullModelOutput: withRisks,
       validationPassed: true,
     };
   } catch (error: any) {
