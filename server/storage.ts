@@ -17,6 +17,8 @@ import type {
   Station, InsertStation,
   DiveLogDetails, InsertDiveLogDetails,
   DailySummary, InsertDailySummary,
+  DivePlanTemplate, InsertDivePlanTemplate,
+  ProjectDivePlan, InsertProjectDivePlan,
   DirectoryFacility, InsertDirectoryFacility,
   ProjectDirectory, InsertProjectDirectory,
   ProjectMember, InsertProjectMember,
@@ -140,6 +142,19 @@ export interface IStorage {
   getLibraryExports(projectId: string): Promise<LibraryExport[]>;
   getLibraryExportsByDay(dayId: string): Promise<LibraryExport[]>;
   getLibraryExport(id: string): Promise<LibraryExport | undefined>;
+
+  // Dive Plan Templates
+  createDivePlanTemplate(template: InsertDivePlanTemplate): Promise<DivePlanTemplate>;
+  getDivePlanTemplate(id: string): Promise<DivePlanTemplate | undefined>;
+  getDivePlanTemplates(): Promise<DivePlanTemplate[]>;
+
+  // Project Dive Plans
+  createProjectDivePlan(plan: InsertProjectDivePlan): Promise<ProjectDivePlan>;
+  getProjectDivePlan(id: string): Promise<ProjectDivePlan | undefined>;
+  getProjectDivePlansByProject(projectId: string): Promise<ProjectDivePlan[]>;
+  getActiveProjectDivePlan(projectId: string): Promise<ProjectDivePlan | undefined>;
+  getLatestProjectDivePlanRevision(projectId: string): Promise<number>;
+  updateProjectDivePlan(id: string, updates: Partial<InsertProjectDivePlan>): Promise<ProjectDivePlan | undefined>;
 }
 
 export class DbStorage implements IStorage {
@@ -648,6 +663,66 @@ export class DbStorage implements IStorage {
     const [exportDoc] = await db.select().from(schema.libraryExports)
       .where(eq(schema.libraryExports.id, id));
     return exportDoc;
+  }
+
+  // Dive Plan Templates
+  async createDivePlanTemplate(template: InsertDivePlanTemplate): Promise<DivePlanTemplate> {
+    const [created] = await db.insert(schema.divePlanTemplates).values(template as any).returning();
+    return created!;
+  }
+
+  async getDivePlanTemplate(id: string): Promise<DivePlanTemplate | undefined> {
+    const [template] = await db.select().from(schema.divePlanTemplates)
+      .where(eq(schema.divePlanTemplates.id, id));
+    return template;
+  }
+
+  async getDivePlanTemplates(): Promise<DivePlanTemplate[]> {
+    return await db.select().from(schema.divePlanTemplates)
+      .orderBy(schema.divePlanTemplates.name);
+  }
+
+  // Project Dive Plans
+  async createProjectDivePlan(plan: InsertProjectDivePlan): Promise<ProjectDivePlan> {
+    const [created] = await db.insert(schema.projectDivePlans).values(plan as any).returning();
+    return created!;
+  }
+
+  async getProjectDivePlan(id: string): Promise<ProjectDivePlan | undefined> {
+    const [plan] = await db.select().from(schema.projectDivePlans)
+      .where(eq(schema.projectDivePlans.id, id));
+    return plan;
+  }
+
+  async getProjectDivePlansByProject(projectId: string): Promise<ProjectDivePlan[]> {
+    return await db.select().from(schema.projectDivePlans)
+      .where(eq(schema.projectDivePlans.projectId, projectId))
+      .orderBy(desc(schema.projectDivePlans.revision));
+  }
+
+  async getActiveProjectDivePlan(projectId: string): Promise<ProjectDivePlan | undefined> {
+    const [plan] = await db.select().from(schema.projectDivePlans)
+      .where(and(
+        eq(schema.projectDivePlans.projectId, projectId),
+        eq(schema.projectDivePlans.status, "Approved")
+      ))
+      .orderBy(desc(schema.projectDivePlans.revision));
+    return plan;
+  }
+
+  async getLatestProjectDivePlanRevision(projectId: string): Promise<number> {
+    const [result] = await db.select({ maxRevision: sql<number>`COALESCE(MAX(${schema.projectDivePlans.revision}), -1)` })
+      .from(schema.projectDivePlans)
+      .where(eq(schema.projectDivePlans.projectId, projectId));
+    return result?.maxRevision ?? -1;
+  }
+
+  async updateProjectDivePlan(id: string, updates: Partial<InsertProjectDivePlan>): Promise<ProjectDivePlan | undefined> {
+    const [updated] = await db.update(schema.projectDivePlans)
+      .set({ ...updates, updatedAt: new Date() } as any)
+      .where(eq(schema.projectDivePlans.id, id))
+      .returning();
+    return updated;
   }
 }
 
