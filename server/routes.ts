@@ -417,6 +417,88 @@ export async function registerRoutes(
   // LOG EVENTS (Core Event Sourcing)
   // ──────────────────────────────────────────────────────────────────────────
 
+  // Validate log entry before submission (returns validation result without persisting)
+  // Supports batch entries (slash-delimited or multi-line)
+  app.post("/api/log-events/validate", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const { rawText } = req.body;
+      if (!rawText || typeof rawText !== "string") {
+        return res.status(400).json({ message: "rawText is required" });
+      }
+      
+      // Parse entries the same way as handleSend
+      const timePattern = /^\d{3,4}\b/;
+      const dashTimePattern = /^(\d{3,4})-(.+)$/;
+      let entries: string[] = [];
+      
+      const DIVE_PLACEHOLDERS: Record<string, string> = {
+        'L/S': '%%LS%%', 'R/S': '%%RS%%', 'L/B': '%%LB%%', 'R/B': '%%RB%%',
+      };
+      
+      let lines = rawText.trim().split('\n').filter((line: string) => line.trim());
+      
+      if (lines.length === 1) {
+        let text = lines[0];
+        for (const [term, placeholder] of Object.entries(DIVE_PLACEHOLDERS)) {
+          text = text.split(term).join(placeholder);
+        }
+        
+        if (text.includes('/')) {
+          const slashParts = text.split('/').map((p: string) => p.trim()).filter((p: string) => p);
+          for (let part of slashParts) {
+            for (const [term, placeholder] of Object.entries(DIVE_PLACEHOLDERS)) {
+              part = part.split(placeholder).join(term);
+            }
+            const dashMatch = part.match(dashTimePattern);
+            if (dashMatch) {
+              entries.push(`${dashMatch[1]} ${dashMatch[2].replace(/-/g, ' ').trim()}`);
+            } else {
+              entries.push(part.replace(/-/g, ' '));
+            }
+          }
+        }
+      }
+      
+      if (entries.length === 0) {
+        const timestampedLines = lines.filter((line: string) => timePattern.test(line.trim()));
+        if (timestampedLines.length >= 2) {
+          entries = lines.filter((line: string) => line.trim());
+        }
+      }
+      
+      if (entries.length === 0) {
+        entries = [rawText.trim()];
+      }
+      
+      // Validate each entry
+      const results = await Promise.all(
+        entries.map(async (entry: string) => {
+          const result = await processStructuredLog(entry);
+          return {
+            entry,
+            valid: result.validationPassed,
+            payload: result.payload,
+            errors: result.error ? [result.error] : [],
+          };
+        })
+      );
+      
+      const allValid = results.every(r => r.valid);
+      const allErrors = results.flatMap((r, i) => 
+        r.errors.map(e => entries.length > 1 ? `Entry ${i + 1}: ${e}` : e)
+      );
+      
+      res.json({
+        valid: allValid,
+        entries: results,
+        errors: allErrors,
+        totalEntries: entries.length,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Create LogEvent - IMMEDIATE PERSISTENCE
   app.post("/api/log-events", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {

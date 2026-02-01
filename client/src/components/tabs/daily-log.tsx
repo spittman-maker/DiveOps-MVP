@@ -20,7 +20,26 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Mic, Square } from "lucide-react";
+import { Mic, Square, AlertTriangle, CheckCircle, Edit2 } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+
+interface ValidationEntry {
+  entry: string;
+  valid: boolean;
+  payload: {
+    directives: Array<{ time: string; text: string }>;
+    station_logs: Array<{ text: string }>;
+    risks: Array<{ description: string }>;
+  };
+  errors: string[];
+}
+
+interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+  entries?: ValidationEntry[];
+  totalEntries?: number;
+}
 
 interface LogEvent {
   id: string;
@@ -97,6 +116,11 @@ export function DailyLogTab() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
+
+  // Validation state
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
+  const [showValidationPreview, setShowValidationPreview] = useState(false);
 
   const currentDay = activeDay;
 
@@ -384,6 +408,41 @@ export function DailyLogTab() {
       window.removeEventListener("keyup", handleKeyUp);
     };
   }, [isRecording, isTranscribing, pttPendingSubmit, rawInput, startRecording, stopRecording, handlePttSubmit, canWriteLogEvents, currentDay?.status]);
+
+  // Validate log entry before submission
+  const validateEntry = async (text: string): Promise<ValidationResult> => {
+    setIsValidating(true);
+    try {
+      const res = await fetch("/api/log-events/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ rawText: text }),
+      });
+      if (!res.ok) throw new Error("Validation failed");
+      return await res.json();
+    } catch (error) {
+      return { valid: false, errors: ["Failed to validate entry"] };
+    } finally {
+      setIsValidating(false);
+    }
+  };
+
+  // Handle validation check (shows preview before submit)
+  const handleValidate = async () => {
+    if (!rawInput.trim()) return;
+    const result = await validateEntry(rawInput.trim());
+    setValidationResult(result);
+    setShowValidationPreview(true);
+  };
+
+  // Clear validation when input changes
+  useEffect(() => {
+    if (validationResult) {
+      setValidationResult(null);
+      setShowValidationPreview(false);
+    }
+  }, [rawInput]);
 
   const handleSend = async () => {
     if (!rawInput.trim()) return;
@@ -698,6 +757,16 @@ export function DailyLogTab() {
                   {isRecording ? <Square className="h-4 w-4" /> : pttPendingSubmit ? "Send" : <Mic className="h-4 w-4" />}
                 </Button>
                 <Button
+                  data-testid="button-validate"
+                  onClick={handleValidate}
+                  disabled={!rawInput.trim() || isValidating}
+                  variant="outline"
+                  className="border-yellow-500 text-yellow-400 hover:bg-yellow-500/20"
+                  title="Check entry before saving"
+                >
+                  {isValidating ? "..." : <Edit2 className="h-4 w-4" />}
+                </Button>
+                <Button
                   data-testid="button-send"
                   onClick={handleSend}
                   disabled={!rawInput.trim() || createEventMutation.isPending}
@@ -707,8 +776,63 @@ export function DailyLogTab() {
                 </Button>
               </div>
             </div>
+
+            {/* Validation feedback */}
+            {showValidationPreview && validationResult && (
+              <Alert className={`mt-3 ${validationResult.valid ? "border-green-500 bg-green-500/10" : "border-yellow-500 bg-yellow-500/10"}`}>
+                <div className="flex items-start gap-2">
+                  {validationResult.valid ? (
+                    <CheckCircle className="h-4 w-4 text-green-500 mt-0.5" />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4 text-yellow-500 mt-0.5" />
+                  )}
+                  <AlertDescription className="text-sm flex-1">
+                    {validationResult.valid ? (
+                      <span className="text-green-400">
+                        {validationResult.totalEntries && validationResult.totalEntries > 1 
+                          ? `${validationResult.totalEntries} entries validated. Ready to submit.`
+                          : "Entry validated. Ready to submit."}
+                      </span>
+                    ) : (
+                      <div className="space-y-2">
+                        <span className="text-yellow-400 font-medium">Please fix before submitting:</span>
+                        <ul className="list-disc list-inside text-yellow-300 text-xs space-y-1">
+                          {validationResult.errors.map((error, idx) => (
+                            <li key={idx}>{error}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {validationResult.entries && validationResult.entries.length > 0 && (
+                      <div className="mt-2 text-xs border-t border-navy-600 pt-2 space-y-2">
+                        <span className="text-navy-400">Preview ({validationResult.entries.length} entries):</span>
+                        {validationResult.entries.map((entry, idx) => (
+                          <div key={idx} className={`p-2 rounded ${entry.valid ? "bg-green-500/10" : "bg-yellow-500/10"}`}>
+                            <div className="flex items-center gap-2 mb-1">
+                              {entry.valid ? (
+                                <CheckCircle className="h-3 w-3 text-green-500" />
+                              ) : (
+                                <AlertTriangle className="h-3 w-3 text-yellow-500" />
+                              )}
+                              <span className="font-mono text-navy-300">{entry.entry}</span>
+                            </div>
+                            {entry.payload.directives.map((d, i) => (
+                              <div key={`d-${i}`} className="font-mono text-navy-200 ml-5">[{d.time}] {d.text}</div>
+                            ))}
+                            {entry.payload.station_logs.map((s, i) => (
+                              <div key={`s-${i}`} className="font-mono text-navy-400 ml-5">{s.text}</div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </AlertDescription>
+                </div>
+              </Alert>
+            )}
+
             <p className="text-xs text-navy-400 mt-2">
-              Entries are autosaved immediately. Press Enter to send. Hold PTT (or Alt) to speak.
+              Entries are autosaved immediately. Press Enter to send. Click ✎ to validate before saving.
             </p>
           </div>
         )}
