@@ -1,0 +1,47 @@
+2) Revision Tracker Rules (what “correlate with what’s been updated” means)
+
+Your revision page (Rev / Date / Description / Section) must update when the project-fill zones change. 
+
+DD5 Dive Plan Rev6
+
+Trigger → Revision entry mapping
+
+A revision entry is created when any of these change:
+
+Cover page identifiers (project title, client, location, job #, submission date)
+
+Contact list changes (names/phones)
+
+Authorized work list changes (Section 2.9)
+
+Diving mode or max depth/bottom time assumptions (if you decide to allow those to vary in the future)
+
+How to generate “Description” and “Section”
+
+You don’t want AI prose. Use deterministic mapping:
+
+If contacts changed → Description: Updated contact list / Section: 2.13–2.14
+
+If nature of work changed → Description: Updated scope of diver tasks / Section: 2.9
+
+If cover page changed → Description: Updated cover page identifiers / Section: Cover
+
+If certifications updated (Appendix A) → Addendum update (not a revision) unless you say otherwise
+
+Correlation mechanism (objective)
+
+Store a change log each time you regenerate:
+
+Previous JSON payload hash
+
+New JSON payload hash
+
+Field-level diff summary (machine-generated)
+
+Then generate one revision row from the diff using the mapping above
+
+This gives you defensibility.
+
+3) Exact instructions for your Replit AI (copy/paste)
+
+Dive Plan document is boilerplate-locked. Do not modify Sections 2.5, 2.12, 4.9–4.18, or Section 5 under any circumstance. Only fill designated placeholders on the cover page (logo, company name, project identifiers, client, location, submission date, revision number) and update project-specific contact blocks and Section 2.9 (Nature of Work) from a controlled list. Maintain a revision tracker page that auto-appends a new row whenever any allowed field changes; the row must include Rev, Date, deterministic Description, and Section based on which fields changed. Certifications in Appendix A are treated as addendum updates, not formal revisions, unless explicitly flagged otherwise.
