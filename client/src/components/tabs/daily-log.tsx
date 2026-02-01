@@ -389,19 +389,60 @@ export function DailyLogTab() {
     if (!rawInput.trim()) return;
     
     const timePattern = /^\d{3,4}\b/;
+    const dashTimePattern = /^(\d{3,4})-(.+)$/;
     let entries: string[] = [];
     
     let lines = rawInput.trim().split('\n').filter(line => line.trim());
     
     if (lines.length === 1) {
-      const text = lines[0];
-      const timestampSplit = text.split(/(?=\s+\d{3,4}\b)/);
-      const cleanedParts = timestampSplit
-        .map(p => p.trim())
-        .filter(p => p && timePattern.test(p));
+      let text = lines[0];
       
-      if (cleanedParts.length >= 2) {
-        entries = cleanedParts;
+      const DIVE_PLACEHOLDERS: Record<string, string> = {
+        'L/S': '%%LS%%',
+        'R/S': '%%RS%%',
+        'L/B': '%%LB%%',
+        'R/B': '%%RB%%',
+      };
+      
+      for (const [term, placeholder] of Object.entries(DIVE_PLACEHOLDERS)) {
+        text = text.split(term).join(placeholder);
+      }
+      
+      if (text.includes('/')) {
+        const slashParts = text.split('/').map(p => p.trim()).filter(p => p);
+        const parsedEntries: string[] = [];
+        
+        for (let part of slashParts) {
+          for (const [term, placeholder] of Object.entries(DIVE_PLACEHOLDERS)) {
+            part = part.split(placeholder).join(term);
+          }
+          
+          const dashMatch = part.match(dashTimePattern);
+          if (dashMatch) {
+            const time = dashMatch[1];
+            const rest = dashMatch[2].replace(/-/g, ' ').trim();
+            parsedEntries.push(`${time} ${rest}`);
+          } else if (timePattern.test(part)) {
+            parsedEntries.push(part.replace(/-/g, ' '));
+          } else {
+            parsedEntries.push(part.replace(/-/g, ' '));
+          }
+        }
+        
+        if (parsedEntries.length >= 1) {
+          entries = parsedEntries.filter(e => e.trim());
+        }
+      }
+      
+      if (entries.length === 0) {
+        const timestampSplit = text.split(/(?=\s+\d{3,4}\b)/);
+        const cleanedParts = timestampSplit
+          .map(p => p.trim())
+          .filter(p => p && timePattern.test(p));
+        
+        if (cleanedParts.length >= 2) {
+          entries = cleanedParts;
+        }
       }
     }
     
@@ -422,6 +463,8 @@ export function DailyLogTab() {
       }
       setRawInput("");
       toast({ title: `${savedCount} entries saved`, description: "All log entries persisted to database" });
+    } else if (entries.length === 1) {
+      createEventMutation.mutate(entries[0].trim());
     } else {
       createEventMutation.mutate(rawInput.trim());
     }
@@ -615,7 +658,7 @@ export function DailyLogTab() {
             <div className="flex gap-2">
               <Textarea
                 data-testid="input-raw-text"
-                placeholder="Enter log entry (e.g., '0830 JS LS 40 fsw pier inspection')"
+                placeholder="Enter log entry or batch with slashes (e.g., '0530-safety meeting/0600-crew briefing/0630-L/S-JS down')"
                 value={rawInput}
                 onChange={(e) => setRawInput(e.target.value)}
                 className="bg-navy-900 border-navy-600 text-white font-mono text-sm min-h-[60px]"
