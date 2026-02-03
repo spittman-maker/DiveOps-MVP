@@ -506,8 +506,9 @@ export function DashboardTab() {
           width={800}
           onLayoutChange={handleLayoutChange as any}
           isDraggable={isEditing}
-          isResizable={isEditing}
+          isResizable={true}
           draggableHandle=".widget-drag-handle"
+          resizeHandles={['se', 'sw', 'ne', 'nw', 'e', 'w', 'n', 's']}
         >
           {localLayout.map(widget => (
             <div key={widget.id} className="bg-navy-800 border border-navy-600 rounded-lg overflow-hidden">
