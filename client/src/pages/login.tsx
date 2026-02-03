@@ -50,7 +50,7 @@ export default function LoginPage() {
               className="h-32 w-auto"
             />
           </div>
-          <CardTitle className="text-2xl font-bold tracking-tight" style={{ color: 'hsl(42, 88%, 52%)' }}>
+          <CardTitle className="text-2xl font-bold tracking-tight text-primary">
             DiveOps™
           </CardTitle>
           <CardDescription className="space-y-1">
