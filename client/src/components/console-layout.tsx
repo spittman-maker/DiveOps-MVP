@@ -50,7 +50,7 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
             </h1>
           </div>
           <div className="h-4 w-px bg-border" />
-          <span className="text-sm font-mono text-muted-foreground">
+          <span className="text-sm font-mono text-white/70">
             {new Date().toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
           </span>
         </div>
@@ -75,7 +75,7 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
             AI Assistant
           </Button>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-foreground">{user?.fullName || user?.username}</span>
+            <span className="text-sm text-white">{user?.fullName || user?.username}</span>
             <Badge className={`${getRoleBadgeColor(user?.role || "")} text-white text-xs`}>
               {user?.role}
             </Badge>
@@ -107,7 +107,7 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
                   px-4 py-2 text-sm font-medium transition-colors relative
                   ${activeTab === tab.id
                     ? "text-primary"
-                    : "text-muted-foreground hover:text-foreground"
+                    : "text-white/60 hover:text-white"
                   }
                 `}
               >

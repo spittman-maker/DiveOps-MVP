@@ -53,10 +53,10 @@ export default function LoginPage() {
           <CardTitle className="text-2xl font-bold text-primary tracking-tight">
             DiveOps™
           </CardTitle>
-          <CardDescription className="text-muted-foreground space-y-1">
-            <div className="text-foreground/80">Enterprise Subsea Operations Management System</div>
-            <div className="text-xs text-muted-foreground">Command and Control for Subsea Operations</div>
-            <div className="text-xs text-muted-foreground/60 italic">Patent Pending</div>
+          <CardDescription className="space-y-1">
+            <div className="text-white/90">Enterprise Subsea Operations Management System</div>
+            <div className="text-xs text-white/70">Command and Control for Subsea Operations</div>
+            <div className="text-xs text-white/50 italic">Patent Pending</div>
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -68,7 +68,7 @@ export default function LoginPage() {
                 placeholder="Username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                className="bg-secondary border-border text-white placeholder:text-white/50"
               />
             </div>
             <div>
@@ -78,7 +78,7 @@ export default function LoginPage() {
                 placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                className="bg-secondary border-border text-white placeholder:text-white/50"
               />
             </div>
             <Button
