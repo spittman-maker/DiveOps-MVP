@@ -74,7 +74,7 @@
 
   --border: 210 25% 18%;
 
-  --primary: 45 68% 46%;
+  --primary: 42 60% 55%;
   --primary-foreground: 0 0% 0%;
 
   --secondary: 210 25% 14%;
@@ -90,9 +90,9 @@
   --destructive-foreground: 0 0% 100%;
 
   --input: 210 22% 18%;
-  --ring: 45 68% 46%;
+  --ring: 42 60% 55%;
 
-  --chart-1: 45 68% 46%;
+  --chart-1: 42 60% 55%;
   --chart-2: 190 65% 45%;
   --chart-3: 162 55% 42%;
   --chart-4: 210 60% 55%;
@@ -101,11 +101,11 @@
   --sidebar: 210 38% 6%;
   --sidebar-foreground: 210 20% 88%;
   --sidebar-border: 210 25% 14%;
-  --sidebar-primary: 45 68% 46%;
+  --sidebar-primary: 42 60% 55%;
   --sidebar-primary-foreground: 210 35% 8%;
   --sidebar-accent: 210 25% 12%;
   --sidebar-accent-foreground: 210 20% 88%;
-  --sidebar-ring: 42 88% 52%;
+  --sidebar-ring: 42 60% 55%;
 
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, Segoe UI, Roboto, Inter, sans-serif;
   --font-serif: "Libre Baskerville", Georgia, serif;
@@ -169,7 +169,7 @@
 
   --border: 210 25% 18%;
 
-  --primary: 45 68% 46%;
+  --primary: 42 60% 55%;
   --primary-foreground: 0 0% 0%;
 
   --secondary: 210 25% 14%;
@@ -185,9 +185,9 @@
   --destructive-foreground: 0 0% 100%;
 
   --input: 210 22% 18%;
-  --ring: 45 68% 46%;
+  --ring: 42 60% 55%;
 
-  --chart-1: 45 68% 46%;
+  --chart-1: 42 60% 55%;
   --chart-2: 190 65% 45%;
   --chart-3: 162 55% 42%;
   --chart-4: 210 60% 55%;
@@ -196,11 +196,11 @@
   --sidebar: 210 38% 6%;
   --sidebar-foreground: 0 0% 100%;
   --sidebar-border: 210 25% 14%;
-  --sidebar-primary: 45 68% 46%;
+  --sidebar-primary: 42 60% 55%;
   --sidebar-primary-foreground: 0 0% 0%;
   --sidebar-accent: 210 25% 12%;
   --sidebar-accent-foreground: 0 0% 100%;
-  --sidebar-ring: 45 68% 46%;
+  --sidebar-ring: 42 60% 55%;
 
   --sidebar-primary-border: hsl(var(--sidebar-primary));
   --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
