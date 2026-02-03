@@ -56,7 +56,7 @@ export default function LoginPage() {
           <CardDescription className="space-y-1">
             <div className="text-white/90">Enterprise Subsea Operations Management System</div>
             <div className="text-xs text-white/70">Command and Control for Subsea Operations</div>
-            <div className="text-xs text-white/50 italic">Patent Pending</div>
+            <div className="text-xs text-white/50 italic">"Patent Pending"</div>
           </CardDescription>
         </CardHeader>
         <CardContent>
