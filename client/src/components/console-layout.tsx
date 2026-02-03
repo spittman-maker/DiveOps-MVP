@@ -40,14 +40,17 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
   const isDark = theme === "dark";
 
   return (
-    <div className={`h-screen flex flex-col overflow-hidden ${isDark ? "bg-navy-900" : "bg-background"}`}>
-      <header className={`px-4 py-2 flex items-center justify-between shrink-0 border-b ${isDark ? "bg-navy-800 border-navy-600" : "bg-card border-border"}`}>
+    <div className="h-screen flex flex-col overflow-hidden bg-background">
+      <header className="px-4 py-2 flex items-center justify-between shrink-0 border-b bg-card border-border">
         <div className="flex items-center gap-4">
-          <h1 className={`text-lg font-bold tracking-tight ${isDark ? "text-white" : "text-foreground"}`}>
-            DiveOps™
-          </h1>
-          <div className={`h-4 w-px ${isDark ? "bg-navy-600" : "bg-border"}`} />
-          <span className={`text-sm font-mono ${isDark ? "text-navy-300" : "text-muted-foreground"}`}>
+          <div className="flex items-center gap-2">
+            <img src="/brain-logo.png" alt="DiveOps" className="h-8 w-auto" />
+            <h1 className="text-lg font-bold tracking-tight text-primary">
+              DiveOps™
+            </h1>
+          </div>
+          <div className="h-4 w-px bg-border" />
+          <span className="text-sm font-mono text-muted-foreground">
             {new Date().toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
           </span>
         </div>
@@ -58,7 +61,7 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
             variant="ghost"
             size="sm"
             onClick={toggleTheme}
-            className={isDark ? "text-navy-300 hover:text-white hover:bg-navy-700" : "text-muted-foreground hover:text-foreground hover:bg-accent"}
+            className="text-muted-foreground hover:text-foreground hover:bg-secondary"
           >
             {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>
@@ -67,12 +70,12 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
             variant="outline"
             size="sm"
             onClick={() => setChatOpen(true)}
-            className="text-xs border-blue-500 text-blue-400 hover:bg-blue-500/20"
+            className="text-xs border-primary/50 text-primary hover:bg-primary/10"
           >
-            💬 Assistant
+            AI Assistant
           </Button>
           <div className="flex items-center gap-2">
-            <span className={`text-sm ${isDark ? "text-navy-200" : "text-foreground"}`}>{user?.fullName || user?.username}</span>
+            <span className="text-sm text-foreground">{user?.fullName || user?.username}</span>
             <Badge className={`${getRoleBadgeColor(user?.role || "")} text-white text-xs`}>
               {user?.role}
             </Badge>
@@ -82,14 +85,14 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
             variant="ghost"
             size="sm"
             onClick={logout}
-            className={isDark ? "text-navy-300 hover:text-white hover:bg-navy-700" : "text-muted-foreground hover:text-foreground hover:bg-accent"}
+            className="text-muted-foreground hover:text-foreground hover:bg-secondary"
           >
             Logout
           </Button>
         </div>
       </header>
 
-      <nav className={`px-4 shrink-0 border-b ${isDark ? "bg-navy-850 border-navy-600" : "bg-secondary border-border"}`}>
+      <nav className="px-4 shrink-0 border-b bg-secondary border-border">
         <div className="flex gap-1">
           {TABS.map((tab) => {
             const isHidden = tab.id === "admin" && !isAdmin;
@@ -103,8 +106,8 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
                 className={`
                   px-4 py-2 text-sm font-medium transition-colors relative
                   ${activeTab === tab.id
-                    ? (isDark ? "text-white" : "text-foreground")
-                    : (isDark ? "text-navy-400 hover:text-navy-200" : "text-muted-foreground hover:text-foreground")
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-foreground"
                   }
                 `}
               >
