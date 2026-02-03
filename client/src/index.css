@@ -18,6 +18,32 @@
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
+.btn-gold-metallic {
+  background: linear-gradient(
+    180deg,
+    #e6c060 0%,
+    #d4a855 25%,
+    #c9a048 50%,
+    #d4a855 75%,
+    #b8923a 100%
+  ) !important;
+  color: #1a1a1a !important;
+  border: 1px solid #a67c32 !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.btn-gold-metallic:hover {
+  background: linear-gradient(
+    180deg,
+    #f0d070 0%,
+    #e6c060 25%,
+    #d4a855 50%,
+    #e6c060 75%,
+    #c9a048 100%
+  ) !important;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

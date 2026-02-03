@@ -84,7 +84,7 @@ export default function LoginPage() {
             <Button
               data-testid="button-login"
               type="submit"
-              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+              className="w-full btn-gold-metallic font-semibold"
             >
               Sign In
             </Button>
