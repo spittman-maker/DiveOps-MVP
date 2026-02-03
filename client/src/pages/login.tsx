@@ -50,7 +50,7 @@ export default function LoginPage() {
               className="h-32 w-auto"
             />
           </div>
-          <CardTitle className="text-2xl font-bold tracking-tight text-primary">
+          <CardTitle className="text-2xl font-bold tracking-tight gold-metallic">
             DiveOps™
           </CardTitle>
           <CardDescription className="space-y-1">

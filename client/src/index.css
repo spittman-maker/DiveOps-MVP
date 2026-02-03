@@ -1,6 +1,23 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+.gold-metallic {
+  background: linear-gradient(
+    180deg,
+    #d4a855 0%,
+    #c9a048 20%,
+    #b8923a 40%,
+    #d4a855 50%,
+    #e6c060 60%,
+    #d4a855 80%,
+    #a67c32 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

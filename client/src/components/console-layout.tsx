@@ -45,7 +45,7 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <img src="/brain-logo.png" alt="DiveOps" className="h-8 w-auto" />
-            <h1 className="text-lg font-bold tracking-tight text-primary">
+            <h1 className="text-lg font-bold tracking-tight gold-metallic">
               DiveOps™
             </h1>
           </div>
