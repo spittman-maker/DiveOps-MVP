@@ -421,7 +421,7 @@ export function DashboardTab() {
     h: widget.h,
     minW: 1,
     minH: 1,
-    static: !isEditing,
+    static: false,
   }));
 
   return (
