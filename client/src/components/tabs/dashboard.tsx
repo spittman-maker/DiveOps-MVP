@@ -67,7 +67,7 @@ function DailySummaryWidget({ stats }: { stats: DashboardStats }) {
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-navy-700 rounded p-2 text-center">
-          <div className="text-2xl font-bold text-blue-400">{stats.totalDives}</div>
+          <div className="text-2xl font-bold text-amber-400">{stats.totalDives}</div>
           <div className="text-xs text-navy-300">Total Dives</div>
         </div>
         <div className="bg-navy-700 rounded p-2 text-center">
@@ -87,11 +87,11 @@ function DailySummaryWidget({ stats }: { stats: DashboardStats }) {
 function ActiveDivesWidget({ stats }: { stats: DashboardStats }) {
   return (
     <div className="flex flex-col items-center justify-center h-full">
-      <div className="text-5xl font-bold text-blue-400">{stats.activeDives}</div>
+      <div className="text-5xl font-bold text-amber-400">{stats.activeDives}</div>
       <div className="text-sm text-navy-300 mt-2">Divers Currently In Water</div>
       {stats.activeDives > 0 && (
         <div className="mt-2">
-          <Badge className="bg-blue-600 animate-pulse">ACTIVE</Badge>
+          <Badge className="btn-gold-metallic animate-pulse">ACTIVE</Badge>
         </div>
       )}
     </div>
@@ -130,7 +130,7 @@ function DiveStatsWidget({ stats }: { stats: DashboardStats }) {
       </div>
       <div className="flex justify-between items-center">
         <span className="text-sm text-navy-300">In Progress</span>
-        <span className="font-mono text-blue-400">{stats.activeDives}</span>
+        <span className="font-mono text-amber-400">{stats.activeDives}</span>
       </div>
       <div className="flex justify-between items-center">
         <span className="text-sm text-navy-300">Log Entries</span>
@@ -251,7 +251,7 @@ function WeatherWidget() {
     if (!icon) return <Cloud className="h-8 w-8" />;
     if (icon.includes("01")) return <Sun className="h-8 w-8 text-yellow-400" />;
     if (icon.includes("02") || icon.includes("03") || icon.includes("04")) return <Cloud className="h-8 w-8 text-gray-400" />;
-    if (icon.includes("09") || icon.includes("10")) return <CloudRain className="h-8 w-8 text-blue-400" />;
+    if (icon.includes("09") || icon.includes("10")) return <CloudRain className="h-8 w-8 text-amber-400" />;
     if (icon.includes("11")) return <Zap className="h-8 w-8 text-yellow-400" />;
     return <Cloud className="h-8 w-8" />;
   };
@@ -489,7 +489,7 @@ export function DashboardTab() {
               variant="outline"
               size="sm"
               onClick={() => setIsEditing(true)}
-              className="text-xs border-blue-500 text-blue-400"
+              className="text-xs border-amber-500 text-amber-400"
             >
               <Settings className="h-3 w-3 mr-1" /> Customize
             </Button>
@@ -537,7 +537,7 @@ export function DashboardTab() {
         {localLayout.length === 0 && (
           <div className="flex flex-col items-center justify-center h-64 text-navy-400">
             <p className="text-sm mb-4">No widgets on your dashboard</p>
-            <Button onClick={() => setIsEditing(true)} variant="outline" className="border-blue-500 text-blue-400">
+            <Button onClick={() => setIsEditing(true)} variant="outline" className="border-amber-500 text-amber-400">
               <Plus className="h-4 w-4 mr-2" /> Add Widgets
             </Button>
           </div>

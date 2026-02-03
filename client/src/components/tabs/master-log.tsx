@@ -152,7 +152,7 @@ export function MasterLogTab() {
               <Card className="bg-navy-800/50 border-navy-600">
                 <CardHeader className="pb-3">
                   <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-blue-600" />
+                    <div className="w-3 h-3 rounded-full btn-gold-metallic" />
                     <CardTitle className="text-white text-base">Dive Operations Log</CardTitle>
                     <Badge variant="outline" className="text-xs border-navy-500 text-navy-400">
                       {dives.length} dives

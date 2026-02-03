@@ -66,7 +66,7 @@ export function AdminTab() {
 
   const getFacilityTypeColor = (type: string) => {
     switch (type) {
-      case "chamber": return "bg-blue-600";
+      case "chamber": return "btn-gold-metallic";
       case "hospital": return "bg-red-600";
       case "coastguard": return "bg-orange-600";
       default: return "bg-gray-600";
@@ -174,7 +174,7 @@ export function AdminTab() {
               {projects.length === 0 && (
                 <div className="text-center py-12">
                   <p className="text-navy-400">No projects found</p>
-                  <Button className="mt-4 bg-blue-600 hover:bg-blue-700">
+                  <Button className="mt-4 btn-gold-metallic hover:btn-gold-metallic">
                     Create First Project
                   </Button>
                 </div>
@@ -206,7 +206,7 @@ export function AdminTab() {
                       </div>
                       <div className="text-right">
                         {facility.travelTimeMinutes && (
-                          <p className="text-sm text-blue-400">
+                          <p className="text-sm text-amber-400">
                             {facility.travelTimeMinutes} min
                           </p>
                         )}
@@ -223,7 +223,7 @@ export function AdminTab() {
 
               <Button
                 data-testid="button-add-facility"
-                className="bg-blue-600 hover:bg-blue-700 w-full"
+                className="btn-gold-metallic hover:btn-gold-metallic w-full"
               >
                 Add Facility
               </Button>

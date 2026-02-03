@@ -31,7 +31,7 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
     switch (role) {
       case "GOD": return "bg-amber-600";
       case "ADMIN": return "bg-purple-600";
-      case "SUPERVISOR": return "bg-blue-600";
+      case "SUPERVISOR": return "btn-gold-metallic";
       case "DIVER": return "bg-teal-600";
       default: return "bg-gray-600";
     }
@@ -70,7 +70,7 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
             variant="outline"
             size="sm"
             onClick={() => setChatOpen(true)}
-            className="text-xs border-primary/50 text-primary hover:bg-primary/10"
+            className="text-xs btn-gold-metallic"
           >
             AI Assistant
           </Button>

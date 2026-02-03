@@ -70,7 +70,7 @@ export function RiskRegisterTab() {
     switch (category) {
       case "safety": return "border-red-500";
       case "environmental": return "border-green-500";
-      case "operational": return "border-blue-500";
+      case "operational": return "border-amber-500";
       default: return "border-gray-500";
     }
   };
@@ -270,7 +270,7 @@ export function RiskRegisterTab() {
 
             <Button
               data-testid="button-save-risk"
-              className="w-full bg-blue-600 hover:bg-blue-700"
+              className="w-full btn-gold-metallic hover:btn-gold-metallic"
             >
               Save Changes
             </Button>

@@ -90,7 +90,7 @@ export function LibraryTab() {
 
   const getCategoryColor = (category: string) => {
     switch (category) {
-      case "Standards": return "bg-blue-600";
+      case "Standards": return "btn-gold-metallic";
       case "Regulations": return "bg-purple-600";
       case "Tables": return "bg-green-600";
       case "SOPs": return "bg-orange-600";
@@ -113,7 +113,7 @@ export function LibraryTab() {
   const getDocCategoryColor = (cat: string) => {
     switch (cat) {
       case "raw_notes": return "bg-gray-600";
-      case "daily_log": return "bg-blue-600";
+      case "daily_log": return "btn-gold-metallic";
       case "master_log": return "bg-green-600";
       case "dive_log": return "bg-cyan-600";
       case "risk_register": return "bg-red-600";
@@ -164,7 +164,7 @@ export function LibraryTab() {
             <div className="flex gap-2 flex-wrap">
               <Badge
                 data-testid="filter-all"
-                className={`cursor-pointer ${!selectedCategory ? "bg-blue-600" : "bg-navy-700 hover:bg-navy-600"}`}
+                className={`cursor-pointer ${!selectedCategory ? "btn-gold-metallic" : "bg-navy-700 hover:bg-navy-600"}`}
                 onClick={() => setSelectedCategory(null)}
               >
                 All
@@ -214,7 +214,7 @@ export function LibraryTab() {
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">
                                   {exp.fileType === "docx" ? (
-                                    <FileText className="w-8 h-8 text-blue-400" />
+                                    <FileText className="w-8 h-8 text-amber-400" />
                                   ) : (
                                     <FileSpreadsheet className="w-8 h-8 text-green-400" />
                                   )}

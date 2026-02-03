@@ -71,7 +71,7 @@ export function DiveLogsTab() {
                   <CardTitle className="text-white text-base">
                     Dive #{dive.diveNumber}
                   </CardTitle>
-                  <Badge className="bg-blue-600">
+                  <Badge className="btn-gold-metallic">
                     {dive.depth ? `${dive.depth} fsw` : "Depth TBD"}
                   </Badge>
                 </div>

@@ -17,7 +17,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-navy-900 flex items-center justify-center">
-        <Spinner className="w-8 h-8 text-blue-500" />
+        <Spinner className="w-8 h-8 text-amber-400" />
       </div>
     );
   }

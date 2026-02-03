@@ -531,7 +531,7 @@ export function DailyLogTab() {
 
   const getCategoryColor = (category: string) => {
     switch (category) {
-      case "dive_op": return "bg-blue-600";
+      case "dive_op": return "btn-gold-metallic";
       case "directive": return "bg-purple-600";
       case "safety": return "bg-red-600";
       case "ops": return "bg-teal-600";
@@ -644,7 +644,7 @@ export function DailyLogTab() {
                   variant="outline"
                   onClick={() => createDayMutation.mutate()}
                   disabled={createDayMutation.isPending}
-                  className="text-xs border-blue-500 text-blue-400 hover:bg-blue-500/20"
+                  className="text-xs border-amber-500 text-amber-400 hover:bg-amber-500/20"
                 >
                   {createDayMutation.isPending ? "Creating..." : "New Shift"}
                 </Button>
@@ -657,7 +657,7 @@ export function DailyLogTab() {
                 variant="outline"
                 onClick={() => createDayMutation.mutate()}
                 disabled={createDayMutation.isPending}
-                className="text-xs border-blue-500 text-blue-400 hover:bg-blue-500/20"
+                className="text-xs border-amber-500 text-amber-400 hover:bg-amber-500/20"
               >
                 {createDayMutation.isPending ? "Creating..." : "Start Shift"}
               </Button>
@@ -770,7 +770,7 @@ export function DailyLogTab() {
                   data-testid="button-send"
                   onClick={handleSend}
                   disabled={!rawInput.trim() || createEventMutation.isPending}
-                  className="bg-blue-600 hover:bg-blue-700"
+                  className="btn-gold-metallic hover:btn-gold-metallic"
                 >
                   Send
                 </Button>
@@ -904,7 +904,7 @@ export function DailyLogTab() {
                 <Card className="bg-navy-800/50 border-navy-600">
                   <CardHeader className="pb-2">
                     <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-blue-600" />
+                      <div className="w-2 h-2 rounded-full btn-gold-metallic" />
                       <CardTitle className="text-white text-sm">Dive Operations Log</CardTitle>
                       <Badge variant="outline" className="text-xs border-navy-500 text-navy-400">
                         {dives.length} dives

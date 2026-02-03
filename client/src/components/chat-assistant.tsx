@@ -258,7 +258,7 @@ export function ChatAssistant({ isOpen, onClose }: { isOpen: boolean; onClose: (
               <div key={msg.id || i} className={`flex gap-4 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
                 <div className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-sm font-medium ${
                   msg.role === "user" 
-                    ? "bg-blue-600 text-white" 
+                    ? "btn-gold-metallic text-white" 
                     : "bg-gradient-to-br from-teal-500 to-blue-600 text-white"
                 }`}>
                   {msg.role === "user" ? (user?.fullName?.[0] || user?.username?.[0] || "U") : "AI"}
@@ -266,7 +266,7 @@ export function ChatAssistant({ isOpen, onClose }: { isOpen: boolean; onClose: (
                 <div className={`flex-1 ${msg.role === "user" ? "text-right" : ""}`}>
                   <div className={`inline-block max-w-[85%] rounded-2xl px-4 py-3 ${
                     msg.role === "user"
-                      ? "bg-blue-600 text-white text-left"
+                      ? "btn-gold-metallic text-white text-left"
                       : "bg-[#2f2f2f] text-gray-100"
                   }`}>
                     <p className="text-[15px] leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>

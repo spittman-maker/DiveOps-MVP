@@ -223,7 +223,7 @@ export function DivePlanTab() {
                       data-testid="button-create-plan"
                       onClick={() => createPlanMutation.mutate()}
                       disabled={createPlanMutation.isPending}
-                      className="bg-blue-600 hover:bg-blue-700 w-full"
+                      className="btn-gold-metallic hover:btn-gold-metallic w-full"
                     >
                       Create Dive Plan
                     </Button>
@@ -310,7 +310,7 @@ export function DivePlanTab() {
                             data-testid="button-add-diver"
                             onClick={addDiverToCrew}
                             size="sm"
-                            className="bg-blue-600 hover:bg-blue-700"
+                            className="btn-gold-metallic hover:btn-gold-metallic"
                           >
                             <Plus className="w-4 h-4" />
                           </Button>
@@ -319,7 +319,7 @@ export function DivePlanTab() {
                           {editingStation.crew.divers.map((diver, i) => (
                             <Badge 
                               key={i} 
-                              className="bg-blue-600 cursor-pointer hover:bg-red-600"
+                              className="btn-gold-metallic cursor-pointer hover:bg-red-600"
                               onClick={() => removeDiverFromCrew(i)}
                             >
                               {diver} ×
@@ -404,7 +404,7 @@ export function DivePlanTab() {
                 <Button
                   data-testid="button-new-station"
                   onClick={() => setEditingStation({ ...emptyStation })}
-                  className="w-full bg-blue-600 hover:bg-blue-700"
+                  className="w-full btn-gold-metallic hover:btn-gold-metallic"
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   Add Station
@@ -423,7 +423,7 @@ export function DivePlanTab() {
                     <CardHeader className="pb-2">
                       <div className="flex items-center justify-between">
                         <CardTitle className="text-white text-sm flex items-center gap-2">
-                          <MapPin className="w-4 h-4 text-blue-400" />
+                          <MapPin className="w-4 h-4 text-amber-400" />
                           {station.stationId}
                         </CardTitle>
                         <Button
@@ -440,7 +440,7 @@ export function DivePlanTab() {
                       {station.targetDepthFsw && (
                         <div className="flex justify-between text-navy-300">
                           <span>Depth:</span>
-                          <span className="text-blue-400">{station.targetDepthFsw} fsw</span>
+                          <span className="text-amber-400">{station.targetDepthFsw} fsw</span>
                         </div>
                       )}
                       <div className="flex justify-between text-navy-300">
@@ -455,7 +455,7 @@ export function DivePlanTab() {
                               <Badge className="bg-amber-600">{(station.crew as StationCrew).supervisor} (SUP)</Badge>
                             )}
                             {(station.crew as StationCrew).divers.map((d, i) => (
-                              <Badge key={i} variant="outline" className="border-blue-500 text-blue-300">{d}</Badge>
+                              <Badge key={i} variant="outline" className="border-amber-500 text-amber-300">{d}</Badge>
                             ))}
                           </div>
                         </div>
@@ -546,9 +546,9 @@ export function DivePlanTab() {
                           className="border border-navy-600 rounded-lg p-3 bg-navy-900/30"
                         >
                           <div className="flex items-center justify-between mb-2">
-                            <span className="font-mono text-blue-400">{station.stationId}</span>
+                            <span className="font-mono text-amber-400">{station.stationId}</span>
                             {station.targetDepthFsw && (
-                              <Badge variant="outline" className="border-blue-500 text-blue-300">
+                              <Badge variant="outline" className="border-amber-500 text-amber-300">
                                 {station.targetDepthFsw} fsw
                               </Badge>
                             )}
@@ -809,7 +809,7 @@ function ProjectDivePlanSection() {
       case "Draft":
         return <Badge variant="outline" className="border-yellow-500 text-yellow-400">Draft</Badge>;
       case "Submitted":
-        return <Badge variant="outline" className="border-blue-500 text-blue-400">Submitted</Badge>;
+        return <Badge variant="outline" className="border-amber-500 text-amber-400">Submitted</Badge>;
       case "Approved":
         return <Badge className="bg-green-600">Approved</Badge>;
       case "Superseded":
@@ -846,7 +846,7 @@ function ProjectDivePlanSection() {
               data-testid="button-new-project-plan"
               size="sm"
               onClick={() => setIsCreating(true)}
-              className="bg-blue-600 hover:bg-blue-700"
+              className="btn-gold-metallic hover:btn-gold-metallic"
             >
               <Plus className="w-4 h-4 mr-1" />
               New Revision
@@ -994,7 +994,7 @@ function ProjectDivePlanSection() {
                             placeholder="Phone"
                             className="bg-navy-900 border-navy-600 text-white text-sm"
                           />
-                          <Button size="sm" onClick={addContact} className="bg-blue-600 hover:bg-blue-700">
+                          <Button size="sm" onClick={addContact} className="btn-gold-metallic hover:btn-gold-metallic">
                             <Plus className="w-4 h-4" />
                           </Button>
                         </div>
@@ -1023,13 +1023,13 @@ function ProjectDivePlanSection() {
                           onClick={() => toggleTask(task)}
                           className={`flex items-center gap-2 p-2 rounded cursor-pointer text-sm transition-colors ${
                             formData.natureOfWork.selectedTasks.includes(task)
-                              ? "bg-blue-600/20 border border-blue-500"
+                              ? "btn-gold-metallic/20 border border-amber-500"
                               : "bg-navy-800 border border-navy-700 hover:border-navy-500"
                           }`}
                         >
                           <div className={`w-4 h-4 rounded flex items-center justify-center ${
                             formData.natureOfWork.selectedTasks.includes(task)
-                              ? "bg-blue-600"
+                              ? "btn-gold-metallic"
                               : "bg-navy-700"
                           }`}>
                             {formData.natureOfWork.selectedTasks.includes(task) && (
@@ -1066,7 +1066,7 @@ function ProjectDivePlanSection() {
                       data-testid="button-save-project-plan"
                       onClick={() => createPlanMutation.mutate()}
                       disabled={createPlanMutation.isPending || formData.natureOfWork.selectedTasks.length === 0}
-                      className="flex-1 bg-blue-600 hover:bg-blue-700"
+                      className="flex-1 btn-gold-metallic hover:btn-gold-metallic"
                     >
                       Create Draft (Rev 0)
                     </Button>
@@ -1097,7 +1097,7 @@ function ProjectDivePlanSection() {
                     key={plan.id}
                     data-testid={`card-project-plan-${plan.id}`}
                     className={`bg-navy-800/50 border-navy-600 cursor-pointer hover:border-navy-500 transition-colors ${
-                      selectedPlan?.id === plan.id ? "border-blue-500" : ""
+                      selectedPlan?.id === plan.id ? "border-amber-500" : ""
                     }`}
                     onClick={() => setSelectedPlan(plan)}
                   >
@@ -1132,7 +1132,7 @@ function ProjectDivePlanSection() {
                                 submitPlanMutation.mutate(plan.id);
                               }}
                               disabled={submitPlanMutation.isPending}
-                              className="bg-blue-600 hover:bg-blue-700"
+                              className="btn-gold-metallic hover:btn-gold-metallic"
                             >
                               <Send className="w-4 h-4 mr-1" />
                               Submit
