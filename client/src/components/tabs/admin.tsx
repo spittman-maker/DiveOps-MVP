@@ -242,7 +242,7 @@ export function AdminTab() {
                   <div className="space-y-4">
                     <div>
                       <Label className="text-navy-400">AI Model</Label>
-                      <p className="text-white font-mono">gpt-4.1-mini</p>
+                      <p className="text-white font-mono">gpt-5.2</p>
                     </div>
                     <div>
                       <Label className="text-navy-400">Prompt Version</Label>

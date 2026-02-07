@@ -199,7 +199,7 @@ export function ChatAssistant({ isOpen, onClose }: { isOpen: boolean; onClose: (
             </div>
             <div>
               <h2 className="text-white font-semibold">DiveOps Assistant</h2>
-              <p className="text-xs text-gray-400">Powered by GPT-4</p>
+              <p className="text-xs text-gray-400">Powered by GPT-5.2</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
