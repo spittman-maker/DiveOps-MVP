@@ -1,0 +1,287 @@
+PSG-LOG-01 — Diver Entry (A. Castro)
+
+Diver Identification
+
+Diver Name: A. Castro (AC)
+
+Diver ID/Badge #: UNKNOWN
+
+Dive Parameters
+
+Max Depth (fsw): UNKNOWN
+
+Work Location / Scope Key: Night Shift – PFU1 – Infill cage / rigging to curtain
+
+Task / Work Accomplished: Inspect infill cages for removal; cage removed and laid on PFU1; rigging up to curtain.
+
+Timekeeping (24-hr)
+
+Leave Surface (LS): 2353
+
+Leave Bottom (LB): 0120
+
+Bottom Time (min): 87
+
+Decompression Required? (Y/N): UNKNOWN
+
+Method/Table: UNKNOWN
+
+Post-Dive Status: OK (default; no issues logged)
+
+Work Controls
+
+Tools/Equipment Used: UNKNOWN
+
+Install/Material IDs: PFU1; infill cage (ID not stated)
+
+QC Disposition (Pass / Rework / Hold): Not Stated
+
+Verifier: UNKNOWN
+
+Photo/Video/File Refs: UNKNOWN
+
+Sign-off
+
+Diver Initials: AC
+
+Supervisor Initials: BM
+
+PSG-LOG-01 — Diver Entry (B. Murphy)
+
+Diver Identification
+
+Diver Name: B. Murphy
+
+Diver ID/Badge #: UNKNOWN
+
+Dive Parameters
+
+Max Depth (fsw): UNKNOWN
+
+Work Location / Scope Key: Night Shift – PFU1 East – Curtain removal
+
+Task / Work Accomplished: Remove curtain on east side of PFU1; supported curtain removal sequence.
+
+Timekeeping (24-hr)
+
+Leave Surface (LS): 0110
+
+Leave Bottom (LB): 0240
+
+Bottom Time (min): 90
+
+Decompression Required? (Y/N): UNKNOWN
+
+Method/Table: UNKNOWN
+
+Post-Dive Status: OK (default; no issues logged)
+
+Work Controls
+
+Tools/Equipment Used: UNKNOWN
+
+Install/Material IDs: PFU1; Curtain #1/#2 (IDs not stated)
+
+QC Disposition (Pass / Rework / Hold): Not Stated
+
+Verifier: UNKNOWN
+
+Photo/Video/File Refs: UNKNOWN
+
+Sign-off
+
+Diver Initials: BM
+
+Supervisor Initials: BM
+
+PSG-LOG-01 — Diver Entry (J. Mitchell)
+
+Diver Identification
+
+Diver Name: J. Mitchell (JM)
+
+Diver ID/Badge #: UNKNOWN
+
+Dive Parameters
+
+Max Depth (fsw): UNKNOWN
+
+Work Location / Scope Key: Night Shift – PFU1 – Curtain removal continuation
+
+Task / Work Accomplished: Continue curtain removal operations through completion.
+
+Timekeeping (24-hr)
+
+Leave Surface (LS): 0239
+
+Leave Bottom (LB): 0342
+
+Bottom Time (min): 63
+
+Decompression Required? (Y/N): UNKNOWN
+
+Method/Table: UNKNOWN
+
+Post-Dive Status: OK (default; no issues logged)
+
+Work Controls
+
+Tools/Equipment Used: UNKNOWN
+
+Install/Material IDs: PFU1; Curtain #1/#2 (IDs not stated)
+
+QC Disposition (Pass / Rework / Hold): Not Stated
+
+Verifier: UNKNOWN
+
+Photo/Video/File Refs: UNKNOWN
+
+Sign-off
+
+Diver Initials: JM
+
+Supervisor Initials: BM
+
+PSG-LOG-01 — Diver Entry (R. Widders)
+
+Diver Identification
+
+Diver Name: R. Widders (RW)
+
+Diver ID/Badge #: UNKNOWN
+
+Dive Parameters
+
+Max Depth (fsw): UNKNOWN
+
+Work Location / Scope Key: Night Shift – PFU1 – Curtain removal support
+
+Task / Work Accomplished: Assist with curtain removal; supported removal actions.
+
+Timekeeping (24-hr)
+
+Leave Surface (LS): 0252
+
+Leave Bottom (LB): 0354
+
+Bottom Time (min): 62
+
+Decompression Required? (Y/N): UNKNOWN
+
+Method/Table: UNKNOWN
+
+Post-Dive Status: OK (default; no issues logged)
+
+Work Controls
+
+Tools/Equipment Used: UNKNOWN
+
+Install/Material IDs: PFU1; Curtain #1/#2 (IDs not stated)
+
+QC Disposition (Pass / Rework / Hold): Not Stated
+
+Verifier: UNKNOWN
+
+Photo/Video/File Refs: UNKNOWN
+
+Sign-off
+
+Diver Initials: RW
+
+Supervisor Initials: BM
+
+PSG-LOG-01 — Diver Entry (AD)
+
+Diver Identification
+
+Diver Name: AD
+
+Diver ID/Badge #: UNKNOWN
+
+Dive Parameters
+
+Max Depth (fsw): UNKNOWN
+
+Work Location / Scope Key: Night Shift – PFU1 West – Cleanup (gravel/laitance)
+
+Task / Work Accomplished: Clean gravel and laitance on west side of PFU1.
+
+Timekeeping (24-hr)
+
+Leave Surface (LS): 0357
+
+Leave Bottom (LB): 0506
+
+Bottom Time (min): 69
+
+Decompression Required? (Y/N): UNKNOWN
+
+Method/Table: UNKNOWN
+
+Post-Dive Status: OK (default; no issues logged)
+
+Work Controls
+
+Tools/Equipment Used: UNKNOWN
+
+Install/Material IDs: PFU1 (west side)
+
+QC Disposition (Pass / Rework / Hold): Not Stated
+
+Verifier: UNKNOWN
+
+Photo/Video/File Refs: UNKNOWN
+
+Sign-off
+
+Diver Initials: AD
+
+Supervisor Initials: BM
+
+PSG-LOG-01 — Diver Entry (BD)
+
+Diver Identification
+
+Diver Name: BD
+
+Diver ID/Badge #: UNKNOWN
+
+Dive Parameters
+
+Max Depth (fsw): UNKNOWN
+
+Work Location / Scope Key: Night Shift – PFU1 West – Cleanup continuation (gravel/laitance)
+
+Task / Work Accomplished: Continue laitance and gravel removal at PFU1.
+
+Timekeeping (24-hr)
+
+Leave Surface (LS): 0508
+
+Leave Bottom (LB): 0610
+
+Bottom Time (min): 62
+
+Decompression Required? (Y/N): UNKNOWN
+
+Method/Table: UNKNOWN
+
+Post-Dive Status: OK (default; no issues logged)
+
+Work Controls
+
+Tools/Equipment Used: UNKNOWN
+
+Install/Material IDs: PFU1 (west side)
+
+QC Disposition (Pass / Rework / Hold): Not Stated
+
+Verifier: UNKNOWN
+
+Photo/Video/File Refs: UNKNOWN
+
+Sign-off
+
+Diver Initials: BD
+
+Supervisor Initials: BM
