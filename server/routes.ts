@@ -884,7 +884,7 @@ export async function registerRoutes(
           }
           
           // If dive operation, create/update dive record for the diver
-          if (category === "dive_op" && extracted.diveOperation) {
+          if (extracted.diveOperation) {
             const diverIdentifiers = extracted.diverNames || extracted.diverInitials || [];
             const station = data.station || null;
             
