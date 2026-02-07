@@ -60,6 +60,8 @@ const riskUpdateSchema = z.object({
   status: z.enum(["open", "mitigated", "closed"]).optional(),
   owner: z.string().optional(),
   mitigation: z.string().optional(),
+  residualRisk: z.string().optional(),
+  closureAuthority: z.string().optional(),
   editReason: z.string().min(1),
 });
 
@@ -809,18 +811,31 @@ export async function registerRoutes(
             
             // Create risk items only from validated payload
             if (result.payload.risks && result.payload.risks.length > 0) {
-              const existingRisks = await storage.getRiskItemsByDay(day.id);
+              const existingRisks = await storage.getRiskItemsByProject(data.projectId);
+              const maxRiskNum = existingRisks
+                .map(r => r.riskId)
+                .filter(id => id.startsWith("RR-"))
+                .map(id => Number(id.slice(3)))
+                .filter(n => Number.isFinite(n))
+                .reduce((a, b) => Math.max(a, b), 0);
+
               for (let i = 0; i < result.payload.risks.length; i++) {
                 const risk = result.payload.risks[i];
-                const riskId = generateRiskId(day.date, existingRisks.length + i + 1);
+                const riskId = `RR-${String(maxRiskNum + i + 1).padStart(3, "0")}`;
+                const isDirective = (risk as any).trigger?.toLowerCase().includes("client") ||
+                  (risk as any).trigger?.toLowerCase().includes("directive");
                 await storage.createRiskItem({
                   dayId: day.id,
                   projectId: data.projectId,
                   riskId,
                   triggerEventId: logEvent.id,
-                  description: risk.description,
+                  description: `${(risk as any).trigger || risk.description}. Impact: ${(risk as any).impact || ""}`.trim(),
                   category: "operational",
+                  source: isDirective ? "client_directive" : "field_observation",
+                  affectedTask: (risk as any).affected_task || null,
+                  initialRiskLevel: "med",
                   status: "open",
+                  owner: (risk as any).owner || null,
                 });
               }
             }
@@ -1194,6 +1209,11 @@ export async function registerRoutes(
 
   app.get("/api/days/:dayId/risks", requireAuth, async (req: Request, res: Response) => {
     const risks = await storage.getRiskItemsByDay(req.params.dayId);
+    res.json(risks);
+  });
+
+  app.get("/api/projects/:projectId/risks", requireAuth, async (req: Request, res: Response) => {
+    const risks = await storage.getRiskItemsByProject(req.params.projectId);
     res.json(risks);
   });
 

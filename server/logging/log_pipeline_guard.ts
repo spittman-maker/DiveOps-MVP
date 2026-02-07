@@ -449,14 +449,14 @@ const RISK_RULES: RiskRule[] = [
   {
     key: "manpower_reduction",
     match: /\b(reduce|reduction)\b.*\b(crew|crews|personnel|manpower)\b|\bcrew sizes\b|\bonly\s+\w+\s+crews?\b/i,
-    trigger: "Client/JV-directed manpower reduction",
+    trigger: "Client-directed manpower reduction",
     impact: "Reduced production capacity; schedule exposure and inefficiency (lost diver-hours / re-sequencing).",
     owner: "Ops/PM",
   },
   {
     key: "early_release",
     match: /\b(leave early|end .*shift early|cut .*shift|released early|8\s*hours?|eight\s*hours?)\b/i,
-    trigger: "Client/JV-directed early release / reduced shift duration",
+    trigger: "Client-directed early release / reduced shift duration",
     impact: "Loss of planned work window; standby inefficiency and schedule exposure.",
     owner: "Ops/PM",
   },
@@ -465,14 +465,14 @@ const RISK_RULES: RiskRule[] = [
   {
     key: "pull_all_divers",
     match: /\b(pull all divers|recall.*divers|divers.*return to surface)\b|\b(dho)\b.*\b(pull|recall)\b/i,
-    trigger: "DHO/JV-directed diver recall / stoppage",
+    trigger: "DHO/Client-directed diver recall / stoppage",
     impact: "Interrupted bottom time and work sequence; productivity loss and potential rework/standby exposure.",
     owner: "Diving Superintendent",
   },
   {
     key: "stop_work_hold",
     match: /\b(stop work|hold|suspend|pause|stand down|standdown)\b/i,
-    trigger: "Client/JV-directed stop-work / hold / standdown",
+    trigger: "Client-directed stop-work / hold / standdown",
     impact: "Immediate production loss; remobilization and schedule exposure.",
     owner: "Ops/PM",
   },
@@ -506,7 +506,7 @@ const RISK_RULES: RiskRule[] = [
   {
     key: "pump_circulation_directive",
     match: /\b(6\"|6-inch|6 inch)\b.*\bpump\b|\bpump\b.*\b(in the water|deploy|install)\b|\bcirculat(e|ing)\b.*\bwater\b/i,
-    trigger: "Client/JV-directed equipment deployment (pump/circulation)",
+    trigger: "Client-directed equipment deployment (pump/circulation)",
     impact: "Unplanned equipment deployment/diversion; potential critical path and crew utilization inefficiency.",
     owner: "Diving Superintendent",
   },
@@ -522,21 +522,21 @@ const RISK_RULES: RiskRule[] = [
   {
     key: "conflicting_direction",
     match: /\b(CONFLICTING DIRECTION)\b/i,
-    trigger: "CONFLICTING DIRECTION issued by JV/OICC",
+    trigger: "CONFLICTING DIRECTION issued by Client",
     impact: "Sequencing uncertainty and potential rework/standby exposure; schedule impact risk.",
     owner: "Ops/PM",
   },
   {
     key: "reversed_direction",
     match: /\b(REVERSED DIRECTION)\b/i,
-    trigger: "REVERSED DIRECTION issued by JV/OICC",
+    trigger: "REVERSED DIRECTION issued by Client",
     impact: "Reversal may cause rework, demobilization/remobilization inefficiency, and schedule impact.",
     owner: "Ops/PM",
   },
 ];
 
 function nextRiskId(dateIso: string, existing: RiskOut[] | undefined): string {
-  const prefix = `R-${yyyymmdd(dateIso)}-`;
+  const prefix = "RR-";
   const max = (existing ?? [])
     .map(r => r.risk_id)
     .filter(id => id.startsWith(prefix))

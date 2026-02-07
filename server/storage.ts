@@ -96,6 +96,7 @@ export interface IStorage {
   createRiskItem(risk: InsertRiskItem): Promise<RiskItem>;
   getRiskItem(id: string): Promise<RiskItem | undefined>;
   getRiskItemsByDay(dayId: string): Promise<RiskItem[]>;
+  getRiskItemsByProject(projectId: string): Promise<RiskItem[]>;
   updateRiskItem(id: string, updates: Partial<InsertRiskItem>): Promise<RiskItem | undefined>;
 
   // Client Comms
@@ -501,6 +502,12 @@ export class DbStorage implements IStorage {
   async getRiskItemsByDay(dayId: string): Promise<RiskItem[]> {
     return await db.select().from(schema.riskItems)
       .where(eq(schema.riskItems.dayId, dayId))
+      .orderBy(schema.riskItems.createdAt);
+  }
+
+  async getRiskItemsByProject(projectId: string): Promise<RiskItem[]> {
+    return await db.select().from(schema.riskItems)
+      .where(eq(schema.riskItems.projectId, projectId))
       .orderBy(schema.riskItems.createdAt);
   }
 

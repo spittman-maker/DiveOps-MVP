@@ -296,12 +296,12 @@ export function parseEventTime(rawText: string, dayDate: string): Date | null {
 // ────────────────────────────────────────────────────────────────────────────
 
 /**
- * Generate risk ID in format R-YYYYMMDD-###
+ * Generate risk ID in format RR-###
+ * Per compliance framework: Risk IDs use RR-001, RR-002, etc. — never reused
  */
 export function generateRiskId(date: string, sequence: number): string {
-  const dateStr = date.replace(/-/g, '');
   const seqStr = sequence.toString().padStart(3, '0');
-  return `R-${dateStr}-${seqStr}`;
+  return `RR-${seqStr}`;
 }
 
 // ────────────────────────────────────────────────────────────────────────────

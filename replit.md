@@ -70,7 +70,22 @@ If dive table information is requested:
   - PSG-LOG-01 fields: diverBadgeId, station, workLocation, taskSummary, toolsEquipment, installMaterialIds, qcDisposition, verifier, decompRequired, decompMethod, postDiveStatus, photoVideoRefs, supervisorInitials
   - PATCH /api/dives/:id for supervisor field editing
   - POST /api/dives/:id/generate-summary for AI task summary from related log events
-- **Risk Register**: Safety and operational risk tracking
+- **Risk Register**: Rolling cumulative safety/operational risk tracking (RR-### IDs, project-wide, persists across days)
+  - Fields: riskId, source (jha/field_observation/client_directive/equipment_issue), description, affectedTask, initialRiskLevel (low/med/high), residualRisk, status (open/mitigated/closed), owner, mitigation, closureAuthority, linkedDirectiveId
+  - Auto-created from client directives, condition changes, deviations, equipment issues
+  - API: GET /api/projects/:projectId/risks (rolling), GET /api/days/:dayId/risks (day-scoped), PATCH /api/risks/:id
+- **Client Directive Register**: Verbatim client instruction tracking (CD-### IDs)
+
+### Compliance Framework (4 Controlled Records)
+The system maintains 4 parallel controlled records per compliance document:
+1. **Risk Register** (rolling, cumulative) — RR-### IDs, never reused, persists across days
+2. **Daily Field / Supervisor Log** (chronological, timestamped) — no interpretation, no hindsight
+3. **ADCI-Compliant Dive Log** (structured) — factual only, cross-references Risk IDs
+4. **Client Directive Register** (verbatim) — CD-### IDs, never paraphrased, linked Risk IDs
+- Governing rules: never invent data, never summarize client instructions, never close risks without authorization
+- Auto-linking: client directives auto-generate linked Risk IDs; Risk IDs referenced across all records
+- Terminology: Always use "Client" instead of "JV/OICC"
+- AI model: gpt-5.2 across all components
 
 ### Dive Extraction
 - Name parsing: handles "A.Castro", "Diver B.Murphy", "Zach Meador", 2-letter initials
