@@ -117,10 +117,6 @@ function generateDeterministicAnnotations(rawText: string, category: EventCatego
     annotations.push({ type: "missing_info", message: "Dive start (L/S) detected but no depth (FSW) specified" });
   }
   
-  if (/\bR\/?S\b/.test(upper) && !/\bL\/?S\b/.test(upper)) {
-    annotations.push({ type: "ambiguous", message: "Diver surfaced (R/S) without a corresponding L/S in this entry" });
-  }
-  
   if (/\bL\/?S\b/.test(upper) || /\bR\/?B\b/.test(upper)) {
     const hasName = /[A-Z][a-z]+\s+[A-Z][a-z]+/.test(rawText) || /\b[A-Z]{2,3}\b/.test(rawText);
     if (!hasName) {
