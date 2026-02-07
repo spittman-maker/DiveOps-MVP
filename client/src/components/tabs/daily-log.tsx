@@ -193,6 +193,7 @@ export function DailyLogTab() {
       setPttPendingSubmit(false);
       queryClient.invalidateQueries({ queryKey: ["log-events"] });
       queryClient.invalidateQueries({ queryKey: ["master-log"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/days"] });
       toast({ title: "Entry saved", description: "Log entry persisted to database" });
     },
     onError: () => {
