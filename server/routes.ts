@@ -945,9 +945,13 @@ export async function registerRoutes(
             
             const rawStripped = data.rawText.replace(/^\d{3,4}\s*/, '').trim();
             if (rawStripped) {
-              if (dive.taskSummary) {
-                const combined = `${dive.taskSummary} | ${rawStripped}`;
-                await storage.updateDive(dive.id, { taskSummary: combined });
+              const currentDive = await storage.getDive(dive.id);
+              const existing = currentDive?.taskSummary;
+              if (existing) {
+                if (!existing.includes(rawStripped)) {
+                  const combined = `${existing} | ${rawStripped}`;
+                  await storage.updateDive(dive.id, { taskSummary: combined });
+                }
               } else {
                 await storage.updateDive(dive.id, { taskSummary: rawStripped });
               }
