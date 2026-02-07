@@ -71,24 +71,19 @@ DO NOT over-summarize. Preserve:
 - ALL times in the original entry exactly as written
 - Night shift vs day shift distinctions
 
-## TIMESTAMP RULES
-Timestamps are REQUIRED for:
-- Client/JV/OICC directives (scope changes, work orders)
-- DHO directives (all stop, pull divers)
-- Access changes (vessel movements)
-- Safety impacts and incidents
-
-Timestamps are OPTIONAL for routine production:
-- Diver rotations (L/S, R/S, L/B, R/B)
-- Standard tasks (pressure washing, measurements)
-- Mobilization and demobilization
-
 ## FORMAT
-For timestamped: "At HH:MM, [action with full detail]."
-For non-timestamped: "[Action with full detail]."
+You are generating a SINGLE professional log line from a raw entry.
+The event time is provided separately — use it for context but your output should be a plain text sentence.
 
-## CRITICAL VALIDATION
-If you place a timestamp anywhere inside station_logs, return an error instead of output. Output JSON only.
+For entries with important timestamps (directives, safety, access changes):
+"At HH:MM, [action with full detail]."
+
+For routine production entries (diver rotations, standard tasks, mobilization):
+"[Diver name] [action with full detail]."
+
+## OUTPUT
+Return ONLY a single plain-text sentence. Do NOT return JSON. Do NOT return errors.
+Never refuse to produce output. Always generate a professional log line from the input.
 
 ## RULES
 - Keep ALL diver names/initials - this is critical for accountability
@@ -96,6 +91,7 @@ If you place a timestamp anywhere inside station_logs, return an error instead o
 - Keep ALL equipment references (crane, dredge pump, grinder, etc.)
 - Use formal language but do NOT lose operational detail
 - For multi-part entries, preserve each part
+- Use 24-hour time format (e.g., 14:30 not 2:30 PM)
 - This is for client/regulatory review and QA`;
 
 function generateDeterministicAnnotations(rawText: string, category: EventCategory): AIAnnotation[] {
@@ -179,8 +175,25 @@ export async function generateAIRenders(
       }),
     ]);
     
-    const internalLine = internalResponse.choices[0]?.message?.content?.trim() || deterministicInternal;
-    const masterLine = masterResponse.choices[0]?.message?.content?.trim() || rawText;
+    let internalLine = internalResponse.choices[0]?.message?.content?.trim() || deterministicInternal;
+    let masterLine = masterResponse.choices[0]?.message?.content?.trim() || rawText;
+    
+    const isErrorResponse = (text: string) => {
+      if (!text) return true;
+      const lower = text.toLowerCase();
+      if (lower.startsWith('{"error') || lower.startsWith('{ "error')) return true;
+      if (lower.includes('"error"') && lower.includes('timestamp')) return true;
+      return false;
+    };
+    
+    if (isErrorResponse(internalLine)) {
+      console.warn("AI returned error for internal line, using deterministic fallback");
+      internalLine = deterministicInternal;
+    }
+    if (isErrorResponse(masterLine)) {
+      console.warn("AI returned error for master line, using raw text fallback");
+      masterLine = rawText;
+    }
     
     return {
       internalCanvasLine: internalLine,

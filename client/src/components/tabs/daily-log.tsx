@@ -308,7 +308,11 @@ export function DailyLogTab() {
       setIsRecording(true);
     } catch (err) {
       console.error("Microphone access error:", err);
-      toast({ title: "Microphone Error", description: "Could not access microphone", variant: "destructive" });
+      const isSecurityError = (err as any)?.name === "NotAllowedError" || (err as any)?.name === "SecurityError";
+      const description = isSecurityError 
+        ? "Microphone access requires HTTPS or browser permission. Check your browser settings and allow microphone access for this site."
+        : "Could not access microphone. Please check your browser permissions.";
+      toast({ title: "Microphone Error", description, variant: "destructive" });
     }
   }, [toast]);
 

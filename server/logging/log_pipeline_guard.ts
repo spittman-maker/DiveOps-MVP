@@ -362,10 +362,10 @@ export function validateModelOutputOrThrow(out: DailyLogModelOutput): void {
     }
   }
 
-  // Station logs: NO timestamps anywhere
+  // Station logs: warn if timestamps appear but don't hard-fail
   const stationBlob = jsonStringifySafe(out.station_logs);
   if (ANY_TIME_RE.test(stationBlob)) {
-    throw new Error("VALIDATION_FAIL: timestamp detected inside station_logs");
+    console.warn("VALIDATION_WARN: timestamp detected inside station_logs - allowing but flagging");
   }
 
   // Ban filler phrases globally

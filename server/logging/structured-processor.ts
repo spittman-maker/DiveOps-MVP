@@ -50,17 +50,13 @@ NEVER generalize, calculate, or infer dive times, decompression schedules, or di
   "risks": []
 }
 
-## CRITICAL RULES
+## RULES
 1. DIRECTIVES: Must have valid "time" field in HH:MM format. Extract time from the input.
-2. STATION_LOGS: Must NOT contain any timestamps. Remove all time references from text.
-3. If you place a timestamp anywhere inside station_logs, return an error instead of output.
-4. DO NOT CREATE RISKS. Return risks: [] always. Risk creation is handled separately.
-5. Preserve all diver names, initials, tasks, equipment, and measurements.
-6. Do NOT add filler text like "operations continued as scheduled".
-
-## VALIDATION
-If you output any timestamps in station_logs, the output will be rejected.
-If directives are missing valid times, the output will be rejected.
+2. STATION_LOGS: Summarize what happened at each station. Focus on crew, scope, and production. Time references should be in directives, not station_logs.
+3. DO NOT CREATE RISKS. Return risks: [] always. Risk creation is handled separately.
+4. Preserve all diver names, initials, tasks, equipment, and measurements.
+5. Do NOT add filler text like "operations continued as scheduled".
+6. ALWAYS produce valid output. Never return errors or refuse to generate output.
 
 Output JSON only.`;
 

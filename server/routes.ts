@@ -1330,33 +1330,39 @@ export async function registerRoutes(
     }));
     
     // Calculate summary from log events
-    const allDiverInitials = new Set<string>();
+    const allDiverNames = new Set<string>();
     let diveStartCount = 0;
     let extractedMaxDepth = 0;
     
     for (const event of events) {
-      const text = event.rawText.toUpperCase();
+      const text = event.rawText;
+      const upper = text.toUpperCase();
       
-      const initialsMatch = text.match(/\b([A-Z]{2,3})\s*[LR]\b/g);
-      if (initialsMatch) {
-        initialsMatch.forEach(m => {
-          const initials = m.replace(/\s*[LR]$/, '').trim();
-          if (initials.length >= 2 && initials.length <= 3) {
-            allDiverInitials.add(initials);
-          }
+      const nameBeforeDiveOp = text.match(/([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+L\/?S\b/g);
+      if (nameBeforeDiveOp) {
+        nameBeforeDiveOp.forEach(m => {
+          const name = m.replace(/\s+L\/?S$/i, '').trim();
+          if (name.length > 1) allDiverNames.add(name);
         });
       }
       
-      const nameMatch = event.rawText.match(/([A-Z][a-z]+\s+[A-Z][a-z]+)\s+L\b/g);
-      if (nameMatch) nameMatch.forEach(() => diveStartCount++);
+      const initialDotName = text.match(/([A-Z]\.[A-Z][a-z]+)/g);
+      if (initialDotName) {
+        initialDotName.forEach(n => allDiverNames.add(n));
+      }
       
-      const lsMatches = text.match(/\bL\/?S\b/g);
+      const initialsBeforeDiveOp = upper.match(/\b([A-Z]{2})\s+(?:L\/?S|R\/?B|L\/?B|R\/?S)\b/g);
+      if (initialsBeforeDiveOp) {
+        initialsBeforeDiveOp.forEach(m => {
+          const initials = m.split(/\s+/)[0];
+          if (initials && initials.length === 2) allDiverNames.add(initials);
+        });
+      }
+      
+      const lsMatches = upper.match(/\bL\/?S\b/g);
       if (lsMatches) diveStartCount += lsMatches.length;
       
-      const standaloneL = text.match(/\b[A-Z]{2,3}\s+L\b/g);
-      if (standaloneL) diveStartCount += standaloneL.length;
-      
-      const depthMatch = text.match(/(\d+)\s*FSW/i);
+      const depthMatch = upper.match(/(\d+)\s*FSW/i);
       if (depthMatch) {
         const depth = parseInt(depthMatch[1], 10);
         if (depth > extractedMaxDepth) extractedMaxDepth = depth;
@@ -1364,14 +1370,14 @@ export async function registerRoutes(
     }
     
     const uniqueDivers = dives.length > 0 
-      ? new Set(dives.map(d => d.diverId))
-      : allDiverInitials;
+      ? new Set(dives.map(d => d.diverDisplayName || d.diverId))
+      : allDiverNames;
     const maxDepth = Math.max(
       extractedMaxDepth,
       ...dives.map(d => d.maxDepthFsw || 0)
     );
     const totalDives = dives.length > 0 ? dives.length : Math.max(diveStartCount, sections.dive.length);
-    const totalDivers = dives.length > 0 ? uniqueDivers.size : Math.max(allDiverInitials.size, 1);
+    const totalDivers = dives.length > 0 ? uniqueDivers.size : Math.max(allDiverNames.size, 1);
 
     // Get risk items for this day
     const risks = await storage.getRiskItemsByDay(req.params.dayId);
@@ -1394,7 +1400,7 @@ export async function registerRoutes(
         maxDepth,
         safetyIncidents: sections.safety.length,
         directivesCount: sections.directives.length,
-        extractedDiverInitials: Array.from(allDiverInitials),
+        extractedDiverInitials: Array.from(allDiverNames),
       },
     });
   });
