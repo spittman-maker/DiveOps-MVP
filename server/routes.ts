@@ -867,72 +867,73 @@ export async function registerRoutes(
             console.error("Failed to save AI annotations:", annotErr);
           }
           
-          // If safety incident, create a risk item
-          if (category === "safety") {
-            const existingRisks = await storage.getRiskItemsByDay(day.id);
-            const riskId = generateRiskId(day.date, existingRisks.length + 1);
-            
-            await storage.createRiskItem({
-              dayId: day.id,
-              projectId: data.projectId,
-              riskId,
-              triggerEventId: logEvent.id,
-              category: "safety",
-              description: data.rawText,
-              status: "open",
-            });
-          }
-          
-          // If dive operation, create/update dive record for the diver
-          if (extracted.diveOperation) {
-            const diverIdentifiers = extracted.diverNames || extracted.diverInitials || [];
-            const station = data.station || null;
-            
-            for (const identifier of diverIdentifiers) {
-              const initials = identifier.length <= 3 ? identifier : undefined;
-              let dive;
-              
-              if (initials) {
-                const diver = await storage.getUserByInitials(initials, data.projectId);
-                if (diver) {
-                  dive = await storage.getOrCreateDiveForDiver(day.id, data.projectId, diver.id);
-                  if (!dive.diverDisplayName) {
-                    await storage.updateDive(dive.id, { diverDisplayName: diver.fullName || diver.username, station });
-                  }
-                } else {
-                  dive = await storage.getOrCreateDiveByDisplayName(day.id, data.projectId, initials, station || undefined);
-                }
-              } else {
-                const nameParts = identifier.split(/[.\s]/);
-                const firstInitial = nameParts[0]?.charAt(0)?.toUpperCase() || "";
-                const lastName = nameParts[nameParts.length - 1] || "";
-                const searchInitials = `${firstInitial}${lastName.charAt(0).toUpperCase()}`;
-                
-                const diver = await storage.getUserByInitials(searchInitials, data.projectId);
-                if (diver) {
-                  dive = await storage.getOrCreateDiveForDiver(day.id, data.projectId, diver.id);
-                  if (!dive.diverDisplayName) {
-                    await storage.updateDive(dive.id, { diverDisplayName: diver.fullName || identifier, station });
-                  }
-                } else {
-                  dive = await storage.getOrCreateDiveByDisplayName(day.id, data.projectId, identifier, station || undefined);
-                }
-              }
-              
-              if (dive) {
-                const timeField = `${extracted.diveOperation}Time` as 'lsTime' | 'rbTime' | 'lbTime' | 'rsTime';
-                await storage.updateDiveTimes(dive.id, timeField, eventTime, extracted.depthFsw);
-                
-                if (extracted.taskDescription && !dive.taskSummary) {
-                  await storage.updateDive(dive.id, { taskSummary: extracted.taskDescription });
-                }
-              }
-            }
-          }
         })
         .catch((error) => {
           console.error("AI rendering failed:", error);
         });
+      
+      // If safety incident, create a risk item synchronously
+      if (category === "safety") {
+        const existingRisks = await storage.getRiskItemsByDay(day.id);
+        const riskId = generateRiskId(day.date, existingRisks.length + 1);
+        
+        await storage.createRiskItem({
+          dayId: day.id,
+          projectId: data.projectId,
+          riskId,
+          triggerEventId: logEvent.id,
+          category: "safety",
+          description: data.rawText,
+          status: "open",
+        });
+      }
+      
+      // If dive operation, create/update dive record for the diver synchronously
+      if (extracted.diveOperation) {
+        const diverIdentifiers = extracted.diverNames || extracted.diverInitials || [];
+        const station = data.station || null;
+        
+        for (const identifier of diverIdentifiers) {
+          const initials = identifier.length <= 3 ? identifier : undefined;
+          let dive;
+          
+          if (initials) {
+            const diver = await storage.getUserByInitials(initials, data.projectId);
+            if (diver) {
+              dive = await storage.getOrCreateDiveForDiver(day.id, data.projectId, diver.id);
+              if (!dive.diverDisplayName) {
+                await storage.updateDive(dive.id, { diverDisplayName: diver.fullName || diver.username, station });
+              }
+            } else {
+              dive = await storage.getOrCreateDiveByDisplayName(day.id, data.projectId, initials, station || undefined);
+            }
+          } else {
+            const nameParts = identifier.split(/[.\s]/);
+            const firstInitial = nameParts[0]?.charAt(0)?.toUpperCase() || "";
+            const lastName = nameParts[nameParts.length - 1] || "";
+            const searchInitials = `${firstInitial}${lastName.charAt(0).toUpperCase()}`;
+            
+            const diver = await storage.getUserByInitials(searchInitials, data.projectId);
+            if (diver) {
+              dive = await storage.getOrCreateDiveForDiver(day.id, data.projectId, diver.id);
+              if (!dive.diverDisplayName) {
+                await storage.updateDive(dive.id, { diverDisplayName: diver.fullName || identifier, station });
+              }
+            } else {
+              dive = await storage.getOrCreateDiveByDisplayName(day.id, data.projectId, identifier, station || undefined);
+            }
+          }
+          
+          if (dive) {
+            const timeField = `${extracted.diveOperation}Time` as 'lsTime' | 'rbTime' | 'lbTime' | 'rsTime';
+            await storage.updateDiveTimes(dive.id, timeField, eventTime, extracted.depthFsw);
+            
+            if (extracted.taskDescription && !dive.taskSummary) {
+              await storage.updateDive(dive.id, { taskSummary: extracted.taskDescription });
+            }
+          }
+        }
+      }
       
       // Return immediately with the persisted event
       res.status(201).json({

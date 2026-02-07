@@ -115,10 +115,10 @@ const INITIALS_PATTERN = /\b([A-Z]{2,3})\b/g;
 const TIME_PATTERN = /(\d{1,2}):?(\d{2})/g;
 
 // LS/RB/LB/RS synonyms
-const LS_SYNONYMS = [/\bLS\b/i, /\bleave\s*surface/i, /\bdiver\s*down/i, /\bsubmerg/i];
-const RB_SYNONYMS = [/\bRB\b/i, /\bon\s*bottom/i, /\breached?\s*bottom/i];
-const LB_SYNONYMS = [/\bLB\b/i, /\bleaving\s*bottom/i, /\bleft?\s*bottom/i, /\bascending/i];
-const RS_SYNONYMS = [/\bRS\b/i, /\bsurfaced?\b/i, /\bon\s*surface/i, /\bdiver\s*up/i];
+const LS_SYNONYMS = [/\bLS\b/i, /\bL\/S\b/i, /\bleave\s*surface/i, /\bleft\s*surface/i, /\bdiver\s*down/i, /\bsubmerg/i];
+const RB_SYNONYMS = [/\bRB\b/i, /\bR\/B\b/i, /\bon\s*bottom/i, /\breached?\s*bottom/i];
+const LB_SYNONYMS = [/\bLB\b/i, /\bL\/B\b/i, /\bleaving\s*bottom/i, /\bleft?\s*bottom/i, /\bascending/i];
+const RS_SYNONYMS = [/\bRS\b/i, /\bR\/S\b/i, /\bsurfaced?\b/i, /\bon\s*surface/i, /\breached?\s*surface/i, /\bdiver\s*up/i];
 
 // Depth patterns: 40 fsw, 40 ft, 40 feet, 40'
 const DEPTH_PATTERN = /(\d+)\s*(?:fsw|ft|feet|'|foot)/i;
@@ -228,8 +228,14 @@ export function extractData(rawText: string): ExtractedData {
   if (/\bL\/?S\b/i.test(rawText) && !extracted.diveOperation) {
     extracted.diveOperation = "ls";
   }
+  if (/\bR\/?B\b/i.test(rawText) && !extracted.diveOperation) {
+    extracted.diveOperation = "rb";
+  }
   if (/\bL\/?B\b/i.test(rawText) && !extracted.diveOperation) {
     extracted.diveOperation = "lb";
+  }
+  if (/\bR\/?S\b/i.test(rawText) && !extracted.diveOperation) {
+    extracted.diveOperation = "rs";
   }
   
   const timeMatches = Array.from(rawText.matchAll(TIME_PATTERN));

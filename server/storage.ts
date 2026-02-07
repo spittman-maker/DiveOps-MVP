@@ -446,7 +446,7 @@ export class DbStorage implements IStorage {
       .where(and(eq(schema.dives.dayId, dayId), eq(schema.dives.diverDisplayName, displayName)))
       .orderBy(desc(schema.dives.diveNumber));
     
-    const incompleteDive = existingDives.find(d => !d.lbTime);
+    const incompleteDive = existingDives.find(d => !d.rsTime);
     if (incompleteDive) return incompleteDive;
     
     const allDayDives = await db.select().from(schema.dives)

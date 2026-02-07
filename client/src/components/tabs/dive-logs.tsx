@@ -323,12 +323,30 @@ export function DiveLogsTab() {
                       onSave={saveFn}
                     />
                   </FieldRow>
+                  <FieldRow label="Reached Bottom (RB)">
+                    <EditableField
+                      diveId={dive.id}
+                      fieldName="rbTime"
+                      value={dive.rbTime}
+                      displayValue={formatTime24(dive.rbTime)}
+                      onSave={saveFn}
+                    />
+                  </FieldRow>
                   <FieldRow label="Leave Bottom (LB)">
                     <EditableField
                       diveId={dive.id}
                       fieldName="lbTime"
                       value={dive.lbTime}
                       displayValue={formatTime24(dive.lbTime)}
+                      onSave={saveFn}
+                    />
+                  </FieldRow>
+                  <FieldRow label="Reached Surface (RS)">
+                    <EditableField
+                      diveId={dive.id}
+                      fieldName="rsTime"
+                      value={dive.rsTime}
+                      displayValue={formatTime24(dive.rsTime)}
                       onSave={saveFn}
                     />
                   </FieldRow>
