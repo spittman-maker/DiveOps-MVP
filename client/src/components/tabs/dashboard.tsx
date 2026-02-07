@@ -163,10 +163,38 @@ function RiskRegisterWidget({ stats }: { stats: DashboardStats }) {
 }
 
 function RecentLogsWidget() {
+  const { data: recentLogs } = useQuery<Array<{id: string; rawText: string; category: string; eventTime: string; captureTime: string}>>({
+    queryKey: ["dashboard-recent-logs"],
+    queryFn: async () => {
+      const res = await fetch("/api/dashboard/recent-logs", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    refetchInterval: 10000,
+  });
+
+  if (!recentLogs || recentLogs.length === 0) {
+    return (
+      <div className="text-center text-navy-400 text-sm">
+        <p>No log entries yet</p>
+        <p className="text-xs mt-2">Add entries in the Daily Log tab</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="text-center text-navy-400 text-sm">
-      <p>Recent log entries will appear here</p>
-      <p className="text-xs mt-2">View Daily Log tab for full details</p>
+    <div className="space-y-2 overflow-auto h-full">
+      {recentLogs.map(log => (
+        <div key={log.id} className="bg-navy-700 rounded p-2 text-xs">
+          <div className="flex justify-between items-center mb-1">
+            <span className="text-amber-400 font-mono">
+              {new Date(log.eventTime).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}
+            </span>
+            <span className="text-navy-400 uppercase">{log.category}</span>
+          </div>
+          <div className="text-white/80 truncate">{log.rawText}</div>
+        </div>
+      ))}
     </div>
   );
 }

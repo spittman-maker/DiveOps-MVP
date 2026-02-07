@@ -258,14 +258,21 @@ export async function registerRoutes(
     try {
       const user = getUser(req);
       const prefs = await storage.getUserPreferences(user.id);
-      const projectId = prefs?.activeProjectId;
+      let projectId = prefs?.activeProjectId;
+      
+      if (!projectId) {
+        const projects = await storage.getAllProjects();
+        if (projects.length > 0) {
+          projectId = projects[0].id;
+        }
+      }
       
       let stats: any = {
         totalDives: 0,
         activeDives: 0,
         safetyIncidents: 0,
         openRisks: 0,
-        logEntriestoday: 0,
+        logEntriesToday: 0,
       };
       
       if (projectId) {
@@ -288,6 +295,46 @@ export async function registerRoutes(
       }
       
       res.json(stats);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/dashboard/recent-logs", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const prefs = await storage.getUserPreferences(user.id);
+      let projectId = prefs?.activeProjectId;
+      
+      if (!projectId) {
+        const projects = await storage.getAllProjects();
+        if (projects.length > 0) {
+          projectId = projects[0].id;
+        }
+      }
+      
+      if (!projectId) {
+        return res.json([]);
+      }
+      
+      const day = await storage.getMostRecentDayByProject(projectId);
+      if (!day) {
+        return res.json([]);
+      }
+      
+      const logs = await storage.getLogEventsByDay(day.id);
+      const recentLogs = logs
+        .sort((a, b) => new Date(b.captureTime).getTime() - new Date(a.captureTime).getTime())
+        .slice(0, 5)
+        .map(log => ({
+          id: log.id,
+          rawText: log.rawText,
+          category: log.category,
+          eventTime: log.eventTime,
+          captureTime: log.captureTime,
+        }));
+      
+      res.json(recentLogs);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
