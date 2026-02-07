@@ -445,10 +445,10 @@ export function DashboardTab() {
     i: widget.id,
     x: widget.x,
     y: widget.y,
-    w: 2,
-    h: 2,
-    minW: 2,
-    minH: 2,
+    w: widget.w,
+    h: widget.h,
+    minW: 1,
+    minH: 1,
     static: false,
   }));
 
