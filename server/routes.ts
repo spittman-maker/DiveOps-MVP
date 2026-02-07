@@ -943,8 +943,14 @@ export async function registerRoutes(
             const timeField = `${extracted.diveOperation}Time` as 'lsTime' | 'rbTime' | 'lbTime' | 'rsTime';
             await storage.updateDiveTimes(dive.id, timeField, eventTime, extracted.depthFsw);
             
-            if (extracted.taskDescription && !dive.taskSummary) {
-              await storage.updateDive(dive.id, { taskSummary: extracted.taskDescription });
+            const rawStripped = data.rawText.replace(/^\d{3,4}\s*/, '').trim();
+            if (rawStripped) {
+              if (dive.taskSummary) {
+                const combined = `${dive.taskSummary} | ${rawStripped}`;
+                await storage.updateDive(dive.id, { taskSummary: combined });
+              } else {
+                await storage.updateDive(dive.id, { taskSummary: rawStripped });
+              }
             }
           }
         }
