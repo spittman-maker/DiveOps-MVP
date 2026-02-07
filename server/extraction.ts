@@ -175,14 +175,23 @@ function extractDiverNames(rawText: string): { names: string[]; initials: string
 }
 
 function extractTaskDescription(rawText: string): string | undefined {
-  const diveOpStripped = rawText
+  let text = rawText
     .replace(/^\d{3,4}\s*/, '')
-    .replace(/\b(?:Diver\s+)?(?:[A-Z]\.\s*[A-Z][a-z]+|[A-Z][a-z]+\s+[A-Z][a-z]+|[A-Z]{2,3})\s+(?:L\/?S|R\/?S|L\/?B|R\/?B)\b/gi, '')
-    .replace(/\s+to\s+/, ' ')
+    .replace(/\b(?:L\/?S|R\/?S|R\/?B|L\/?B)\b\s*/gi, '')
+    .replace(/\b(?:Diver\s+)?(?:[A-Z]\.\s*[A-Z][a-z]+|[A-Z][a-z]+\s+[A-Z][a-z]+)\b/g, '')
+    .replace(/\b[A-Z]{2,3}\b/g, (m) => {
+      const skip = new Set(["FSW","PSI","DCS","PFU","QC","QA","ID","OK","TBD","GDS","ATC","LWT","AIS","DRA"]);
+      return skip.has(m) ? m : '';
+    })
+    .replace(/\bdown\b\s*/i, '')
+    .replace(/\bcont(?:inue)?:?\s*/i, 'continue ')
+    .replace(/,+/g, ',')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s,]+|[\s,]+$/g, '')
     .trim();
-  
-  if (diveOpStripped.length > 5) {
-    return diveOpStripped;
+
+  if (text.length > 5) {
+    return text;
   }
   return undefined;
 }

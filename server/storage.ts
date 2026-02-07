@@ -443,18 +443,53 @@ export class DbStorage implements IStorage {
   }
 
   async getOrCreateDiveByDisplayName(dayId: string, projectId: string, displayName: string, station?: string): Promise<Dive> {
-    const existingDives = await db.select().from(schema.dives)
-      .where(and(eq(schema.dives.dayId, dayId), eq(schema.dives.diverDisplayName, displayName)))
-      .orderBy(desc(schema.dives.diveNumber));
-    
-    const incompleteDive = existingDives.find(d => !d.rsTime);
-    if (incompleteDive) return incompleteDive;
-    
     const allDayDives = await db.select().from(schema.dives)
       .where(eq(schema.dives.dayId, dayId))
       .orderBy(desc(schema.dives.diveNumber));
+
+    const isInitials = displayName.length <= 3 && /^[A-Z]{2,3}$/.test(displayName);
+
+    function deriveInitials(name: string): string {
+      const parts = name.split(/[\s.]+/).filter(Boolean);
+      if (parts.length >= 2) {
+        return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+      }
+      return name.toUpperCase();
+    }
+
+    const matchingDives = allDayDives.filter(d => {
+      const dn = d.diverDisplayName || "";
+      if (dn === displayName) return true;
+      if (isInitials && dn.length > 3) {
+        return deriveInitials(dn) === displayName;
+      }
+      if (!isInitials && displayName.length > 3 && dn.length <= 3) {
+        return deriveInitials(displayName) === dn;
+      }
+      return false;
+    });
+
+    const incompleteDive = matchingDives.find(d => !d.rsTime);
+    if (incompleteDive) return incompleteDive;
+
+    if (matchingDives.length > 0) {
+      const latest = matchingDives.sort((a, b) => b.diveNumber - a.diveNumber)[0];
+      if (latest.rsTime) {
+        const nextNumber = allDayDives.length > 0 ? allDayDives[0].diveNumber + 1 : 1;
+        const useName = latest.diverDisplayName && latest.diverDisplayName.length > 3
+          ? latest.diverDisplayName : displayName;
+        const [created] = await db.insert(schema.dives).values({
+          dayId,
+          projectId,
+          diverDisplayName: useName,
+          station: station || latest.station || null,
+          diveNumber: nextNumber,
+        } as any).returning();
+        return created!;
+      }
+    }
+
     const nextNumber = allDayDives.length > 0 ? allDayDives[0].diveNumber + 1 : 1;
-    
     const [created] = await db.insert(schema.dives).values({
       dayId,
       projectId,
