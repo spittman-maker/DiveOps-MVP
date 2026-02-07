@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import GridLayout from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
@@ -356,6 +356,21 @@ export function DashboardTab() {
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
   const [localLayout, setLocalLayout] = useState<WidgetConfig[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(800);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width - 32);
+      }
+    });
+    observer.observe(el);
+    setContainerWidth(el.clientWidth - 32);
+    return () => observer.disconnect();
+  }, []);
 
   const { data: layout } = useQuery<DashboardLayout>({
     queryKey: ["dashboard-layout"],
@@ -525,18 +540,18 @@ export function DashboardTab() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-4">
+      <div ref={containerRef} className="flex-1 overflow-auto p-4">
         <GridLayout
           className="layout"
           layout={gridLayout}
           cols={4}
-          rowHeight={120}
-          width={800}
+          rowHeight={150}
+          width={containerWidth}
           onLayoutChange={handleLayoutChange as any}
           isDraggable={isEditing}
-          isResizable={true}
+          isResizable={isEditing}
           draggableHandle=".widget-drag-handle"
-          resizeHandles={['se', 'sw', 'ne', 'nw', 'e', 'w', 'n', 's']}
+          resizeHandles={['se']}
         >
           {localLayout.map(widget => (
             <div key={widget.id} className="bg-navy-800 border border-navy-600 rounded-lg overflow-hidden">
