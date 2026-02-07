@@ -55,10 +55,10 @@ const WIDGET_TYPES = [
   { type: "daily_summary", label: "Today's Summary", defaultW: 2, defaultH: 2 },
   { type: "active_dives", label: "Active Dives", defaultW: 2, defaultH: 2 },
   { type: "recent_logs", label: "Recent Logs", defaultW: 2, defaultH: 2 },
-  { type: "safety_incidents", label: "Safety Status", defaultW: 2, defaultH: 1 },
+  { type: "safety_incidents", label: "Safety Status", defaultW: 2, defaultH: 2 },
   { type: "risk_register", label: "Risk Register", defaultW: 2, defaultH: 2 },
   { type: "dive_stats", label: "Dive Statistics", defaultW: 2, defaultH: 2 },
-  { type: "project_status", label: "Project Status", defaultW: 2, defaultH: 1 },
+  { type: "project_status", label: "Project Status", defaultW: 2, defaultH: 2 },
   { type: "weather", label: "Weather & Lightning", defaultW: 2, defaultH: 2 },
 ];
 
@@ -437,7 +437,7 @@ export function DashboardTab() {
       { id: "w1", type: "daily_summary", title: "Today's Summary", x: 0, y: 0, w: 2, h: 2 },
       { id: "w2", type: "active_dives", title: "Active Dives", x: 2, y: 0, w: 2, h: 2 },
       { id: "w3", type: "recent_logs", title: "Recent Log Entries", x: 0, y: 2, w: 2, h: 2 },
-      { id: "w4", type: "safety_incidents", title: "Safety Status", x: 2, y: 2, w: 2, h: 1 },
+      { id: "w4", type: "safety_incidents", title: "Safety Status", x: 2, y: 2, w: 2, h: 2 },
     ]);
   };
 
@@ -445,10 +445,10 @@ export function DashboardTab() {
     i: widget.id,
     x: widget.x,
     y: widget.y,
-    w: widget.w,
-    h: widget.h,
-    minW: 1,
-    minH: 1,
+    w: 2,
+    h: 2,
+    minW: 2,
+    minH: 2,
     static: false,
   }));
 

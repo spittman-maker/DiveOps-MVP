@@ -33,7 +33,7 @@ export interface AIRenderResult {
 }
 
 const PROMPT_VERSION = "v1.0";
-const MODEL = "gpt-4.1-mini";
+const MODEL = "gpt-5.2";
 
 const INTERNAL_SYSTEM_PROMPT = `You are a diving operations log assistant. Your job is to create clean, professional internal log entries from raw supervisor input.
 
