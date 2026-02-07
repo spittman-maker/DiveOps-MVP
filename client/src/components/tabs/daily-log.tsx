@@ -23,7 +23,7 @@ import {
 import { Mic, Square, AlertTriangle, CheckCircle, Edit2, ChevronDown, ChevronRight } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
-const COMMON_STATIONS = ["LWT Big House", "LWT Maui Box", "West ATC Wall", "Night Shift", "GDS"];
+const COMMON_STATIONS = ["Dive Team 1", "Dive Team 2", "Dive Team 3", "Subcontractor Dive Team 1", "Subcontractor Dive Team 2", "Night Shift"];
 
 interface ValidationEntry {
   entry: string;
