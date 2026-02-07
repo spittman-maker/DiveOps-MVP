@@ -282,6 +282,7 @@ export const logEvents = pgTable("log_events", {
   dayId: varchar("day_id").notNull().references(() => days.id, { onDelete: "cascade" }),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   authorId: varchar("author_id").notNull().references(() => users.id),
+  station: text("station"),
   captureTime: timestamp("capture_time").notNull().defaultNow(),
   eventTime: timestamp("event_time").notNull(),
   rawText: text("raw_text").notNull(),
@@ -292,6 +293,7 @@ export const logEvents = pgTable("log_events", {
     station_logs: Array<{ text: string }>;
     risks: Array<{ riskId: string; description: string; source: string }>;
   }>(),
+  aiAnnotations: jsonb("ai_annotations").$type<Array<{ type: string; message: string }>>(),
   validationPassed: boolean("validation_passed"),
   editReason: text("edit_reason"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

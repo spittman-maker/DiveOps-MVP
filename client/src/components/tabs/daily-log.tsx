@@ -20,8 +20,10 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Mic, Square, AlertTriangle, CheckCircle, Edit2 } from "lucide-react";
+import { Mic, Square, AlertTriangle, CheckCircle, Edit2, ChevronDown, ChevronRight } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+
+const COMMON_STATIONS = ["LWT Big House", "LWT Maui Box", "West ATC Wall", "Night Shift", "GDS"];
 
 interface ValidationEntry {
   entry: string;
@@ -48,6 +50,7 @@ interface LogEvent {
   captureTime: string;
   category: string;
   authorId: string;
+  station?: string;
   renders?: Array<{
     renderType: string;
     renderText: string;
@@ -62,6 +65,8 @@ interface MasterLogEntry {
   rawText: string;
   masterLogLine: string;
   status: string;
+  station?: string;
+  category?: string;
 }
 
 interface DiveRecord {
@@ -91,6 +96,12 @@ interface MasterLogData {
     safety: MasterLogEntry[];
     risk: MasterLogEntry[];
   };
+  stationLogs?: Array<{ station: string; entries: MasterLogEntry[] }>;
+  directiveEntries?: MasterLogEntry[];
+  conflictEntries?: MasterLogEntry[];
+  operationalNotes?: MasterLogEntry[];
+  riskEntries?: MasterLogEntry[];
+  risks?: Array<{ id: string; riskId: string; description: string; status: string; owner: string; category: string; }>;
   dives?: DiveRecord[];
   summary?: {
     totalDives: number;
@@ -98,6 +109,7 @@ interface MasterLogData {
     maxDepth: number;
     safetyIncidents: number;
     directivesCount: number;
+    extractedDiverInitials?: string[];
   };
 }
 
@@ -107,20 +119,25 @@ export function DailyLogTab() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [rawInput, setRawInput] = useState("");
+  const [selectedStation, setSelectedStation] = useState<string>("");
 
-  // PTT (Push-to-Talk) state
   const [isRecording, setIsRecording] = useState(false);
   const [pttTranscript, setPttTranscript] = useState("");
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [pttPendingSubmit, setPttPendingSubmit] = useState(false); // Text ready to submit
+  const [pttPendingSubmit, setPttPendingSubmit] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Validation state
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [isValidating, setIsValidating] = useState(false);
   const [showValidationPreview, setShowValidationPreview] = useState(false);
+
+  const [expandedStations, setExpandedStations] = useState<Record<string, boolean>>({});
+
+  const toggleStation = (station: string) => {
+    setExpandedStations(prev => ({ ...prev, [station]: !prev[station] }));
+  };
 
   const currentDay = activeDay;
 
@@ -159,6 +176,7 @@ export function DailyLogTab() {
           rawText,
           dayId: currentDay.id,
           projectId: activeProject.id,
+          station: selectedStation || undefined,
         }),
       });
       if (!res.ok) throw new Error("Failed to create event");
@@ -166,7 +184,7 @@ export function DailyLogTab() {
     },
     onSuccess: () => {
       setRawInput("");
-      setPttPendingSubmit(false); // Reset PTT pending state
+      setPttPendingSubmit(false);
       queryClient.invalidateQueries({ queryKey: ["log-events"] });
       queryClient.invalidateQueries({ queryKey: ["master-log"] });
       toast({ title: "Entry saved", description: "Log entry persisted to database" });
@@ -263,7 +281,6 @@ export function DailyLogTab() {
     },
   });
 
-  // PTT Recording Functions
   const startRecording = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -280,7 +297,7 @@ export function DailyLogTab() {
         }
       };
 
-      mediaRecorder.start(100); // Collect data every 100ms
+      mediaRecorder.start(100);
       setIsRecording(true);
     } catch (err) {
       console.error("Microphone access error:", err);
@@ -296,7 +313,6 @@ export function DailyLogTab() {
 
     return new Promise<void>((resolve) => {
       mediaRecorderRef.current!.onstop = async () => {
-        // Stop all tracks
         streamRef.current?.getTracks().forEach((track) => track.stop());
 
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
@@ -304,12 +320,11 @@ export function DailyLogTab() {
           const reader = new FileReader();
           reader.onloadend = () => {
             const result = reader.result as string;
-            res(result.split(",")[1]); // Remove data URL prefix
+            res(result.split(",")[1]);
           };
           reader.readAsDataURL(audioBlob);
         });
 
-        // Stream transcription
         try {
           const response = await fetch("/api/transcribe", {
             method: "POST",
@@ -339,10 +354,9 @@ export function DailyLogTab() {
                     setPttTranscript(fullText);
                   }
                   if (data.done && fullText.trim()) {
-                    // Put text in input field, ready for review
                     setRawInput((prev) => (prev ? prev + " " + fullText : fullText));
                     setPttTranscript("");
-                    setPttPendingSubmit(true); // Ready for submit on next PTT click
+                    setPttPendingSubmit(true);
                   }
                 } catch {}
               }
@@ -361,7 +375,6 @@ export function DailyLogTab() {
     });
   }, [toast]);
 
-  // Submit handler for PTT (when text is ready)
   const handlePttSubmit = useCallback(() => {
     if (rawInput.trim()) {
       handleSend();
@@ -369,27 +382,21 @@ export function DailyLogTab() {
     }
   }, [rawInput]);
 
-  // PTT button click handler
   const handlePttClick = useCallback(() => {
     if (pttPendingSubmit && rawInput.trim()) {
-      // Text is ready - submit it
       handlePttSubmit();
     } else if (!isRecording && !isTranscribing) {
-      // Start recording
       startRecording();
     }
   }, [pttPendingSubmit, rawInput, isRecording, isTranscribing, handlePttSubmit, startRecording]);
 
-  // Alt key handler for PTT
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Alt" && !e.repeat && canWriteLogEvents && currentDay?.status !== "CLOSED") {
         e.preventDefault();
         if (pttPendingSubmit && rawInput.trim()) {
-          // Text is ready - submit it
           handlePttSubmit();
         } else if (!isRecording && !isTranscribing) {
-          // Start recording
           startRecording();
         }
       }
@@ -409,7 +416,6 @@ export function DailyLogTab() {
     };
   }, [isRecording, isTranscribing, pttPendingSubmit, rawInput, startRecording, stopRecording, handlePttSubmit, canWriteLogEvents, currentDay?.status]);
 
-  // Validate log entry before submission
   const validateEntry = async (text: string): Promise<ValidationResult> => {
     setIsValidating(true);
     try {
@@ -428,7 +434,6 @@ export function DailyLogTab() {
     }
   };
 
-  // Handle validation check (shows preview before submit)
   const handleValidate = async () => {
     if (!rawInput.trim()) return;
     const result = await validateEntry(rawInput.trim());
@@ -436,7 +441,6 @@ export function DailyLogTab() {
     setShowValidationPreview(true);
   };
 
-  // Clear validation when input changes
   useEffect(() => {
     if (validationResult) {
       setValidationResult(null);
@@ -561,6 +565,12 @@ export function DailyLogTab() {
   const sections = masterLogData?.sections || { ops: [], dive: [], directives: [], safety: [], risk: [] };
   const summary = masterLogData?.summary || { totalDives: 0, totalDivers: 0, maxDepth: 0, safetyIncidents: 0, directivesCount: 0, extractedDiverInitials: [] as string[] };
   const dives = masterLogData?.dives || [];
+  const stationLogs = masterLogData?.stationLogs || [];
+  const directiveEntries = masterLogData?.directiveEntries || sections.directives;
+  const conflictEntries = masterLogData?.conflictEntries || [];
+  const operationalNotes = masterLogData?.operationalNotes || [];
+  const riskEntries = masterLogData?.riskEntries || sections.risk;
+  const risks = masterLogData?.risks || [];
 
   return (
     <div className="h-full flex overflow-hidden">
@@ -680,6 +690,11 @@ export function DailyLogTab() {
                   <Badge className={`text-xs ${getCategoryColor(event.category)}`}>
                     {event.category.replace("_", " ").toUpperCase()}
                   </Badge>
+                  {event.station && (
+                    <Badge data-testid={`badge-station-${event.id}`} className="text-xs bg-cyan-700 text-cyan-100">
+                      {event.station}
+                    </Badge>
+                  )}
                 </div>
                 <p className="text-sm text-white font-mono">{event.rawText}</p>
               </div>
@@ -692,7 +707,6 @@ export function DailyLogTab() {
 
         {canWriteLogEvents && currentDay?.status !== "CLOSED" && (
           <div className="p-4 border-t border-navy-600 bg-navy-800 shrink-0">
-            {/* PTT Transcription Display */}
             {(isRecording || isTranscribing || pttTranscript) && (
               <div className="mb-3 p-3 bg-orange-900/30 border border-orange-500/50 rounded-lg">
                 <div className="flex items-center gap-2 mb-1">
@@ -714,6 +728,19 @@ export function DailyLogTab() {
                 )}
               </div>
             )}
+            <div className="mb-2">
+              <select
+                data-testid="select-station"
+                value={selectedStation}
+                onChange={(e) => setSelectedStation(e.target.value)}
+                className="w-full bg-navy-900 border border-navy-600 text-white text-sm rounded px-3 py-1.5 focus:outline-none focus:border-amber-500"
+              >
+                <option value="">No station selected</option>
+                {COMMON_STATIONS.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
             <div className="flex gap-2">
               <Textarea
                 data-testid="input-raw-text"
@@ -777,7 +804,6 @@ export function DailyLogTab() {
               </div>
             </div>
 
-            {/* Validation feedback */}
             {showValidationPreview && validationResult && (
               <Alert className={`mt-3 ${validationResult.valid ? "border-green-500 bg-green-500/10" : "border-yellow-500 bg-yellow-500/10"}`}>
                 <div className="flex items-start gap-2">
@@ -842,7 +868,7 @@ export function DailyLogTab() {
       <div className="w-1/2 flex flex-col overflow-hidden">
         <div className="bg-navy-800 p-3 border-b border-navy-600 flex items-center justify-between shrink-0">
           <div>
-            <h2 className="text-sm font-semibold text-white">Daily Master Log</h2>
+            <h2 className="text-sm font-semibold text-amber-400">DAILY OPERATIONS MASTER LOG</h2>
             <p className="text-xs text-navy-400">24-hour format • Updates in real-time</p>
           </div>
           {masterLogData && (
@@ -853,17 +879,19 @@ export function DailyLogTab() {
         </div>
 
         <div className="flex-1 min-h-0 overflow-auto">
-          <div className="p-4 space-y-6">
-            <header className="text-center border-b border-navy-600 pb-4">
-              <h1 className="text-xl font-bold text-white mb-1">DAILY OPERATIONS MASTER LOG</h1>
+          <div className="p-4 space-y-4">
+            {/* 1. Header */}
+            <header className="text-center border-b border-navy-600 pb-4" data-testid="master-log-header">
+              <h1 className="text-lg font-bold text-amber-400 mb-1">DAILY OPERATIONS MASTER LOG</h1>
               <p className="text-sm text-navy-300">{formatDate(masterLogData?.day?.date)}</p>
               <p className="text-xs text-navy-400 mt-1">Precision Subsea Group LLC - DiveOps™</p>
             </header>
 
-            <section data-testid="section-narrative">
+            {/* 2. 24-Hour Summary */}
+            <section data-testid="section-24hr-summary">
               <Card className="bg-navy-800/50 border-navy-600">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-white text-sm">Executive Summary</CardTitle>
+                  <CardTitle className="text-amber-400 text-sm">24-Hour Summary</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-navy-100 leading-relaxed">
@@ -899,13 +927,172 @@ export function DailyLogTab() {
               </Card>
             </section>
 
+            {/* 3. Client Directives and Changes */}
+            <section data-testid="section-directives">
+              <Card className="bg-navy-800/50 border-navy-600">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-purple-600" />
+                    <CardTitle className="text-amber-400 text-sm">Client Directives and Changes</CardTitle>
+                    <Badge variant="outline" className="text-xs border-navy-500 text-navy-400">
+                      {directiveEntries.length} entries
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {directiveEntries.length > 0 ? (
+                    <ul className="space-y-1">
+                      {directiveEntries.map((entry) => (
+                        <li key={entry.id} className="flex gap-3 py-1">
+                          <span className="text-xs font-mono text-navy-400 w-12 shrink-0">
+                            {formatTime(entry.eventTime)}
+                          </span>
+                          <p className="text-xs text-navy-100">{entry.masterLogLine}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-xs text-navy-500 italic">No directives received</p>
+                  )}
+                </CardContent>
+              </Card>
+            </section>
+
+            {/* 4. Conflicting / Reversed Direction */}
+            <section data-testid="section-conflicts">
+              <Card className="bg-navy-800/50 border-red-900/30">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-red-500" />
+                    <CardTitle className="text-amber-400 text-sm">CONFLICTING DIRECTION / REVERSED DIRECTION</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {conflictEntries.length > 0 ? (
+                    <ul className="space-y-1">
+                      {conflictEntries.map((entry) => (
+                        <li key={entry.id} className="flex gap-3 py-1">
+                          <span className="text-xs font-mono text-navy-400 w-12 shrink-0">
+                            {formatTime(entry.eventTime)}
+                          </span>
+                          <p className="text-xs text-red-200">{entry.masterLogLine}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-xs text-navy-500 italic">None identified</p>
+                  )}
+                </CardContent>
+              </Card>
+            </section>
+
+            {/* 5. Operational Notes (non-timestamped) */}
+            <section data-testid="section-operational-notes">
+              <Card className="bg-navy-800/50 border-navy-600">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-teal-600" />
+                    <CardTitle className="text-amber-400 text-sm">Operational Notes</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {operationalNotes.length > 0 ? (
+                    <ul className="space-y-1 list-disc list-inside">
+                      {operationalNotes.map((entry) => (
+                        <li key={entry.id} className="text-xs text-navy-100">
+                          {entry.masterLogLine || entry.rawText}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : sections.ops.length > 0 ? (
+                    <ul className="space-y-1">
+                      {sections.ops.map((entry) => (
+                        <li key={entry.id} className="flex gap-3 py-1">
+                          <span className="text-xs font-mono text-navy-400 w-12 shrink-0">
+                            {formatTime(entry.eventTime)}
+                          </span>
+                          <p className="text-xs text-navy-100">{entry.masterLogLine}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-xs text-navy-500 italic">No operational notes</p>
+                  )}
+                </CardContent>
+              </Card>
+            </section>
+
+            {/* 6. Station Logs */}
+            {stationLogs.length > 0 && (
+              <section data-testid="section-station-logs">
+                <div className="space-y-3">
+                  {stationLogs.map((stationLog) => {
+                    const isExpanded = expandedStations[stationLog.station] !== false;
+                    return (
+                      <Card key={stationLog.station} className="bg-navy-700/50 border-navy-500">
+                        <CardHeader className="pb-2 cursor-pointer" onClick={() => toggleStation(stationLog.station)}>
+                          <div className="flex items-center gap-2">
+                            {isExpanded ? <ChevronDown className="h-4 w-4 text-amber-400" /> : <ChevronRight className="h-4 w-4 text-amber-400" />}
+                            <CardTitle className="text-amber-500 text-sm font-bold">{stationLog.station}</CardTitle>
+                            <Badge variant="outline" className="text-xs border-navy-400 text-navy-300">
+                              {stationLog.entries.length} entries
+                            </Badge>
+                          </div>
+                        </CardHeader>
+                        {isExpanded && (
+                          <CardContent className="space-y-3">
+                            <div>
+                              <h4 className="text-xs font-semibold text-amber-400/80 mb-1 uppercase tracking-wide">Work Executed</h4>
+                              {stationLog.entries.length > 0 ? (
+                                <ul className="space-y-1">
+                                  {stationLog.entries.map((entry) => (
+                                    <li key={entry.id} className="flex gap-3 py-1">
+                                      <span className="text-xs font-mono text-navy-400 w-12 shrink-0">
+                                        {formatTime(entry.eventTime)}
+                                      </span>
+                                      <p className="text-xs text-navy-100">{entry.masterLogLine}</p>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <p className="text-xs text-navy-500 italic">No entries</p>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-navy-600">
+                              <div>
+                                <h4 className="text-xs font-semibold text-navy-400 mb-1">Production Notes</h4>
+                                <p className="text-xs text-navy-500 italic">Not captured</p>
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-semibold text-navy-400 mb-1">Constraints</h4>
+                                <p className="text-xs text-navy-500 italic">Not captured</p>
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-semibold text-navy-400 mb-1">QA/QC</h4>
+                                <p className="text-xs text-navy-500 italic">Not captured</p>
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-semibold text-navy-400 mb-1">Carryover</h4>
+                                <p className="text-xs text-navy-500 italic">Not captured</p>
+                              </div>
+                            </div>
+                          </CardContent>
+                        )}
+                      </Card>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {/* Dive Operations Table (kept as its own section) */}
             {dives.length > 0 && (
               <section data-testid="section-dive-table">
                 <Card className="bg-navy-800/50 border-navy-600">
                   <CardHeader className="pb-2">
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full btn-gold-metallic" />
-                      <CardTitle className="text-white text-sm">Dive Operations Log</CardTitle>
+                      <CardTitle className="text-amber-400 text-sm">Dive Operations Log</CardTitle>
                       <Badge variant="outline" className="text-xs border-navy-500 text-navy-400">
                         {dives.length} dives
                       </Badge>
@@ -945,41 +1132,14 @@ export function DailyLogTab() {
               </section>
             )}
 
-            {sections.directives.length > 0 && (
-              <section data-testid="section-directives">
-                <Card className="bg-navy-800/50 border-navy-600">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-purple-600" />
-                      <CardTitle className="text-white text-sm">Client Directives</CardTitle>
-                      <Badge variant="outline" className="text-xs border-navy-500 text-navy-400">
-                        {sections.directives.length} entries
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="space-y-1">
-                      {sections.directives.map((entry) => (
-                        <li key={entry.id} className="flex gap-3 py-1">
-                          <span className="text-xs font-mono text-navy-400 w-12 shrink-0">
-                            {formatTime(entry.eventTime)}
-                          </span>
-                          <p className="text-xs text-navy-100">{entry.masterLogLine}</p>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
-              </section>
-            )}
-
+            {/* Safety section */}
             {sections.safety.length > 0 && (
               <section data-testid="section-safety">
                 <Card className="bg-navy-800/50 border-red-900/50">
                   <CardHeader className="pb-2">
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full bg-red-600" />
-                      <CardTitle className="text-white text-sm">Safety & Incidents</CardTitle>
+                      <CardTitle className="text-amber-400 text-sm">Safety & Incidents</CardTitle>
                       <Badge className="bg-red-600 text-xs">
                         {sections.safety.length} entries
                       </Badge>
@@ -1001,49 +1161,38 @@ export function DailyLogTab() {
               </section>
             )}
 
-            {sections.ops.length > 0 && (
-              <section data-testid="section-ops">
-                <Card className="bg-navy-800/50 border-navy-600">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-teal-600" />
-                      <CardTitle className="text-white text-sm">General Operations</CardTitle>
-                      <Badge variant="outline" className="text-xs border-navy-500 text-navy-400">
-                        {sections.ops.length} entries
+            {/* 7. Risk Register Updates */}
+            <section data-testid="section-risk">
+              <Card className="bg-navy-800/50 border-orange-900/50">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-orange-600" />
+                    <CardTitle className="text-amber-400 text-sm">Risk Register Updates</CardTitle>
+                    {(risks.length > 0 || riskEntries.length > 0) && (
+                      <Badge className="bg-orange-600 text-xs">
+                        {risks.length || riskEntries.length} items
                       </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="space-y-1">
-                      {sections.ops.map((entry) => (
-                        <li key={entry.id} className="flex gap-3 py-1">
-                          <span className="text-xs font-mono text-navy-400 w-12 shrink-0">
-                            {formatTime(entry.eventTime)}
-                          </span>
-                          <p className="text-xs text-navy-100">{entry.masterLogLine}</p>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {risks.length > 0 ? (
+                    <ul className="space-y-2">
+                      {risks.map((risk) => (
+                        <li key={risk.id} className="p-2 bg-navy-700/50 rounded border border-navy-600">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Badge className="text-xs bg-orange-700">{risk.riskId}</Badge>
+                            <Badge variant="outline" className="text-xs border-navy-500 text-navy-400">{risk.status}</Badge>
+                            {risk.category && <Badge variant="outline" className="text-xs border-navy-500 text-navy-400">{risk.category}</Badge>}
+                          </div>
+                          <p className="text-xs text-navy-100">{risk.description}</p>
+                          {risk.owner && <p className="text-xs text-navy-400 mt-1">Owner: {risk.owner}</p>}
                         </li>
                       ))}
                     </ul>
-                  </CardContent>
-                </Card>
-              </section>
-            )}
-
-            {sections.risk.length > 0 && (
-              <section data-testid="section-risk">
-                <Card className="bg-navy-800/50 border-orange-900/50">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-orange-600" />
-                      <CardTitle className="text-white text-sm">Risk Register Updates</CardTitle>
-                      <Badge className="bg-orange-600 text-xs">
-                        {sections.risk.length} entries
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
+                  ) : riskEntries.length > 0 ? (
                     <ul className="space-y-1">
-                      {sections.risk.map((entry) => (
+                      {riskEntries.map((entry) => (
                         <li key={entry.id} className="flex gap-3 py-1">
                           <span className="text-xs font-mono text-navy-400 w-12 shrink-0">
                             {formatTime(entry.eventTime)}
@@ -1052,13 +1201,66 @@ export function DailyLogTab() {
                         </li>
                       ))}
                     </ul>
-                  </CardContent>
-                </Card>
-              </section>
-            )}
+                  ) : (
+                    <p className="text-xs text-navy-500 italic">No risk updates</p>
+                  )}
+                </CardContent>
+              </Card>
+            </section>
+
+            {/* 8. Advisory Block */}
+            <section data-testid="section-advisory">
+              <Card className="bg-navy-800/50 border-navy-600">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-amber-400 text-sm">Advisory Block</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <span className="text-xs font-semibold text-navy-300 w-24 shrink-0">Advised For:</span>
+                      <span className="text-xs text-navy-500 italic">Not provided</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="text-xs font-semibold text-navy-300 w-24 shrink-0">Advised Against:</span>
+                      <span className="text-xs text-navy-500 italic">Not provided</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="text-xs font-semibold text-navy-300 w-24 shrink-0">Outcome:</span>
+                      <span className="text-xs text-navy-500 italic">Not provided</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </section>
+
+            {/* 9. Closeout Block */}
+            <section data-testid="section-closeout">
+              <Card className="bg-navy-800/50 border-navy-600">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-amber-400 text-sm">Closeout</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <span className="text-xs font-semibold text-navy-300 w-36 shrink-0">Scope Complete:</span>
+                      <span className="text-xs text-navy-500 italic">Not provided</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="text-xs font-semibold text-navy-300 w-36 shrink-0">Documentation Complete:</span>
+                      <span className="text-xs text-navy-500 italic">Not provided</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="text-xs font-semibold text-navy-300 w-36 shrink-0">Exceptions:</span>
+                      <span className="text-xs text-navy-500 italic">Not provided</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </section>
 
             {!isLoading && sections.ops.length === 0 && sections.dive.length === 0 && 
-             sections.directives.length === 0 && sections.safety.length === 0 && dives.length === 0 && (
+             sections.directives.length === 0 && sections.safety.length === 0 && dives.length === 0 && 
+             stationLogs.length === 0 && (
               <div className="text-center py-8">
                 <p className="text-navy-400">No log entries yet</p>
                 <p className="text-xs text-navy-500 mt-1">

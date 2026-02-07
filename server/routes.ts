@@ -41,6 +41,7 @@ const logEventSchema = z.object({
   rawText: z.string().min(1),
   dayId: z.string(),
   projectId: z.string(),
+  station: z.string().optional(),
   eventTimeOverride: z.string().optional(),
 });
 
@@ -783,6 +784,7 @@ export async function registerRoutes(
         dayId: data.dayId,
         projectId: data.projectId,
         authorId: user.id,
+        station: data.station || null,
         captureTime,
         eventTime,
         rawText: data.rawText,
@@ -1119,7 +1121,7 @@ export async function registerRoutes(
     
     const events = await storage.getLogEventsByDay(req.params.dayId);
     
-    // Group by section
+    // Group by legacy sections AND new station-based structure
     const sections: Record<string, any[]> = {
       ops: [],
       dive: [],
@@ -1128,19 +1130,45 @@ export async function registerRoutes(
       risk: [],
     };
     
+    const stationEntries: Record<string, any[]> = {};
+    const directiveEntries: any[] = [];
+    const conflictEntries: any[] = [];
+    const operationalNotes: any[] = [];
+    const riskEntries: any[] = [];
+    
     for (const event of events) {
       const renders = await storage.getLogRendersByEvent(event.id);
       const masterRender = renders.find(r => r.renderType === "master_log_line");
       
-      const section = getMasterLogSection(event.category as any);
-      sections[section].push({
+      const sectionKey = getMasterLogSection(event.category as any);
+      const entry = {
         id: event.id,
         eventTime: event.eventTime,
         rawText: event.rawText,
         masterLogLine: masterRender?.renderText || event.rawText,
         status: masterRender?.status || "ok",
-      });
+        station: event.station || null,
+        category: event.category,
+      };
+      
+      sections[sectionKey].push(entry);
+      
+      if (event.category === "directive") {
+        directiveEntries.push(entry);
+      } else if (event.category === "safety") {
+        riskEntries.push(entry);
+      } else {
+        const stationName = event.station || "General Operations";
+        if (!stationEntries[stationName]) stationEntries[stationName] = [];
+        stationEntries[stationName].push(entry);
+      }
     }
+    
+    // Build station logs grouped by station
+    const stationLogs = Object.entries(stationEntries).map(([station, entries]) => ({
+      station,
+      entries: entries.sort((a: any, b: any) => new Date(a.eventTime).getTime() - new Date(b.eventTime).getTime()),
+    }));
     
     // Get dives for this day with diver info
     const dives = await storage.getDivesByDay(req.params.dayId);
@@ -1152,8 +1180,7 @@ export async function registerRoutes(
       };
     }));
     
-    // Calculate summary from log events (more accurate than dives table)
-    // Count L/S (left surface) patterns as dive starts, extract diver initials
+    // Calculate summary from log events
     const allDiverInitials = new Set<string>();
     let diveStartCount = 0;
     let extractedMaxDepth = 0;
@@ -1161,7 +1188,6 @@ export async function registerRoutes(
     for (const event of events) {
       const text = event.rawText.toUpperCase();
       
-      // Extract diver initials (2-3 letter codes before L, R, or after time)
       const initialsMatch = text.match(/\b([A-Z]{2,3})\s*[LR]\b/g);
       if (initialsMatch) {
         initialsMatch.forEach(m => {
@@ -1172,25 +1198,15 @@ export async function registerRoutes(
         });
       }
       
-      // Also extract full names like "Zach Meador L" or "Michael Meehan L"
       const nameMatch = event.rawText.match(/([A-Z][a-z]+\s+[A-Z][a-z]+)\s+L\b/g);
-      if (nameMatch) {
-        nameMatch.forEach(() => diveStartCount++);
-      }
+      if (nameMatch) nameMatch.forEach(() => diveStartCount++);
       
-      // Count L/S patterns (left surface / start dive)
       const lsMatches = text.match(/\bL\/?S\b/g);
-      if (lsMatches) {
-        diveStartCount += lsMatches.length;
-      }
+      if (lsMatches) diveStartCount += lsMatches.length;
       
-      // Count standalone L patterns after initials (e.g., "0658 Michael Meehan L")
       const standaloneL = text.match(/\b[A-Z]{2,3}\s+L\b/g);
-      if (standaloneL) {
-        diveStartCount += standaloneL.length;
-      }
+      if (standaloneL) diveStartCount += standaloneL.length;
       
-      // Extract depths (fsw patterns)
       const depthMatch = text.match(/(\d+)\s*FSW/i);
       if (depthMatch) {
         const depth = parseInt(depthMatch[1], 10);
@@ -1198,7 +1214,6 @@ export async function registerRoutes(
       }
     }
     
-    // Use dives table if it has data, otherwise use extracted data
     const uniqueDivers = dives.length > 0 
       ? new Set(dives.map(d => d.diverId))
       : allDiverInitials;
@@ -1208,12 +1223,21 @@ export async function registerRoutes(
     );
     const totalDives = dives.length > 0 ? dives.length : Math.max(diveStartCount, sections.dive.length);
     const totalDivers = dives.length > 0 ? uniqueDivers.size : Math.max(allDiverInitials.size, 1);
+
+    // Get risk items for this day
+    const risks = await storage.getRiskItemsByDay(req.params.dayId);
     
     res.json({
       day,
       isLocked: day.status === "CLOSED",
       isDraft: day.status !== "CLOSED",
       sections,
+      stationLogs,
+      directiveEntries: directiveEntries.sort((a, b) => new Date(a.eventTime).getTime() - new Date(b.eventTime).getTime()),
+      conflictEntries,
+      operationalNotes,
+      riskEntries,
+      risks,
       dives: divesWithNames,
       summary: {
         totalDives,
