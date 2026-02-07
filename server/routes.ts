@@ -859,6 +859,14 @@ export async function registerRoutes(
             status: renders.status,
           });
           
+          try {
+            await storage.updateLogEvent(logEvent.id, {
+              aiAnnotations: renders.annotations || [],
+            });
+          } catch (annotErr) {
+            console.error("Failed to save AI annotations:", annotErr);
+          }
+          
           // If safety incident, create a risk item
           if (category === "safety") {
             const existingRisks = await storage.getRiskItemsByDay(day.id);

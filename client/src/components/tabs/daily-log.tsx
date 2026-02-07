@@ -43,6 +43,11 @@ interface ValidationResult {
   totalEntries?: number;
 }
 
+interface AIAnnotation {
+  type: "typo" | "missing_info" | "ambiguous" | "safety_flag" | "suggestion";
+  message: string;
+}
+
 interface LogEvent {
   id: string;
   rawText: string;
@@ -51,6 +56,7 @@ interface LogEvent {
   category: string;
   authorId: string;
   station?: string;
+  aiAnnotations?: AIAnnotation[];
   renders?: Array<{
     renderType: string;
     renderText: string;
@@ -697,6 +703,27 @@ export function DailyLogTab() {
                   )}
                 </div>
                 <p className="text-sm text-white font-mono">{event.rawText}</p>
+                {event.aiAnnotations && event.aiAnnotations.length > 0 && (
+                  <div className="mt-1.5 space-y-1" data-testid={`annotations-${event.id}`}>
+                    {event.aiAnnotations.map((ann, i) => (
+                      <div key={i} className={`flex items-start gap-1.5 text-xs rounded px-2 py-1 ${
+                        ann.type === "typo" ? "bg-blue-900/30 text-blue-300" :
+                        ann.type === "missing_info" ? "bg-yellow-900/30 text-yellow-300" :
+                        ann.type === "safety_flag" ? "bg-red-900/30 text-red-300" :
+                        ann.type === "ambiguous" ? "bg-orange-900/30 text-orange-300" :
+                        "bg-navy-700/50 text-navy-300"
+                      }`}>
+                        <span className="font-semibold shrink-0">
+                          {ann.type === "typo" ? "TYPO" :
+                           ann.type === "missing_info" ? "MISSING" :
+                           ann.type === "safety_flag" ? "SAFETY" :
+                           ann.type === "ambiguous" ? "CHECK" : "NOTE"}:
+                        </span>
+                        <span>{ann.message}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
             {events.length === 0 && !isLoading && (

@@ -17,6 +17,11 @@ const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
+export interface AIAnnotation {
+  type: "typo" | "missing_info" | "ambiguous" | "safety_flag" | "suggestion";
+  message: string;
+}
+
 export interface AIRenderResult {
   internalCanvasLine: string;
   masterLogLine: string;
@@ -24,6 +29,7 @@ export interface AIRenderResult {
   status: "ok" | "failed" | "needs_review";
   model: string;
   promptVersion: string;
+  annotations: AIAnnotation[];
 }
 
 const PROMPT_VERSION = "v1.0";
@@ -92,6 +98,50 @@ If you place a timestamp anywhere inside station_logs, return an error instead o
 - For multi-part entries, preserve each part
 - This is for client/regulatory review and QA`;
 
+function generateDeterministicAnnotations(rawText: string, category: EventCategory): AIAnnotation[] {
+  const annotations: AIAnnotation[] = [];
+  const upper = rawText.toUpperCase();
+  
+  if (/\bL\/?S\b/.test(upper) && !/\d+\s*FSW/i.test(rawText)) {
+    annotations.push({ type: "missing_info", message: "Dive start (L/S) detected but no depth (FSW) specified" });
+  }
+  
+  if (/\bR\/?S\b/.test(upper) && !/\bL\/?S\b/.test(upper)) {
+    annotations.push({ type: "ambiguous", message: "Diver surfaced (R/S) without a corresponding L/S in this entry" });
+  }
+  
+  if (/\bL\/?S\b/.test(upper) || /\bR\/?B\b/.test(upper)) {
+    const hasName = /[A-Z][a-z]+\s+[A-Z][a-z]+/.test(rawText) || /\b[A-Z]{2,3}\b/.test(rawText);
+    if (!hasName) {
+      annotations.push({ type: "missing_info", message: "Dive event without diver name or initials" });
+    }
+  }
+  
+  if (category === "safety" && rawText.length < 30) {
+    annotations.push({ type: "missing_info", message: "Safety entry appears brief - consider adding details" });
+  }
+  
+  if (/decomp|deco stop|decompression/i.test(rawText)) {
+    annotations.push({ type: "safety_flag", message: "Decompression reference detected - verify against U.S. Navy Dive Manual" });
+  }
+  
+  const commonTypos: Record<string, string> = {
+    "presure": "pressure", "recieved": "received", "occured": "occurred",
+    "equiptment": "equipment", "maintanence": "maintenance", "visability": "visibility",
+    "saftey": "safety", "seperately": "separately", "completly": "completely",
+    "deisel": "diesel", "gague": "gauge", "annode": "anode",
+  };
+  
+  const lowerText = rawText.toLowerCase();
+  for (const [typo, correction] of Object.entries(commonTypos)) {
+    if (lowerText.includes(typo)) {
+      annotations.push({ type: "typo", message: `"${typo}" → "${correction}"` });
+    }
+  }
+  
+  return annotations;
+}
+
 export async function generateAIRenders(
   rawText: string,
   eventTime: Date,
@@ -100,11 +150,10 @@ export async function generateAIRenders(
   const extracted = extractData(rawText);
   const section = getMasterLogSection(category);
   
-  // Generate deterministic fallback
   const deterministicInternal = renderInternalCanvasLine(rawText, eventTime, category, extracted);
+  const deterministicAnnotations = generateDeterministicAnnotations(rawText, category);
   
   try {
-    // Generate both renders in parallel
     const [internalResponse, masterResponse] = await Promise.all([
       openai.chat.completions.create({
         model: MODEL,
@@ -140,18 +189,19 @@ export async function generateAIRenders(
       status: "ok",
       model: MODEL,
       promptVersion: PROMPT_VERSION,
+      annotations: deterministicAnnotations,
     };
   } catch (error) {
     console.error("AI drafting failed:", error);
     
-    // Return deterministic fallback
     return {
       internalCanvasLine: deterministicInternal,
-      masterLogLine: rawText, // Raw text as fallback for master
+      masterLogLine: rawText,
       section,
       status: "failed",
       model: MODEL,
       promptVersion: PROMPT_VERSION,
+      annotations: deterministicAnnotations,
     };
   }
 }
