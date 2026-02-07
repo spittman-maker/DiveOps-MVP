@@ -83,7 +83,7 @@ export interface IStorage {
   getDive(id: string): Promise<Dive | undefined>;
   getDivesByDay(dayId: string): Promise<Dive[]>;
   getDivesByDiver(diverId: string, dayId?: string): Promise<Dive[]>;
-  updateDive(id: string, updates: Partial<InsertDive>): Promise<Dive | undefined>;
+  updateDive(id: string, updates: Record<string, any>): Promise<Dive | undefined>;
   getOrCreateDiveForDiver(dayId: string, projectId: string, diverId: string): Promise<Dive>;
   getOrCreateDiveByDisplayName(dayId: string, projectId: string, displayName: string, station?: string): Promise<Dive>;
   updateDiveTimes(diveId: string, field: 'lsTime' | 'rbTime' | 'lbTime' | 'rsTime', time: Date, depthFsw?: number): Promise<Dive | undefined>;
@@ -387,7 +387,7 @@ export class DbStorage implements IStorage {
 
   // Dives
   async createDive(dive: InsertDive): Promise<Dive> {
-    const [created] = await db.insert(schema.dives).values(dive).returning();
+    const [created] = await db.insert(schema.dives).values(dive as any).returning();
     return created!;
   }
 
@@ -412,9 +412,9 @@ export class DbStorage implements IStorage {
       .orderBy(desc(schema.dives.lsTime));
   }
 
-  async updateDive(id: string, updates: Partial<InsertDive>): Promise<Dive | undefined> {
+  async updateDive(id: string, updates: Record<string, any>): Promise<Dive | undefined> {
     const [updated] = await db.update(schema.dives)
-      .set({ ...updates, updatedAt: new Date() })
+      .set({ ...updates, updatedAt: new Date() } as any)
       .where(eq(schema.dives.id, id))
       .returning();
     return updated;

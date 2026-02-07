@@ -224,7 +224,7 @@ export function extractData(rawText: string): ExtractedData {
     extracted.diveOperation = "lb";
   }
   
-  const timeMatches = [...rawText.matchAll(TIME_PATTERN)];
+  const timeMatches = Array.from(rawText.matchAll(TIME_PATTERN));
   if (timeMatches.length > 0) {
     const firstTime = timeMatches[0];
     const timeStr = `${firstTime[1].padStart(2, '0')}:${firstTime[2]}`;
