@@ -65,8 +65,17 @@ If dive table information is requested:
 - **Projects**: Represent dive operation contracts with clients
 - **Days**: Daily operational periods within projects (DRAFT, ACTIVE, CLOSED states)
 - **LogEvents**: Timestamped operational entries with AI-generated renders
-- **Dives**: Individual dive records with LS/RB/LB/RS timestamps
+- **Dives**: Individual dive records with LS/RB/LB/RS timestamps and full PSG-LOG-01 fields
+  - diverId is nullable; diverDisplayName stores name for unmatched divers
+  - PSG-LOG-01 fields: diverBadgeId, station, workLocation, taskSummary, toolsEquipment, installMaterialIds, qcDisposition, verifier, decompRequired, decompMethod, postDiveStatus, photoVideoRefs, supervisorInitials
+  - PATCH /api/dives/:id for supervisor field editing
+  - POST /api/dives/:id/generate-summary for AI task summary from related log events
 - **Risk Register**: Safety and operational risk tracking
+
+### Dive Extraction
+- Name parsing: handles "A.Castro", "Diver B.Murphy", "Zach Meador", 2-letter initials
+- Matches to crew roster when possible, falls back to diverDisplayName storage
+- Auto-creates dive records from log entries with dive operations (LS/RB/LB/RS)
 
 ### Directory Structure
 ```

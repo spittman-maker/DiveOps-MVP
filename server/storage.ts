@@ -85,6 +85,7 @@ export interface IStorage {
   getDivesByDiver(diverId: string, dayId?: string): Promise<Dive[]>;
   updateDive(id: string, updates: Partial<InsertDive>): Promise<Dive | undefined>;
   getOrCreateDiveForDiver(dayId: string, projectId: string, diverId: string): Promise<Dive>;
+  getOrCreateDiveByDisplayName(dayId: string, projectId: string, displayName: string, station?: string): Promise<Dive>;
   updateDiveTimes(diveId: string, field: 'lsTime' | 'rbTime' | 'lbTime' | 'rsTime', time: Date, depthFsw?: number): Promise<Dive | undefined>;
 
   // Dive Confirmations
@@ -437,6 +438,29 @@ export class DbStorage implements IStorage {
       diverId,
       diveNumber: nextNumber,
     }).returning();
+    return created!;
+  }
+
+  async getOrCreateDiveByDisplayName(dayId: string, projectId: string, displayName: string, station?: string): Promise<Dive> {
+    const existingDives = await db.select().from(schema.dives)
+      .where(and(eq(schema.dives.dayId, dayId), eq(schema.dives.diverDisplayName, displayName)))
+      .orderBy(desc(schema.dives.diveNumber));
+    
+    const incompleteDive = existingDives.find(d => !d.lbTime);
+    if (incompleteDive) return incompleteDive;
+    
+    const allDayDives = await db.select().from(schema.dives)
+      .where(eq(schema.dives.dayId, dayId))
+      .orderBy(desc(schema.dives.diveNumber));
+    const nextNumber = allDayDives.length > 0 ? allDayDives[0].diveNumber + 1 : 1;
+    
+    const [created] = await db.insert(schema.dives).values({
+      dayId,
+      projectId,
+      diverDisplayName: displayName,
+      station: station || null,
+      diveNumber: nextNumber,
+    } as any).returning();
     return created!;
   }
 

@@ -17,6 +17,7 @@ export type EventCategory = "dive_op" | "directive" | "safety" | "ops" | "genera
 
 export interface ExtractedData {
   diverInitials?: string[];
+  diverNames?: string[];
   lsTime?: string;
   rbTime?: string;
   lbTime?: string;
@@ -24,6 +25,7 @@ export interface ExtractedData {
   depthFsw?: number;
   diveOperation?: "ls" | "rb" | "lb" | "rs";
   taskSummary?: string;
+  taskDescription?: string;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -113,22 +115,77 @@ const RS_SYNONYMS = [/\bRS\b/i, /\bsurfaced?\b/i, /\bon\s*surface/i, /\bdiver\s*
 // Depth patterns: 40 fsw, 40 ft, 40 feet, 40'
 const DEPTH_PATTERN = /(\d+)\s*(?:fsw|ft|feet|'|foot)/i;
 
-export function extractData(rawText: string): ExtractedData {
-  const extracted: ExtractedData = {};
+const NON_INITIALS = new Set(["LS", "LB", "RS", "RB", "AM", "PM", "FSW", "PSI", "DCS", "AIS", "DRA", "LWT", "PFU", "QC", "QA", "ID", "OK", "TBD", "GDS", "ATC"]);
+
+const DIVER_NAME_PATTERNS = [
+  /(?:Diver\s+)?([A-Z])\.\s*([A-Z][a-z]+)/g,
+  /(?:Diver\s+)?([A-Z][a-z]+)\s+([A-Z][a-z]+)/g,
+];
+
+function extractDiverNames(rawText: string): { names: string[]; initials: string[] } {
+  const names: string[] = [];
+  const initials: string[] = [];
   
-  // Extract diver initials
-  const initialsMatches = rawText.match(INITIALS_PATTERN);
-  if (initialsMatches) {
-    // Filter out common non-initials like LS, LB, RS, RB
-    const filtered = initialsMatches.filter(
-      m => !["LS", "LB", "RS", "RB", "AM", "PM", "FSW", "PSI", "DCS"].includes(m.toUpperCase())
-    );
-    if (filtered.length > 0) {
-      extracted.diverInitials = [...new Set(filtered)];
+  for (const pattern of DIVER_NAME_PATTERNS) {
+    const regex = new RegExp(pattern.source, pattern.flags);
+    let match;
+    while ((match = regex.exec(rawText)) !== null) {
+      const fullMatch = match[0];
+      if (/^(Diver\s+)?[A-Z]\.\s*[A-Z][a-z]+/.test(fullMatch)) {
+        const first = match[1];
+        const last = match[2];
+        const name = `${first}.${last}`;
+        if (!names.includes(name)) {
+          names.push(name);
+          const init = `${first}${last[0]}`.toUpperCase();
+          if (!initials.includes(init)) initials.push(init);
+        }
+      } else if (/^(Diver\s+)?[A-Z][a-z]+\s+[A-Z][a-z]+/.test(fullMatch)) {
+        const first = match[1];
+        const last = match[2];
+        const name = `${first} ${last}`;
+        if (!names.includes(name) && !["Diver RS", "Diver LS", "Diver LB", "Diver RB"].some(s => fullMatch.includes(s))) {
+          names.push(name);
+          const init = `${first[0]}${last[0]}`.toUpperCase();
+          if (!initials.includes(init)) initials.push(init);
+        }
+      }
     }
   }
   
-  // Determine dive operation type
+  const standaloneInitials = rawText.match(INITIALS_PATTERN);
+  if (standaloneInitials) {
+    for (const m of standaloneInitials) {
+      const upper = m.toUpperCase();
+      if (!NON_INITIALS.has(upper) && !initials.includes(upper)) {
+        initials.push(upper);
+      }
+    }
+  }
+  
+  return { names, initials };
+}
+
+function extractTaskDescription(rawText: string): string | undefined {
+  const diveOpStripped = rawText
+    .replace(/^\d{3,4}\s*/, '')
+    .replace(/\b(?:Diver\s+)?(?:[A-Z]\.\s*[A-Z][a-z]+|[A-Z][a-z]+\s+[A-Z][a-z]+|[A-Z]{2,3})\s+(?:L\/?S|R\/?S|L\/?B|R\/?B)\b/gi, '')
+    .replace(/\s+to\s+/, ' ')
+    .trim();
+  
+  if (diveOpStripped.length > 5) {
+    return diveOpStripped;
+  }
+  return undefined;
+}
+
+export function extractData(rawText: string): ExtractedData {
+  const extracted: ExtractedData = {};
+  
+  const { names, initials } = extractDiverNames(rawText);
+  if (names.length > 0) extracted.diverNames = names;
+  if (initials.length > 0) extracted.diverInitials = initials;
+  
   for (const pattern of LS_SYNONYMS) {
     if (pattern.test(rawText)) {
       extracted.diveOperation = "ls";
@@ -160,33 +217,33 @@ export function extractData(rawText: string): ExtractedData {
     }
   }
   
-  // Extract time - look for HHMM patterns
+  if (/\bL\/?S\b/i.test(rawText) && !extracted.diveOperation) {
+    extracted.diveOperation = "ls";
+  }
+  if (/\bL\/?B\b/i.test(rawText) && !extracted.diveOperation) {
+    extracted.diveOperation = "lb";
+  }
+  
   const timeMatches = [...rawText.matchAll(TIME_PATTERN)];
   if (timeMatches.length > 0) {
     const firstTime = timeMatches[0];
     const timeStr = `${firstTime[1].padStart(2, '0')}:${firstTime[2]}`;
     
-    // Assign time based on dive operation
     switch (extracted.diveOperation) {
-      case "ls":
-        extracted.lsTime = timeStr;
-        break;
-      case "rb":
-        extracted.rbTime = timeStr;
-        break;
-      case "lb":
-        extracted.lbTime = timeStr;
-        break;
-      case "rs":
-        extracted.rsTime = timeStr;
-        break;
+      case "ls": extracted.lsTime = timeStr; break;
+      case "rb": extracted.rbTime = timeStr; break;
+      case "lb": extracted.lbTime = timeStr; break;
+      case "rs": extracted.rsTime = timeStr; break;
     }
   }
   
-  // Extract depth
   const depthMatch = rawText.match(DEPTH_PATTERN);
   if (depthMatch) {
     extracted.depthFsw = parseInt(depthMatch[1], 10);
+  }
+  
+  if (extracted.diveOperation) {
+    extracted.taskDescription = extractTaskDescription(rawText);
   }
   
   return extracted;

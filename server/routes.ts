@@ -884,13 +884,48 @@ export async function registerRoutes(
           }
           
           // If dive operation, create/update dive record for the diver
-          if (category === "dive_op" && extracted.diveOperation && extracted.diverInitials?.length) {
-            for (const initials of extracted.diverInitials) {
-              const diver = await storage.getUserByInitials(initials, data.projectId);
-              if (diver) {
-                const dive = await storage.getOrCreateDiveForDiver(day.id, data.projectId, diver.id);
+          if (category === "dive_op" && extracted.diveOperation) {
+            const diverIdentifiers = extracted.diverNames || extracted.diverInitials || [];
+            const station = data.station || null;
+            
+            for (const identifier of diverIdentifiers) {
+              const initials = identifier.length <= 3 ? identifier : undefined;
+              let dive;
+              
+              if (initials) {
+                const diver = await storage.getUserByInitials(initials, data.projectId);
+                if (diver) {
+                  dive = await storage.getOrCreateDiveForDiver(day.id, data.projectId, diver.id);
+                  if (!dive.diverDisplayName) {
+                    await storage.updateDive(dive.id, { diverDisplayName: diver.fullName || diver.username, station });
+                  }
+                } else {
+                  dive = await storage.getOrCreateDiveByDisplayName(day.id, data.projectId, initials, station || undefined);
+                }
+              } else {
+                const nameParts = identifier.split(/[.\s]/);
+                const firstInitial = nameParts[0]?.charAt(0)?.toUpperCase() || "";
+                const lastName = nameParts[nameParts.length - 1] || "";
+                const searchInitials = `${firstInitial}${lastName.charAt(0).toUpperCase()}`;
+                
+                const diver = await storage.getUserByInitials(searchInitials, data.projectId);
+                if (diver) {
+                  dive = await storage.getOrCreateDiveForDiver(day.id, data.projectId, diver.id);
+                  if (!dive.diverDisplayName) {
+                    await storage.updateDive(dive.id, { diverDisplayName: diver.fullName || identifier, station });
+                  }
+                } else {
+                  dive = await storage.getOrCreateDiveByDisplayName(day.id, data.projectId, identifier, station || undefined);
+                }
+              }
+              
+              if (dive) {
                 const timeField = `${extracted.diveOperation}Time` as 'lsTime' | 'rbTime' | 'lbTime' | 'rsTime';
                 await storage.updateDiveTimes(dive.id, timeField, eventTime, extracted.depthFsw);
+                
+                if (extracted.taskDescription && !dive.taskSummary) {
+                  await storage.updateDive(dive.id, { taskSummary: extracted.taskDescription });
+                }
               }
             }
           }
@@ -1015,6 +1050,111 @@ export async function registerRoutes(
   app.get("/api/users/:userId/dives", requireAuth, async (req: Request, res: Response) => {
     const dives = await storage.getDivesByDiver(req.params.userId, req.query.dayId as string);
     res.json(dives);
+  });
+
+  // Update dive PSG-LOG-01 fields (supervisor edit)
+  app.patch("/api/dives/:id", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const dive = await storage.getDive(req.params.id);
+      if (!dive) return res.status(404).json({ message: "Dive not found" });
+      
+      const allowedFields = [
+        "diverDisplayName", "diverBadgeId", "station", "workLocation",
+        "maxDepthFsw", "taskSummary", "toolsEquipment", "installMaterialIds",
+        "qcDisposition", "verifier", "decompRequired", "decompMethod",
+        "postDiveStatus", "photoVideoRefs", "supervisorInitials", "notes",
+        "lsTime", "rbTime", "lbTime", "rsTime",
+      ];
+      
+      const updates: Record<string, any> = {};
+      for (const field of allowedFields) {
+        if (req.body[field] !== undefined) {
+          updates[field] = req.body[field];
+        }
+      }
+      
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ message: "No valid fields to update" });
+      }
+      
+      const updated = await storage.updateDive(req.params.id, updates);
+      res.json(updated);
+    } catch (error) {
+      console.error("Dive update error:", error);
+      res.status(500).json({ message: "Failed to update dive" });
+    }
+  });
+
+  // Generate AI task summary for a dive from its related log events
+  app.post("/api/dives/:id/generate-summary", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const dive = await storage.getDive(req.params.id);
+      if (!dive) return res.status(404).json({ message: "Dive not found" });
+      
+      const events = await storage.getLogEventsByDay(dive.dayId);
+      const diverName = dive.diverDisplayName || "";
+      const diverInitials = diverName.length <= 3 ? diverName : 
+        diverName.split(/[.\s]/).filter(p => p.length > 0).map(p => p.charAt(0).toUpperCase()).join("");
+      
+      let rosterName = "";
+      if (dive.diverId) {
+        const diverUser = await storage.getUser(dive.diverId);
+        if (diverUser) {
+          rosterName = diverUser.fullName || diverUser.username || "";
+        }
+      }
+      
+      const relatedEvents = events.filter(e => {
+        const text = e.rawText;
+        if (diverName && text.includes(diverName)) return true;
+        if (rosterName && rosterName !== diverName && text.includes(rosterName)) return true;
+        if (diverInitials && diverInitials.length >= 2 && new RegExp(`\\b${diverInitials}\\b`).test(text)) return true;
+        return false;
+      });
+      
+      if (relatedEvents.length === 0) {
+        return res.json({ taskSummary: dive.taskSummary || "UNKNOWN" });
+      }
+      
+      const rawEntries = relatedEvents
+        .sort((a, b) => new Date(a.eventTime).getTime() - new Date(b.eventTime).getTime())
+        .map(e => e.rawText)
+        .join("\n");
+      
+      try {
+        const openai = new (await import("openai")).default({
+          apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+          baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+        });
+        
+        const response = await openai.chat.completions.create({
+          model: "gpt-4.1-mini",
+          max_tokens: 200,
+          messages: [
+            {
+              role: "system",
+              content: `You summarize dive tasks for PSG-LOG-01 forms. Create a concise "Task / Work Accomplished" summary from raw log entries for a single diver. Include specific tasks, equipment, and locations. Do NOT calculate dive times or decompression data. Keep it factual and brief (1-3 sentences).`
+            },
+            {
+              role: "user",
+              content: `Diver: ${diverName}\nRaw log entries:\n${rawEntries}\n\nWrite the Task / Work Accomplished summary.`
+            }
+          ],
+        });
+        
+        const summary = response.choices[0]?.message?.content?.trim() || dive.taskSummary || "UNKNOWN";
+        await storage.updateDive(dive.id, { taskSummary: summary });
+        res.json({ taskSummary: summary });
+      } catch (aiErr) {
+        console.error("AI task summary failed:", aiErr);
+        const fallback = relatedEvents.map(e => e.rawText).join("; ");
+        await storage.updateDive(dive.id, { taskSummary: fallback });
+        res.json({ taskSummary: fallback });
+      }
+    } catch (error) {
+      console.error("Generate summary error:", error);
+      res.status(500).json({ message: "Failed to generate summary" });
+    }
   });
 
   // Diver confirm/flag their dive
