@@ -47,6 +47,17 @@ function formatTime(date: Date | string | null): string {
   return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
+function deriveInitialsFromDisplayName(displayName: string | null | undefined): string | undefined {
+  if (!displayName) return undefined;
+  const name = displayName.trim();
+  if (name.length <= 3 && /^[A-Z]{2,3}$/i.test(name)) return name.toUpperCase();
+  const parts = name.split(/[\s.]+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+  }
+  return name.substring(0, 2).toUpperCase();
+}
+
 export interface ValidationReport {
   valid: boolean;
   criticalErrors: string[];
@@ -115,8 +126,11 @@ export async function generateShiftExport(dayId: string): Promise<ExportResult &
   });
 
   for (const dive of dives) {
-    const diver = await storage.getUser(dive.diverId);
-    const initials = diver?.initials || diver?.username?.substring(0, 2).toUpperCase() || "UNK";
+    const diver = dive.diverId ? await storage.getUser(dive.diverId) : undefined;
+    const initials = diver?.initials 
+      || diver?.username?.substring(0, 2).toUpperCase() 
+      || deriveInitialsFromDisplayName(dive.diverDisplayName)
+      || "UNK";
     const diveBuffer = await generateDiveLogDoc(dive, day, project.name, initials);
     files.push({
       name: `${initials}_${dateStr}_DL.docx`,
@@ -334,7 +348,7 @@ async function generateMasterLogDoc(
   if (directiveEvents.length > 0) {
     children.push(
       new Paragraph({
-        text: "JV/OICC (Client) Directives and Changes",
+        text: "Client Directives and Changes",
         heading: HeadingLevel.HEADING_2,
         spacing: { before: 400 },
       })
@@ -387,8 +401,11 @@ async function generateMasterLogDoc(
     );
 
     for (const dive of dives) {
-      const diver = await storage.getUser(dive.diverId);
-      const initials = diver?.initials || diver?.username?.substring(0, 2).toUpperCase() || "UNK";
+      const diver = dive.diverId ? await storage.getUser(dive.diverId) : undefined;
+      const initials = diver?.initials 
+        || diver?.username?.substring(0, 2).toUpperCase() 
+        || deriveInitialsFromDisplayName(dive.diverDisplayName)
+        || "UNK";
       children.push(
         new Paragraph({
           children: [

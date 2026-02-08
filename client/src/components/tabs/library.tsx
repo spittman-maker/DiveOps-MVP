@@ -7,8 +7,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useProject } from "@/hooks/use-project";
-import { Download, FileText, FileSpreadsheet, FolderOpen } from "lucide-react";
+import { Download, FileText, FileSpreadsheet, FolderOpen, Archive, Eye, EyeOff } from "lucide-react";
 import { format } from "date-fns";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 
 interface LibraryDocument {
   id: string;
@@ -44,7 +46,41 @@ export function LibraryTab() {
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("exports");
+  const [showArchived, setShowArchived] = useState(false);
   const { activeProject } = useProject();
+  const { toast } = useToast();
+
+  const archiveKey = `diveops_archived_exports_${activeProject?.id || "default"}`;
+
+  const [archivedIds, setArchivedIds] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem(archiveKey);
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch { return new Set(); }
+  });
+
+  const toggleArchive = (id: string) => {
+    setArchivedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      localStorage.setItem(archiveKey, JSON.stringify([...next]));
+      return next;
+    });
+  };
+
+  const archiveGroup = (ids: string[]) => {
+    setArchivedIds(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.add(id));
+      localStorage.setItem(archiveKey, JSON.stringify([...next]));
+      return next;
+    });
+    toast({ title: "Archived", description: `${ids.length} document(s) archived` });
+  };
 
   const { data: docs = SAMPLE_DOCS } = useQuery<LibraryDocument[]>({
     queryKey: ["library-docs"],
@@ -76,7 +112,11 @@ export function LibraryTab() {
     return matchesSearch && matchesCategory;
   });
 
-  const filteredExports = exports.filter(exp => 
+  const activeExports = exports.filter(exp => !archivedIds.has(exp.id));
+  const archivedExports = exports.filter(exp => archivedIds.has(exp.id));
+  const displayExports = showArchived ? archivedExports : activeExports;
+
+  const filteredExports = displayExports.filter(exp => 
     exp.fileName.toLowerCase().includes(search.toLowerCase()) ||
     exp.filePath.toLowerCase().includes(search.toLowerCase())
   );
@@ -141,7 +181,7 @@ export function LibraryTab() {
             data-testid="tab-exports"
             className="data-[state=active]:bg-navy-600 text-white"
           >
-            Shift Exports ({exports.length})
+            Shift Exports ({activeExports.length})
           </TabsTrigger>
           <TabsTrigger 
             value="reference" 
@@ -184,7 +224,34 @@ export function LibraryTab() {
         </div>
 
         <TabsContent value="exports" className="mt-0">
-          <ScrollArea className="h-[calc(100vh-280px)]">
+          <div className="flex items-center gap-2 mb-3">
+            <Button
+              size="sm"
+              variant={showArchived ? "default" : "outline"}
+              data-testid="toggle-archived"
+              onClick={() => setShowArchived(!showArchived)}
+              className={showArchived ? "bg-amber-600 hover:bg-amber-500 text-black" : "border-navy-600 text-navy-300 hover:text-white"}
+            >
+              {showArchived ? <Eye className="w-3 h-3 mr-1" /> : <Archive className="w-3 h-3 mr-1" />}
+              {showArchived ? `Archived (${archivedExports.length})` : `View Archived (${archivedExports.length})`}
+            </Button>
+            {showArchived && archivedExports.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                data-testid="unarchive-all"
+                onClick={() => {
+                  setArchivedIds(new Set());
+                  localStorage.removeItem(archiveKey);
+                  toast({ title: "Restored", description: "All documents restored from archive" });
+                }}
+                className="border-navy-600 text-navy-300 hover:text-white"
+              >
+                Restore All
+              </Button>
+            )}
+          </div>
+          <ScrollArea className="h-[calc(100vh-320px)]">
             {Object.keys(groupedExports).length === 0 ? (
               <div className="text-center py-12">
                 <FolderOpen className="w-12 h-12 text-navy-500 mx-auto mb-4" />
@@ -199,10 +266,24 @@ export function LibraryTab() {
                   .sort(([a], [b]) => b.localeCompare(a))
                   .map(([date, exps]) => (
                     <div key={date}>
-                      <h3 className="text-white font-medium mb-3 flex items-center gap-2">
-                        <FolderOpen className="w-4 h-4 text-amber-500" />
-                        {date}
-                      </h3>
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-white font-medium flex items-center gap-2">
+                          <FolderOpen className="w-4 h-4 text-amber-500" />
+                          {date}
+                        </h3>
+                        {!showArchived && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            data-testid={`archive-group-${date}`}
+                            onClick={() => archiveGroup(exps.map(e => e.id))}
+                            className="text-navy-400 hover:text-amber-400 text-xs h-6"
+                          >
+                            <Archive className="w-3 h-3 mr-1" />
+                            Archive All
+                          </Button>
+                        )}
+                      </div>
                       <div className="grid gap-2 pl-6">
                         {exps.map(exp => (
                           <Card
@@ -237,6 +318,16 @@ export function LibraryTab() {
                                     className="border-navy-600 text-white hover:bg-navy-600"
                                   >
                                     <Download className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    data-testid={`archive-${exp.id}`}
+                                    onClick={() => toggleArchive(exp.id)}
+                                    className="text-navy-400 hover:text-amber-400"
+                                    title={archivedIds.has(exp.id) ? "Restore" : "Archive"}
+                                  >
+                                    <Archive className="w-4 h-4" />
                                   </Button>
                                 </div>
                               </div>

@@ -533,20 +533,21 @@ export function DivePlanTab() {
                 </CardContent>
               </Card>
 
-              {stations.length > 0 && (
-                <Card className="bg-navy-800/50 border-navy-600">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-white text-base">Stations Overview</CardTitle>
-                  </CardHeader>
-                  <CardContent>
+              <Card className="bg-navy-800/50 border-navy-600">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-white text-base">Stations Overview</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {stations.length > 0 ? (
                     <div className="space-y-3">
                       {stations.map((station) => (
                         <div 
                           key={station.id} 
                           className="border border-navy-600 rounded-lg p-3 bg-navy-900/30"
+                          data-testid={`canvas-station-${station.stationId}`}
                         >
                           <div className="flex items-center justify-between mb-2">
-                            <span className="font-mono text-amber-400">{station.stationId}</span>
+                            <span className="font-mono text-amber-400 font-semibold">{station.stationId}</span>
                             {station.targetDepthFsw && (
                               <Badge variant="outline" className="border-amber-500 text-amber-300">
                                 {station.targetDepthFsw} fsw
@@ -557,29 +558,48 @@ export function DivePlanTab() {
                           {station.crew && (
                             <div className="flex flex-wrap gap-1 mb-2">
                               {(station.crew as StationCrew).supervisor && (
-                                <span className="text-xs text-amber-400">
+                                <Badge className="bg-amber-600 text-xs">
                                   SUP: {(station.crew as StationCrew).supervisor}
-                                </span>
+                                </Badge>
                               )}
-                              {(station.crew as StationCrew).divers.length > 0 && (
-                                <span className="text-xs text-navy-300 ml-2">
-                                  Divers: {(station.crew as StationCrew).divers.join(", ")}
-                                </span>
-                              )}
+                              {(station.crew as StationCrew).divers.map((d, i) => (
+                                <Badge key={i} variant="outline" className="border-cyan-500 text-cyan-300 text-xs">
+                                  {d}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+
+                          {station.plannedDives && (
+                            <div className="text-xs text-navy-300 mb-1">
+                              Planned Dives: {station.plannedDives}
                             </div>
                           )}
 
                           {Array.isArray(station.plannedTasks) && station.plannedTasks.length > 0 && (
-                            <div className="text-xs text-navy-300">
-                              {(station.plannedTasks as string[]).length} task(s) planned
+                            <div className="text-xs">
+                              <span className="text-navy-400">Tasks:</span>
+                              <ul className="mt-1 space-y-0.5">
+                                {(station.plannedTasks as string[]).map((task, i) => (
+                                  <li key={i} className="text-navy-200 flex items-start gap-1">
+                                    <span className="text-green-400">•</span> {task}
+                                  </li>
+                                ))}
+                              </ul>
                             </div>
                           )}
                         </div>
                       ))}
                     </div>
-                  </CardContent>
-                </Card>
-              )}
+                  ) : (
+                    <div className="text-center py-4">
+                      <MapPin className="w-8 h-8 mx-auto text-navy-600 mb-2" />
+                      <p className="text-navy-400 text-sm">No stations defined</p>
+                      <p className="text-navy-500 text-xs mt-1">Add stations from the Station Builder</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
               {activePlan.planJson && (activePlan.planJson as any).notes && (
                 <Card className="bg-navy-800/50 border-navy-600">

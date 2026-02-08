@@ -201,6 +201,32 @@ export function DailyLogTab() {
     },
   });
 
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
+
+  const editEventMutation = useMutation({
+    mutationFn: async ({ id, rawText }: { id: string; rawText: string }) => {
+      const res = await fetch(`/api/log-events/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ rawText, editReason: "Supervisor correction" }),
+      });
+      if (!res.ok) throw new Error("Failed to update event");
+      return res.json();
+    },
+    onSuccess: () => {
+      setEditingEventId(null);
+      setEditingText("");
+      queryClient.invalidateQueries({ queryKey: ["log-events"] });
+      queryClient.invalidateQueries({ queryKey: ["master-log"] });
+      toast({ title: "Entry updated", description: "Log entry has been corrected" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update log entry", variant: "destructive" });
+    },
+  });
+
   const closeDayMutation = useMutation({
     mutationFn: async () => {
       if (!currentDay) throw new Error("No day");
@@ -706,8 +732,54 @@ export function DailyLogTab() {
                       {event.station}
                     </Badge>
                   )}
+                  {canWriteLogEvents && currentDay?.status !== "CLOSED" && editingEventId !== event.id && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      data-testid={`edit-event-${event.id}`}
+                      className="ml-auto h-6 px-2 text-navy-400 hover:text-amber-400 hover:bg-navy-700"
+                      onClick={() => {
+                        setEditingEventId(event.id);
+                        setEditingText(event.rawText);
+                      }}
+                    >
+                      <Edit2 className="w-3 h-3 mr-1" />
+                      <span className="text-xs">Edit</span>
+                    </Button>
+                  )}
                 </div>
-                <p className="text-sm text-white font-mono">{event.rawText}</p>
+                {editingEventId === event.id ? (
+                  <div className="space-y-2">
+                    <Textarea
+                      value={editingText}
+                      onChange={(e) => setEditingText(e.target.value)}
+                      className="bg-navy-900 border-amber-500/50 text-white font-mono text-sm min-h-[60px]"
+                      data-testid={`edit-textarea-${event.id}`}
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        data-testid={`save-edit-${event.id}`}
+                        className="bg-amber-600 hover:bg-amber-500 text-black text-xs h-7"
+                        disabled={editEventMutation.isPending || editingText.trim() === event.rawText}
+                        onClick={() => editEventMutation.mutate({ id: event.id, rawText: editingText })}
+                      >
+                        {editEventMutation.isPending ? "Saving..." : "Save"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        data-testid={`cancel-edit-${event.id}`}
+                        className="text-navy-400 hover:text-white text-xs h-7"
+                        onClick={() => { setEditingEventId(null); setEditingText(""); }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-white font-mono">{event.rawText}</p>
+                )}
                 {event.aiAnnotations && event.aiAnnotations.length > 0 && (
                   <div className="mt-1.5 space-y-1" data-testid={`annotations-${event.id}`}>
                     {event.aiAnnotations.map((ann, i) => (

@@ -1025,6 +1025,37 @@ export async function registerRoutes(
     }
   });
 
+  // Edit log event raw text
+  app.patch("/api/log-events/:id", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const { rawText, editReason } = req.body;
+      if (!rawText || typeof rawText !== "string") {
+        return res.status(400).json({ message: "rawText is required" });
+      }
+
+      const event = await storage.getLogEvent(req.params.id);
+      if (!event) return res.status(404).json({ message: "Log event not found" });
+
+      const day = await storage.getDay(event.dayId);
+      if (day?.status === "CLOSED") {
+        const user = getUser(req);
+        if (!isGod(user.role)) {
+          return res.status(403).json({ message: "Day is closed" });
+        }
+      }
+
+      const updated = await storage.updateLogEvent(req.params.id, {
+        rawText: rawText.trim(),
+        editReason: editReason || "Manual edit",
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("LogEvent edit error:", error);
+      res.status(500).json({ message: "Failed to update log event" });
+    }
+  });
+
   // Retry AI render
   app.post("/api/log-events/:id/retry-render", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
     const event = await storage.getLogEvent(req.params.id);
@@ -1352,10 +1383,14 @@ export async function registerRoutes(
     // Get dives for this day with diver info
     const dives = await storage.getDivesByDay(req.params.dayId);
     const divesWithNames = await Promise.all(dives.map(async (dive) => {
-      const diver = await storage.getUser(dive.diverId);
+      let diverName = dive.diverDisplayName || "Unknown";
+      if (dive.diverId) {
+        const diver = await storage.getUser(dive.diverId);
+        if (diver) diverName = diver.fullName || diver.username || diverName;
+      }
       return {
         ...dive,
-        diverName: diver?.fullName || diver?.username || dive.diverId,
+        diverName,
       };
     }));
     

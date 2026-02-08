@@ -1,0 +1,38 @@
+Master Log - Pearl Harbor Inspection
+Date: 2026-02-07 | Shift: 3
+JV/OICC (Client) Directives and Changes
+[09:00] 0900 per client request, extend inspection scope to include mooring chains
+[09:00] 0900 per client direction, add cathodic protection survey to scope
+[10:00] 1000 per client direction, add cathodic protection survey to scope
+Station Log (Non-Timestamped)
+• 0600 DHO safteuy meeting
+• 0615 crew meeting
+• 0625 dive crew saftey meeting
+• 0640 setting up to dive
+• 0711 L/S Zach Meador down to install infield cages
+• 0730 down on crane to rig to infield cage
+• 0745 crane rigged up
+• 0755 L/S Tom Brady down for anchor chain inspection at 25 fsw
+• 0800 L/S TestDiver_e2e down for hull cleaning at 30 fsw
+• 0830 infield cage set between #60 59,diver swinging crane over to grab 2nd infield cage
+• 0830 R/S TestDiver_e2e, hull cleaning complete, area secured
+• 0830 R/S TB, anchor chain inspection complete, all clear
+• 0841 crane rigged up
+• 0846 R/S ZM
+• 0857 L/S Dan Merz down to set infield cages
+• 0900 L/S John Smith down for pipeline inspection at 45 fsw
+• 0903 up on 2nd infield cage
+• 0926 2nd infield cage set between #58 57
+• 0940 3rd infield cage rigged up,moving LWT to the North 2 piles to set infield cages1028 3rd infield cage in postion #57 56
+• 0945 R/S JS, pipeline inspection complete, all clear
+• 1031 R/S DM
+• 1038 RC L/S to cont infill cage install,3rd cage secured up on crane to get 4th infield cage
+• 1110 4th cage rigged up swinging it into position
+• 1133 4th infield cage set #55 56,moving LWT  back to the south 2 piles
+• LWT BIG HOUSE 0530 car shuffel
+Dive Operations Summary
+UNK: L/S 07:11 | R/B - | L/B - | R/S 08:46 | Depth: - FSW | Task: to install infield cages
+UNK: L/S 07:55 | R/B - | L/B - | R/S 08:30 | Depth: 25 FSW | Task: L/S Tom Brady down for anchor chain inspection at 25 fsw | R/S TB, anchor chain inspection complete, all clear
+UNK: L/S 08:57 | R/B - | L/B - | R/S 10:31 | Depth: - FSW | Task: to set infield cages
+JS: L/S 09:00 | R/B - | L/B - | R/S 09:45 | Depth: 45 FSW | Task: L/S John Smith down for pipeline inspection at 45 fsw | R/S JS, pipeline inspection complete, all clear
+UNK: L/S 10:38 | R/B - | L/B - | R/S - | Depth: - FSW | Task: to continue infill cage install,3rd cage secured up on crane to get 4th infield cage
