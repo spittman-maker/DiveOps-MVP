@@ -280,20 +280,22 @@ export async function registerRoutes(
       
       if (projectId) {
         const day = await storage.getMostRecentDayByProject(projectId);
+        const projectRisks = await storage.getRiskItemsByProject(projectId);
         if (day) {
           const dives = await storage.getDivesByDay(day.id);
-          const risks = await storage.getRiskItemsByDay(day.id);
           const logs = await storage.getLogEventsByDay(day.id);
           
           stats = {
             totalDives: dives.length,
             activeDives: dives.filter(d => d.lsTime && !d.rsTime).length,
             safetyIncidents: logs.filter(l => l.category === "safety").length,
-            openRisks: risks.filter(r => r.status === "open").length,
+            openRisks: projectRisks.filter(r => r.status === "open").length,
             logEntriesToday: logs.length,
             dayStatus: day.status,
             dayDate: day.date,
           };
+        } else {
+          stats.openRisks = projectRisks.filter(r => r.status === "open").length;
         }
       }
       

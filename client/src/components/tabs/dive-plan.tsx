@@ -170,6 +170,25 @@ export function DivePlanTab() {
     }
   };
 
+  const { data: dayDives = [] } = useQuery<Array<{id: string; station?: string; diverDisplayName?: string; lsTime?: string; rsTime?: string; diveNumber: number}>>({
+    queryKey: ["/api/days", activeDay?.id, "dives"],
+    queryFn: async () => {
+      if (!activeDay?.id) return [];
+      const res = await fetch(`/api/days/${activeDay.id}/dives`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!activeDay?.id,
+    refetchInterval: 10000,
+  });
+
+  const divesByStation = dayDives.reduce<Record<string, typeof dayDives>>((acc, dive) => {
+    const key = dive.station || "UNASSIGNED";
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(dive);
+    return acc;
+  }, {});
+
   const canEdit = isSupervisor || isAdmin;
   const [activeTab, setActiveTab] = useState<string>("daily");
 
@@ -516,9 +535,21 @@ export function DivePlanTab() {
                       <span className="text-white ml-2">{stations.length}</span>
                     </div>
                     <div>
-                      <span className="text-navy-400">Total Planned Dives:</span>
+                      <span className="text-navy-400">Planned Dives:</span>
                       <span className="text-white ml-2">
                         {stations.reduce((sum, s) => sum + (s.plannedDives || 0), 0)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-navy-400">Executed Dives:</span>
+                      <span className={`ml-2 font-semibold ${dayDives.length > 0 ? "text-green-400" : "text-navy-500"}`}>
+                        {dayDives.length}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-navy-400">Active:</span>
+                      <span className={`ml-2 ${dayDives.filter(d => d.lsTime && !d.rsTime).length > 0 ? "text-amber-400 font-bold" : "text-navy-500"}`}>
+                        {dayDives.filter(d => d.lsTime && !d.rsTime).length}
                       </span>
                     </div>
                     <div>
@@ -570,9 +601,35 @@ export function DivePlanTab() {
                             </div>
                           )}
 
-                          {station.plannedDives && (
-                            <div className="text-xs text-navy-300 mb-1">
-                              Planned Dives: {station.plannedDives}
+                          {(station.plannedDives || divesByStation[station.stationId]) && (
+                            <div className="flex items-center gap-3 text-xs mb-1">
+                              {station.plannedDives ? (
+                                <span className="text-navy-300">Planned: {station.plannedDives}</span>
+                              ) : null}
+                              {divesByStation[station.stationId] ? (
+                                <span className="text-green-400 font-semibold">
+                                  Executed: {divesByStation[station.stationId].length}
+                                </span>
+                              ) : (
+                                <span className="text-navy-500">Executed: 0</span>
+                              )}
+                            </div>
+                          )}
+
+                          {divesByStation[station.stationId]?.length > 0 && (
+                            <div className="mt-1 mb-1 space-y-0.5">
+                              {divesByStation[station.stationId].map((dive) => (
+                                <div key={dive.id} className="flex items-center gap-2 text-xs bg-navy-800/50 rounded px-2 py-0.5">
+                                  <Badge className="bg-green-700 text-xs h-4 px-1">#{dive.diveNumber}</Badge>
+                                  <span className="text-white">{dive.diverDisplayName || "Unknown"}</span>
+                                  {dive.lsTime && !dive.rsTime && (
+                                    <Badge className="bg-amber-600 text-xs h-4 px-1 animate-pulse">IN WATER</Badge>
+                                  )}
+                                  {dive.rsTime && (
+                                    <Badge className="bg-navy-600 text-xs h-4 px-1">COMPLETE</Badge>
+                                  )}
+                                </div>
+                              ))}
                             </div>
                           )}
 

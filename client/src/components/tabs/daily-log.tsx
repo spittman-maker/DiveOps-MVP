@@ -194,6 +194,11 @@ export function DailyLogTab() {
       queryClient.invalidateQueries({ queryKey: ["log-events"] });
       queryClient.invalidateQueries({ queryKey: ["master-log"] });
       queryClient.invalidateQueries({ queryKey: ["/api/days"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/days", currentDay?.id, "dives"] });
+      queryClient.invalidateQueries({ queryKey: ["risks"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-recent-logs"] });
+      queryClient.invalidateQueries({ queryKey: ["dives"] });
       toast({ title: "Entry saved", description: "Log entry persisted to database" });
     },
     onError: () => {
@@ -220,6 +225,10 @@ export function DailyLogTab() {
       setEditingText("");
       queryClient.invalidateQueries({ queryKey: ["log-events"] });
       queryClient.invalidateQueries({ queryKey: ["master-log"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/days", currentDay?.id, "dives"] });
+      queryClient.invalidateQueries({ queryKey: ["risks"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-recent-logs"] });
       toast({ title: "Entry updated", description: "Log entry has been corrected" });
     },
     onError: () => {
@@ -241,6 +250,8 @@ export function DailyLogTab() {
       refreshDay();
       queryClient.invalidateQueries({ queryKey: ["log-events"] });
       queryClient.invalidateQueries({ queryKey: ["master-log"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-recent-logs"] });
       toast({ title: "Shift closed", description: "Master Log is now locked" });
     },
   });
@@ -260,6 +271,8 @@ export function DailyLogTab() {
       queryClient.invalidateQueries({ queryKey: ["log-events"] });
       queryClient.invalidateQueries({ queryKey: ["master-log"] });
       queryClient.invalidateQueries({ queryKey: ["library-exports"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-recent-logs"] });
       const fileCount = data.exportedFiles?.length || 0;
       toast({ 
         title: "Shift closed & exported", 
@@ -285,6 +298,8 @@ export function DailyLogTab() {
       refreshDay();
       queryClient.invalidateQueries({ queryKey: ["log-events"] });
       queryClient.invalidateQueries({ queryKey: ["master-log"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-recent-logs"] });
       toast({ title: "Day reopened", description: "Day is now active - reopening logged" });
     },
   });
@@ -306,6 +321,10 @@ export function DailyLogTab() {
       queryClient.invalidateQueries({ queryKey: ["log-events"] });
       queryClient.invalidateQueries({ queryKey: ["master-log"] });
       queryClient.invalidateQueries({ queryKey: ["dives"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/days"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-recent-logs"] });
+      queryClient.invalidateQueries({ queryKey: ["risks"] });
       refreshDay();
       toast({ title: "New shift started", description: `Shift ${newDay.shift || ""} ready for logging` });
     },

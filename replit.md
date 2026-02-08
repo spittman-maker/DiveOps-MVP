@@ -87,6 +87,12 @@ The system maintains 4 parallel controlled records per compliance document:
 - Terminology: Always use "Client" instead of "JV/OICC"
 - AI model: gpt-5.2 across all components
 
+### Cross-Tab Data Flow
+- **Query Invalidation**: Daily Log mutations (create/edit/close/reopen/new day) invalidate dives, risks, dashboard-stats, and dashboard-recent-logs queries to keep all tabs synchronized
+- **QueryClient Defaults**: `staleTime: 5000` (5 seconds) and `refetchOnWindowFocus: true` ensures tab switching shows fresh data
+- **Dashboard Stats**: Uses project-level risks (getRiskItemsByProject) to match Risk Register view
+- **Dive Plan ↔ Execution**: Dive Plan Canvas fetches day dives and maps them to stations, showing planned vs executed counts with IN WATER/COMPLETE status badges
+
 ### Dive Extraction
 - Name parsing: handles "A.Castro", "Diver B.Murphy", "Zach Meador", 2-letter initials
 - Matches to crew roster when possible, falls back to diverDisplayName storage
