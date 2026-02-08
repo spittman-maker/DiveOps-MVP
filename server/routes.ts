@@ -917,9 +917,9 @@ export async function registerRoutes(
           if (initials) {
             const diver = await storage.getUserByInitials(initials, data.projectId);
             if (diver) {
-              dive = await storage.getOrCreateDiveForDiver(day.id, data.projectId, diver.id);
+              dive = await storage.getOrCreateDiveForDiver(day.id, data.projectId, diver.id, station || undefined);
               if (!dive.diverDisplayName) {
-                await storage.updateDive(dive.id, { diverDisplayName: diver.fullName || diver.username, station });
+                await storage.updateDive(dive.id, { diverDisplayName: diver.fullName || diver.username });
               }
             } else {
               dive = await storage.getOrCreateDiveByDisplayName(day.id, data.projectId, initials, station || undefined);
@@ -932,9 +932,9 @@ export async function registerRoutes(
             
             const diver = await storage.getUserByInitials(searchInitials, data.projectId);
             if (diver) {
-              dive = await storage.getOrCreateDiveForDiver(day.id, data.projectId, diver.id);
+              dive = await storage.getOrCreateDiveForDiver(day.id, data.projectId, diver.id, station || undefined);
               if (!dive.diverDisplayName) {
-                await storage.updateDive(dive.id, { diverDisplayName: diver.fullName || identifier, station });
+                await storage.updateDive(dive.id, { diverDisplayName: diver.fullName || identifier });
               }
             } else {
               dive = await storage.getOrCreateDiveByDisplayName(day.id, data.projectId, identifier, station || undefined);

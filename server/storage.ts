@@ -84,7 +84,7 @@ export interface IStorage {
   getDivesByDay(dayId: string): Promise<Dive[]>;
   getDivesByDiver(diverId: string, dayId?: string): Promise<Dive[]>;
   updateDive(id: string, updates: Record<string, any>): Promise<Dive | undefined>;
-  getOrCreateDiveForDiver(dayId: string, projectId: string, diverId: string): Promise<Dive>;
+  getOrCreateDiveForDiver(dayId: string, projectId: string, diverId: string, station?: string): Promise<Dive>;
   getOrCreateDiveByDisplayName(dayId: string, projectId: string, displayName: string, station?: string): Promise<Dive>;
   updateDiveTimes(diveId: string, field: 'lsTime' | 'rbTime' | 'lbTime' | 'rsTime', time: Date, depthFsw?: number): Promise<Dive | undefined>;
 
@@ -421,22 +421,29 @@ export class DbStorage implements IStorage {
     return updated;
   }
 
-  async getOrCreateDiveForDiver(dayId: string, projectId: string, diverId: string): Promise<Dive> {
-    // Find existing dive for this diver on this day that doesn't have all times filled
+  async getOrCreateDiveForDiver(dayId: string, projectId: string, diverId: string, station?: string): Promise<Dive> {
     const existingDives = await db.select().from(schema.dives)
       .where(and(eq(schema.dives.dayId, dayId), eq(schema.dives.diverId, diverId)))
       .orderBy(desc(schema.dives.diveNumber));
     
-    // Find a dive that is incomplete (missing rsTime means dive in progress)
     const incompleteDive = existingDives.find(d => !d.rsTime);
-    if (incompleteDive) return incompleteDive;
+    if (incompleteDive) {
+      if (station && !incompleteDive.station) {
+        const [updated] = await db.update(schema.dives)
+          .set({ station, updatedAt: new Date() })
+          .where(eq(schema.dives.id, incompleteDive.id))
+          .returning();
+        return updated!;
+      }
+      return incompleteDive;
+    }
     
-    // Create new dive
     const nextNumber = existingDives.length > 0 ? existingDives[0].diveNumber + 1 : 1;
     const [created] = await db.insert(schema.dives).values({
       dayId,
       projectId,
       diverId,
+      station: station || null,
       diveNumber: nextNumber,
     }).returning();
     return created!;
@@ -470,7 +477,16 @@ export class DbStorage implements IStorage {
     });
 
     const incompleteDive = matchingDives.find(d => !d.rsTime);
-    if (incompleteDive) return incompleteDive;
+    if (incompleteDive) {
+      if (station && !incompleteDive.station) {
+        const [updated] = await db.update(schema.dives)
+          .set({ station, updatedAt: new Date() })
+          .where(eq(schema.dives.id, incompleteDive.id))
+          .returning();
+        return updated!;
+      }
+      return incompleteDive;
+    }
 
     if (matchingDives.length > 0) {
       const latest = matchingDives.sort((a, b) => b.diveNumber - a.diveNumber)[0];
