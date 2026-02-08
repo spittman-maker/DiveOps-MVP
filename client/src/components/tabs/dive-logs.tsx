@@ -36,13 +36,20 @@ interface Dive {
   notes?: string;
 }
 
-function calculateBottomTime(lsTime?: string, lbTime?: string): number | null {
-  if (!lsTime || !lbTime) return null;
+function calculateDiveMinutes(lsTime?: string, lbTime?: string, rsTime?: string): { minutes: number; label: string } | null {
+  if (!lsTime) return null;
   const ls = new Date(lsTime).getTime();
-  const lb = new Date(lbTime).getTime();
-  let diff = lb - ls;
-  if (diff < 0) diff += 24 * 60 * 60 * 1000;
-  return Math.round(diff / 60000);
+  if (lbTime) {
+    let diff = new Date(lbTime).getTime() - ls;
+    if (diff < 0) diff += 24 * 60 * 60 * 1000;
+    return { minutes: Math.round(diff / 60000), label: "bottom" };
+  }
+  if (rsTime) {
+    let diff = new Date(rsTime).getTime() - ls;
+    if (diff < 0) diff += 24 * 60 * 60 * 1000;
+    return { minutes: Math.round(diff / 60000), label: "total" };
+  }
+  return null;
 }
 
 function formatTime24(timeStr?: string): string {
@@ -212,7 +219,7 @@ export function DiveLogsTab() {
       <ScrollArea className="h-[calc(100vh-180px)]">
         <div className="grid gap-6">
           {dives.map((dive) => {
-            const bottomTime = calculateBottomTime(dive.lsTime, dive.lbTime);
+            const diveMin = calculateDiveMinutes(dive.lsTime, dive.lbTime, dive.rsTime);
             const saveFn = (field: string, value: string) =>
               handleSave(dive.id, field, value);
 
@@ -350,15 +357,17 @@ export function DiveLogsTab() {
                       onSave={saveFn}
                     />
                   </FieldRow>
-                  <FieldRow label="Bottom Time (min)">
+                  <FieldRow label="Dive Time (min)">
                     <span
                       className={
-                        bottomTime != null
+                        diveMin != null
                           ? "text-white font-mono"
                           : "text-yellow-400 italic"
                       }
                     >
-                      {bottomTime != null ? `${bottomTime} min` : "UNKNOWN"}
+                      {diveMin != null
+                        ? `${diveMin.minutes} min${diveMin.label === "total" ? " (LS→RS)" : " (LS→LB)"}`
+                        : "UNKNOWN"}
                     </span>
                   </FieldRow>
 
