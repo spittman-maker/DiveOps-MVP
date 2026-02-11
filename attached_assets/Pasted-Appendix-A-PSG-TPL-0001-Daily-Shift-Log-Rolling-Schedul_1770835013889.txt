@@ -1,0 +1,102 @@
+Appendix A — PSG-TPL-0001 Daily Shift Log (Rolling Schedule)
+Header
+•	Date (local):
+•	Project/Site:
+•	Client/Contract:
+•	Governing standard (selected):
+•	Weather/Sea State (observed):
+•	Tide/Current notes:
+•	Visibility/Temp:
+•	Mode/Depth band:
+Team & Manning
+•	Supervisor:
+•	DPIC (if applicable):
+•	Divers:
+•	Tenders:
+•	Standby Diver:
+•	LST/Medic/Chamber:
+•	Riggers/Crane:
+•	Boat crew:
+Equipment Status (pre-dive)
+•	Comms check:
+•	Gas supply/pressures:
+•	Bailout:
+•	Umbilicals/harness:
+•	First aid/O2:
+•	AED:
+•	Chamber status (if required):
+•	Tools:
+•	Isolation/LOTO (if applicable):
+Rolling Event Log (timestamped sequential lines)
+•	[HHMM]
+•	[HHMM]
+•	[HHMM]
+## Deviations / Stop-Work / Lessons Learned
+End-of-Shift Closeout
+•	Outstanding issues:
+•	Planned work next shift:
+•	Required reports generated:
+Sign-offs
+•	Dive Supervisor:
+•	Client Rep (if required):
+________________________________________
+Appendix B — PSG-TPL-0002 Daily JHA (Job Hazard Analysis)
+Header
+•	Date:
+•	Project/Site:
+•	Task/Scope:
+•	Crew present:
+•	Governing standard:
+•	Work window:
+Step-by-Step Hazard Controls
+Step	Task Detail	Hazards	Controls/Mitigations	Responsible Person	Stop-Work Trigger
+1					
+2					
+3					
+High-Risk Flags
+•	Delta-P / suction / intakes
+•	Confined space / overhead
+•	Hot work / underwater welding/cutting
+•	Heavy lifts / crane interface
+•	DP vessel / thrusters
+•	Contaminated water
+•	Low visibility / strong current
+Required Permits / Attachments
+•	Hot Work Permit (if applicable)
+•	LOTO / Isolation checklist (if applicable)
+•	Lift plan / rigging plan (if applicable)
+•	MSDS/SDS (if chemicals)
+Briefing Record
+•	Toolbox talk complete: Yes/No
+•	Questions addressed: Yes/No
+Sign-offs
+•	Dive Supervisor:
+•	All hands (initials):
+•	Client Rep (if required):
+________________________________________
+Appendix C — PSG-TPL-0003 ADCI-Compliant Dive Log (Structure)
+Header
+•	Date:
+•	Project/Site:
+•	Location (GPS/address):
+•	Client/Contract:
+•	Diving mode:
+•	Bottom type/conditions:
+Dive Record Table
+Dive #	Diver	Tender	Standby Diver	Start (HHMM)	End (HHMM)	Max Depth	Task	Gas	Comms	Deviations/Notes
+1										
+2										
+Pre/Post Checks
+•	Diver fit-to-dive verified: Yes/No
+•	Equipment inspection complete: Yes/No
+•	Emergency gear in place: Yes/No
+•	Supervisor brief complete: Yes/No
+Incident / Near Miss / Injury (if any)
+•	Event summary:
+•	Immediate actions:
+•	Notifications made (who/when):
+•	Reports initiated:
+Sign-offs
+•	Dive Supervisor:
+•	DPIC/PIC (if applicable):
+•	Client Rep (if required):
