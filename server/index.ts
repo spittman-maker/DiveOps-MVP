@@ -1,5 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -26,9 +27,16 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
-// Session middleware
+const PgSession = connectPgSimple(session);
+
+// Session middleware - stored in PostgreSQL so sessions survive restarts
 app.use(
   session({
+    store: new PgSession({
+      conString: process.env.DATABASE_URL,
+      tableName: "session",
+      createTableIfMissing: true,
+    }),
     secret: process.env.SESSION_SECRET || "navy-dive-console-secret-change-in-production",
     resave: false,
     saveUninitialized: false,
