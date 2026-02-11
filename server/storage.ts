@@ -190,6 +190,10 @@ export interface IStorage {
   // Dashboard Layouts
   getDashboardLayout(userId: string): Promise<schema.DashboardLayoutRecord | undefined>;
   saveDashboardLayout(userId: string, layoutData: schema.DashboardLayout): Promise<schema.DashboardLayoutRecord>;
+
+  // Admin
+  listUsers(): Promise<User[]>;
+  removeProjectMember(projectId: string, userId: string): Promise<boolean>;
 }
 
 export class DbStorage implements IStorage {
@@ -990,6 +994,17 @@ export class DbStorage implements IStorage {
         .returning();
       return created!;
     }
+  }
+
+  // Admin
+  async listUsers(): Promise<User[]> {
+    return await db.select().from(schema.users).orderBy(schema.users.username);
+  }
+
+  async removeProjectMember(projectId: string, userId: string): Promise<boolean> {
+    const result = await db.delete(schema.projectMembers)
+      .where(and(eq(schema.projectMembers.projectId, projectId), eq(schema.projectMembers.userId, userId)));
+    return (result.rowCount ?? 0) > 0;
   }
 }
 

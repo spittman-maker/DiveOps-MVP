@@ -8,6 +8,29 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+interface UserRecord {
+  id: string;
+  username: string;
+  role: string;
+  fullName?: string;
+  initials?: string;
+  email?: string;
+}
 
 interface Project {
   id: string;
@@ -15,6 +38,8 @@ interface Project {
   clientName: string;
   jobsiteName: string;
   jobsiteAddress?: string;
+  jobsiteLat?: string;
+  jobsiteLng?: string;
   timezone?: string;
 }
 
@@ -41,10 +66,56 @@ interface DirectoryFacility {
   lastVerifiedAt?: string;
 }
 
+const ROLES = ["GOD", "ADMIN", "SUPERVISOR", "DIVER"] as const;
+const FACILITY_TYPES = ["chamber", "hospital", "coastguard"] as const;
+
 export function AdminTab() {
   const { isAdmin, isGod } = useAuth();
   const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState("projects");
+
+  const [editProjectOpen, setEditProjectOpen] = useState(false);
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
+  const [manageTeamOpen, setManageTeamOpen] = useState(false);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+
+  const [createUserOpen, setCreateUserOpen] = useState(false);
+  const [editUserOpen, setEditUserOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<UserRecord | null>(null);
+
+  const [createFacilityOpen, setCreateFacilityOpen] = useState(false);
+  const [editFacilityOpen, setEditFacilityOpen] = useState(false);
+  const [selectedFacility, setSelectedFacility] = useState<DirectoryFacility | null>(null);
+
+  const [projectForm, setProjectForm] = useState({
+    name: "",
+    clientName: "",
+    jobsiteName: "",
+    jobsiteAddress: "",
+    jobsiteLat: "",
+    jobsiteLng: "",
+    timezone: "America/New_York",
+  });
+
+  const [userForm, setUserForm] = useState({
+    username: "",
+    password: "",
+    fullName: "",
+    initials: "",
+    email: "",
+    role: "DIVER" as string,
+  });
+
+  const [facilityForm, setFacilityForm] = useState({
+    name: "",
+    facilityType: "chamber" as string,
+    address: "",
+    phone: "",
+    travelTimeMinutes: "",
+  });
+
+  const [addMemberUserId, setAddMemberUserId] = useState("");
+  const [addMemberRole, setAddMemberRole] = useState("DIVER");
 
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["projects"],
@@ -64,11 +135,266 @@ export function AdminTab() {
     },
   });
 
+  const { data: allUsers = [] } = useQuery<UserRecord[]>({
+    queryKey: ["users"],
+    queryFn: async () => {
+      const res = await fetch("/api/users", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const { data: teamMembers = [], refetch: refetchTeam } = useQuery<ProjectMember[]>({
+    queryKey: ["project-members", selectedProject?.id],
+    queryFn: async () => {
+      if (!selectedProject) return [];
+      const res = await fetch(`/api/projects/${selectedProject.id}/members`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!selectedProject && manageTeamOpen,
+  });
+
+  const createProjectMutation = useMutation({
+    mutationFn: async (data: typeof projectForm) => {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to create project");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      setCreateProjectOpen(false);
+      resetProjectForm();
+    },
+  });
+
+  const updateProjectMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: typeof projectForm }) => {
+      const res = await fetch(`/api/projects/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to update project");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      setEditProjectOpen(false);
+      setSelectedProject(null);
+    },
+  });
+
+  const addMemberMutation = useMutation({
+    mutationFn: async ({ projectId, userId, role }: { projectId: string; userId: string; role: string }) => {
+      const res = await fetch(`/api/projects/${projectId}/members`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ userId, role }),
+      });
+      if (!res.ok) throw new Error("Failed to add member");
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchTeam();
+      setAddMemberUserId("");
+      setAddMemberRole("DIVER");
+    },
+  });
+
+  const removeMemberMutation = useMutation({
+    mutationFn: async ({ projectId, userId }: { projectId: string; userId: string }) => {
+      const res = await fetch(`/api/projects/${projectId}/members/${userId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to remove member");
+    },
+    onSuccess: () => {
+      refetchTeam();
+    },
+  });
+
+  const createUserMutation = useMutation({
+    mutationFn: async (data: typeof userForm) => {
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to create user");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      setCreateUserOpen(false);
+      resetUserForm();
+    },
+  });
+
+  const updateUserMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<typeof userForm> }) => {
+      const res = await fetch(`/api/users/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to update user");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      setEditUserOpen(false);
+      setSelectedUser(null);
+    },
+  });
+
+  const createFacilityMutation = useMutation({
+    mutationFn: async (data: Record<string, any>) => {
+      const res = await fetch("/api/directory-facilities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to create facility");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["directory-facilities"] });
+      setCreateFacilityOpen(false);
+      resetFacilityForm();
+    },
+  });
+
+  const updateFacilityMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Record<string, any> }) => {
+      const res = await fetch(`/api/directory-facilities/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to update facility");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["directory-facilities"] });
+      setEditFacilityOpen(false);
+      setSelectedFacility(null);
+    },
+  });
+
+  function resetProjectForm() {
+    setProjectForm({ name: "", clientName: "", jobsiteName: "", jobsiteAddress: "", jobsiteLat: "", jobsiteLng: "", timezone: "America/New_York" });
+  }
+
+  function resetUserForm() {
+    setUserForm({ username: "", password: "", fullName: "", initials: "", email: "", role: "DIVER" });
+  }
+
+  function resetFacilityForm() {
+    setFacilityForm({ name: "", facilityType: "chamber", address: "", phone: "", travelTimeMinutes: "" });
+  }
+
+  function openEditProject(project: Project) {
+    setSelectedProject(project);
+    setProjectForm({
+      name: project.name || "",
+      clientName: project.clientName || "",
+      jobsiteName: project.jobsiteName || "",
+      jobsiteAddress: project.jobsiteAddress || "",
+      jobsiteLat: project.jobsiteLat || "",
+      jobsiteLng: project.jobsiteLng || "",
+      timezone: project.timezone || "America/New_York",
+    });
+    setEditProjectOpen(true);
+  }
+
+  function openManageTeam(project: Project) {
+    setSelectedProject(project);
+    setManageTeamOpen(true);
+  }
+
+  function openEditUser(user: UserRecord) {
+    setSelectedUser(user);
+    setUserForm({
+      username: user.username || "",
+      password: "",
+      fullName: user.fullName || "",
+      initials: user.initials || "",
+      email: user.email || "",
+      role: user.role || "DIVER",
+    });
+    setEditUserOpen(true);
+  }
+
+  function openEditFacility(facility: DirectoryFacility) {
+    setSelectedFacility(facility);
+    setFacilityForm({
+      name: facility.name || "",
+      facilityType: facility.facilityType || "chamber",
+      address: facility.address || "",
+      phone: facility.phone || "",
+      travelTimeMinutes: facility.travelTimeMinutes?.toString() || "",
+    });
+    setEditFacilityOpen(true);
+  }
+
+  function handleSubmitProject(isCreate: boolean) {
+    if (isCreate) {
+      createProjectMutation.mutate(projectForm);
+    } else if (selectedProject) {
+      updateProjectMutation.mutate({ id: selectedProject.id, data: projectForm });
+    }
+  }
+
+  function handleSubmitUser(isCreate: boolean) {
+    if (isCreate) {
+      createUserMutation.mutate(userForm);
+    } else if (selectedUser) {
+      const payload: Record<string, any> = { ...userForm };
+      if (!payload.password) delete payload.password;
+      updateUserMutation.mutate({ id: selectedUser.id, data: payload });
+    }
+  }
+
+  function handleSubmitFacility(isCreate: boolean) {
+    const payload: Record<string, any> = {
+      ...facilityForm,
+      travelTimeMinutes: facilityForm.travelTimeMinutes ? parseInt(facilityForm.travelTimeMinutes) : undefined,
+    };
+    if (isCreate) {
+      createFacilityMutation.mutate(payload);
+    } else if (selectedFacility) {
+      updateFacilityMutation.mutate({ id: selectedFacility.id, data: payload });
+    }
+  }
+
   const getFacilityTypeColor = (type: string) => {
     switch (type) {
       case "chamber": return "btn-gold-metallic";
       case "hospital": return "bg-red-600";
       case "coastguard": return "bg-orange-600";
+      default: return "bg-gray-600";
+    }
+  };
+
+  const getRoleBadgeColor = (role: string) => {
+    switch (role) {
+      case "GOD": return "bg-purple-600";
+      case "ADMIN": return "bg-blue-600";
+      case "SUPERVISOR": return "bg-green-600";
+      case "DIVER": return "bg-cyan-600";
       default: return "bg-gray-600";
     }
   };
@@ -80,6 +406,9 @@ export function AdminTab() {
       </div>
     );
   }
+
+  const memberUserIds = new Set(teamMembers.map((m) => m.userId));
+  const availableUsers = allUsers.filter((u) => !memberUserIds.has(u.id));
 
   return (
     <div className="h-full p-4">
@@ -100,6 +429,13 @@ export function AdminTab() {
             Projects
           </TabsTrigger>
           <TabsTrigger
+            data-testid="admin-tab-users"
+            value="users"
+            className="data-[state=active]:bg-navy-700"
+          >
+            Users
+          </TabsTrigger>
+          <TabsTrigger
             data-testid="admin-tab-directory"
             value="directory"
             className="data-[state=active]:bg-navy-700"
@@ -117,9 +453,21 @@ export function AdminTab() {
           )}
         </TabsList>
 
+        {/* ───── PROJECTS TAB ───── */}
         <TabsContent value="projects" className="h-full mt-0">
           <ScrollArea className="h-[calc(100vh-240px)]">
             <div className="grid gap-4">
+              <Button
+                data-testid="button-create-project"
+                className="btn-gold-metallic hover:btn-gold-metallic w-full"
+                onClick={() => {
+                  resetProjectForm();
+                  setCreateProjectOpen(true);
+                }}
+              >
+                Create Project
+              </Button>
+
               {projects.map((project) => (
                 <Card
                   key={project.id}
@@ -155,6 +503,7 @@ export function AdminTab() {
                         size="sm"
                         variant="outline"
                         className="border-navy-500"
+                        onClick={() => openEditProject(project)}
                       >
                         Edit
                       </Button>
@@ -163,6 +512,7 @@ export function AdminTab() {
                         size="sm"
                         variant="outline"
                         className="border-navy-500"
+                        onClick={() => openManageTeam(project)}
                       >
                         Manage Team
                       </Button>
@@ -174,15 +524,77 @@ export function AdminTab() {
               {projects.length === 0 && (
                 <div className="text-center py-12">
                   <p className="text-navy-400">No projects found</p>
-                  <Button className="mt-4 btn-gold-metallic hover:btn-gold-metallic">
-                    Create First Project
-                  </Button>
                 </div>
               )}
             </div>
           </ScrollArea>
         </TabsContent>
 
+        {/* ───── USERS TAB ───── */}
+        <TabsContent value="users" className="h-full mt-0">
+          <ScrollArea className="h-[calc(100vh-240px)]">
+            <div className="grid gap-4">
+              <Button
+                data-testid="button-create-user"
+                className="btn-gold-metallic hover:btn-gold-metallic w-full"
+                onClick={() => {
+                  resetUserForm();
+                  setCreateUserOpen(true);
+                }}
+              >
+                Create User
+              </Button>
+
+              {allUsers.map((u) => (
+                <Card
+                  key={u.id}
+                  data-testid={`user-card-${u.id}`}
+                  className="bg-navy-800/50 border-navy-600"
+                >
+                  <CardContent className="py-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-navy-700 flex items-center justify-center text-white font-bold text-sm">
+                          {u.initials || u.username.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-white font-medium" data-testid={`text-username-${u.id}`}>
+                              {u.fullName || u.username}
+                            </h3>
+                            <Badge className={getRoleBadgeColor(u.role)} data-testid={`badge-role-${u.id}`}>
+                              {u.role}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-navy-400" data-testid={`text-email-${u.id}`}>
+                            {u.email || "No email"} · @{u.username}
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        data-testid={`button-edit-user-${u.id}`}
+                        size="sm"
+                        variant="outline"
+                        className="border-navy-500"
+                        onClick={() => openEditUser(u)}
+                      >
+                        Edit
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+
+              {allUsers.length === 0 && (
+                <div className="text-center py-12">
+                  <p className="text-navy-400">No users found</p>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+        </TabsContent>
+
+        {/* ───── FACILITY DIRECTORY TAB ───── */}
         <TabsContent value="directory" className="h-full mt-0">
           <ScrollArea className="h-[calc(100vh-240px)]">
             <div className="grid gap-4">
@@ -204,17 +616,28 @@ export function AdminTab() {
                         <p className="text-sm text-navy-400 mt-1">{facility.address}</p>
                         <p className="text-sm text-navy-400">{facility.phone}</p>
                       </div>
-                      <div className="text-right">
-                        {facility.travelTimeMinutes && (
-                          <p className="text-sm text-amber-400">
-                            {facility.travelTimeMinutes} min
-                          </p>
-                        )}
-                        {facility.lastVerifiedAt && (
-                          <p className="text-xs text-navy-500">
-                            Verified {new Date(facility.lastVerifiedAt).toLocaleDateString()}
-                          </p>
-                        )}
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          {facility.travelTimeMinutes && (
+                            <p className="text-sm text-amber-400">
+                              {facility.travelTimeMinutes} min
+                            </p>
+                          )}
+                          {facility.lastVerifiedAt && (
+                            <p className="text-xs text-navy-500">
+                              Verified {new Date(facility.lastVerifiedAt).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
+                        <Button
+                          data-testid={`button-edit-facility-${facility.id}`}
+                          size="sm"
+                          variant="outline"
+                          className="border-navy-500"
+                          onClick={() => openEditFacility(facility)}
+                        >
+                          Edit
+                        </Button>
                       </div>
                     </div>
                   </CardContent>
@@ -224,6 +647,10 @@ export function AdminTab() {
               <Button
                 data-testid="button-add-facility"
                 className="btn-gold-metallic hover:btn-gold-metallic w-full"
+                onClick={() => {
+                  resetFacilityForm();
+                  setCreateFacilityOpen(true);
+                }}
               >
                 Add Facility
               </Button>
@@ -231,6 +658,7 @@ export function AdminTab() {
           </ScrollArea>
         </TabsContent>
 
+        {/* ───── SYSTEM TAB ───── */}
         {isGod && (
           <TabsContent value="system" className="h-full mt-0">
             <div className="grid gap-4">
@@ -262,6 +690,667 @@ export function AdminTab() {
           </TabsContent>
         )}
       </Tabs>
+
+      {/* ───── CREATE PROJECT DIALOG ───── */}
+      <Dialog open={createProjectOpen} onOpenChange={setCreateProjectOpen}>
+        <DialogContent className="bg-navy-900 border-navy-600 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">Create Project</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-navy-300">Project Name</Label>
+              <Input
+                data-testid="input-project-name"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={projectForm.name}
+                onChange={(e) => setProjectForm({ ...projectForm, name: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label className="text-navy-300">Client Name</Label>
+              <Input
+                data-testid="input-project-client"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={projectForm.clientName}
+                onChange={(e) => setProjectForm({ ...projectForm, clientName: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label className="text-navy-300">Jobsite Name</Label>
+              <Input
+                data-testid="input-project-jobsite"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={projectForm.jobsiteName}
+                onChange={(e) => setProjectForm({ ...projectForm, jobsiteName: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label className="text-navy-300">Jobsite Address</Label>
+              <Input
+                data-testid="input-project-address"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={projectForm.jobsiteAddress}
+                onChange={(e) => setProjectForm({ ...projectForm, jobsiteAddress: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-navy-300">Latitude</Label>
+                <Input
+                  data-testid="input-project-lat"
+                  className="bg-navy-800 border-navy-600 text-white"
+                  value={projectForm.jobsiteLat}
+                  onChange={(e) => setProjectForm({ ...projectForm, jobsiteLat: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label className="text-navy-300">Longitude</Label>
+                <Input
+                  data-testid="input-project-lng"
+                  className="bg-navy-800 border-navy-600 text-white"
+                  value={projectForm.jobsiteLng}
+                  onChange={(e) => setProjectForm({ ...projectForm, jobsiteLng: e.target.value })}
+                />
+              </div>
+            </div>
+            <div>
+              <Label className="text-navy-300">Timezone</Label>
+              <Input
+                data-testid="input-project-timezone"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={projectForm.timezone}
+                onChange={(e) => setProjectForm({ ...projectForm, timezone: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              data-testid="button-cancel-create-project"
+              variant="outline"
+              className="border-navy-500"
+              onClick={() => setCreateProjectOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              data-testid="button-submit-create-project"
+              className="btn-gold-metallic hover:btn-gold-metallic"
+              onClick={() => handleSubmitProject(true)}
+              disabled={createProjectMutation.isPending}
+            >
+              {createProjectMutation.isPending ? "Creating..." : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ───── EDIT PROJECT DIALOG ───── */}
+      <Dialog open={editProjectOpen} onOpenChange={setEditProjectOpen}>
+        <DialogContent className="bg-navy-900 border-navy-600 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">Edit Project</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-navy-300">Project Name</Label>
+              <Input
+                data-testid="input-edit-project-name"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={projectForm.name}
+                onChange={(e) => setProjectForm({ ...projectForm, name: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label className="text-navy-300">Client Name</Label>
+              <Input
+                data-testid="input-edit-project-client"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={projectForm.clientName}
+                onChange={(e) => setProjectForm({ ...projectForm, clientName: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label className="text-navy-300">Jobsite Name</Label>
+              <Input
+                data-testid="input-edit-project-jobsite"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={projectForm.jobsiteName}
+                onChange={(e) => setProjectForm({ ...projectForm, jobsiteName: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label className="text-navy-300">Jobsite Address</Label>
+              <Input
+                data-testid="input-edit-project-address"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={projectForm.jobsiteAddress}
+                onChange={(e) => setProjectForm({ ...projectForm, jobsiteAddress: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-navy-300">Latitude</Label>
+                <Input
+                  data-testid="input-edit-project-lat"
+                  className="bg-navy-800 border-navy-600 text-white"
+                  value={projectForm.jobsiteLat}
+                  onChange={(e) => setProjectForm({ ...projectForm, jobsiteLat: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label className="text-navy-300">Longitude</Label>
+                <Input
+                  data-testid="input-edit-project-lng"
+                  className="bg-navy-800 border-navy-600 text-white"
+                  value={projectForm.jobsiteLng}
+                  onChange={(e) => setProjectForm({ ...projectForm, jobsiteLng: e.target.value })}
+                />
+              </div>
+            </div>
+            <div>
+              <Label className="text-navy-300">Timezone</Label>
+              <Input
+                data-testid="input-edit-project-timezone"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={projectForm.timezone}
+                onChange={(e) => setProjectForm({ ...projectForm, timezone: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              data-testid="button-cancel-edit-project"
+              variant="outline"
+              className="border-navy-500"
+              onClick={() => setEditProjectOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              data-testid="button-submit-edit-project"
+              className="btn-gold-metallic hover:btn-gold-metallic"
+              onClick={() => handleSubmitProject(false)}
+              disabled={updateProjectMutation.isPending}
+            >
+              {updateProjectMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ───── MANAGE TEAM DIALOG ───── */}
+      <Dialog open={manageTeamOpen} onOpenChange={setManageTeamOpen}>
+        <DialogContent className="bg-navy-900 border-navy-600 text-white max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-white">
+              Manage Team — {selectedProject?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-navy-300">Current Members</Label>
+              {teamMembers.length === 0 && (
+                <p className="text-navy-400 text-sm">No team members yet</p>
+              )}
+              {teamMembers.map((member) => (
+                <div
+                  key={member.userId}
+                  data-testid={`team-member-${member.userId}`}
+                  className="flex items-center justify-between bg-navy-800 rounded-lg p-3"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-white">
+                      {member.user?.fullName || member.user?.username || member.userId}
+                    </span>
+                    <Badge className={getRoleBadgeColor(member.role)}>
+                      {member.role}
+                    </Badge>
+                  </div>
+                  <Button
+                    data-testid={`button-remove-member-${member.userId}`}
+                    size="sm"
+                    variant="outline"
+                    className="border-red-500 text-red-400 hover:bg-red-900/30"
+                    onClick={() =>
+                      selectedProject &&
+                      removeMemberMutation.mutate({
+                        projectId: selectedProject.id,
+                        userId: member.userId,
+                      })
+                    }
+                    disabled={removeMemberMutation.isPending}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+            </div>
+
+            <div className="border-t border-navy-600 pt-4">
+              <Label className="text-navy-300">Add Member</Label>
+              <div className="flex gap-2 mt-2">
+                <Select value={addMemberUserId} onValueChange={setAddMemberUserId}>
+                  <SelectTrigger
+                    data-testid="select-add-member-user"
+                    className="bg-navy-800 border-navy-600 text-white flex-1"
+                  >
+                    <SelectValue placeholder="Select user" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-navy-800 border-navy-600">
+                    {availableUsers.map((u) => (
+                      <SelectItem key={u.id} value={u.id} className="text-white">
+                        {u.fullName || u.username}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={addMemberRole} onValueChange={setAddMemberRole}>
+                  <SelectTrigger
+                    data-testid="select-add-member-role"
+                    className="bg-navy-800 border-navy-600 text-white w-40"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-navy-800 border-navy-600">
+                    {ROLES.map((r) => (
+                      <SelectItem key={r} value={r} className="text-white">
+                        {r}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  data-testid="button-add-member"
+                  className="btn-gold-metallic hover:btn-gold-metallic"
+                  disabled={!addMemberUserId || addMemberMutation.isPending}
+                  onClick={() =>
+                    selectedProject &&
+                    addMemberMutation.mutate({
+                      projectId: selectedProject.id,
+                      userId: addMemberUserId,
+                      role: addMemberRole,
+                    })
+                  }
+                >
+                  Add
+                </Button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              data-testid="button-close-manage-team"
+              variant="outline"
+              className="border-navy-500"
+              onClick={() => setManageTeamOpen(false)}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ───── CREATE USER DIALOG ───── */}
+      <Dialog open={createUserOpen} onOpenChange={setCreateUserOpen}>
+        <DialogContent className="bg-navy-900 border-navy-600 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">Create User</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-navy-300">Username</Label>
+              <Input
+                data-testid="input-user-username"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={userForm.username}
+                onChange={(e) => setUserForm({ ...userForm, username: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label className="text-navy-300">Password</Label>
+              <Input
+                data-testid="input-user-password"
+                type="password"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={userForm.password}
+                onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label className="text-navy-300">Full Name</Label>
+              <Input
+                data-testid="input-user-fullname"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={userForm.fullName}
+                onChange={(e) => setUserForm({ ...userForm, fullName: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-navy-300">Initials</Label>
+                <Input
+                  data-testid="input-user-initials"
+                  className="bg-navy-800 border-navy-600 text-white"
+                  value={userForm.initials}
+                  onChange={(e) => setUserForm({ ...userForm, initials: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label className="text-navy-300">Role</Label>
+                <Select value={userForm.role} onValueChange={(v) => setUserForm({ ...userForm, role: v })}>
+                  <SelectTrigger
+                    data-testid="select-user-role"
+                    className="bg-navy-800 border-navy-600 text-white"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-navy-800 border-navy-600">
+                    {ROLES.map((r) => (
+                      <SelectItem key={r} value={r} className="text-white">
+                        {r}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label className="text-navy-300">Email</Label>
+              <Input
+                data-testid="input-user-email"
+                type="email"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={userForm.email}
+                onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              data-testid="button-cancel-create-user"
+              variant="outline"
+              className="border-navy-500"
+              onClick={() => setCreateUserOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              data-testid="button-submit-create-user"
+              className="btn-gold-metallic hover:btn-gold-metallic"
+              onClick={() => handleSubmitUser(true)}
+              disabled={createUserMutation.isPending}
+            >
+              {createUserMutation.isPending ? "Creating..." : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ───── EDIT USER DIALOG ───── */}
+      <Dialog open={editUserOpen} onOpenChange={setEditUserOpen}>
+        <DialogContent className="bg-navy-900 border-navy-600 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">Edit User — {selectedUser?.username}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-navy-300">Full Name</Label>
+              <Input
+                data-testid="input-edit-user-fullname"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={userForm.fullName}
+                onChange={(e) => setUserForm({ ...userForm, fullName: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label className="text-navy-300">Password (leave blank to keep current)</Label>
+              <Input
+                data-testid="input-edit-user-password"
+                type="password"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={userForm.password}
+                onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-navy-300">Initials</Label>
+                <Input
+                  data-testid="input-edit-user-initials"
+                  className="bg-navy-800 border-navy-600 text-white"
+                  value={userForm.initials}
+                  onChange={(e) => setUserForm({ ...userForm, initials: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label className="text-navy-300">Role</Label>
+                <Select value={userForm.role} onValueChange={(v) => setUserForm({ ...userForm, role: v })}>
+                  <SelectTrigger
+                    data-testid="select-edit-user-role"
+                    className="bg-navy-800 border-navy-600 text-white"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-navy-800 border-navy-600">
+                    {ROLES.map((r) => (
+                      <SelectItem key={r} value={r} className="text-white">
+                        {r}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label className="text-navy-300">Email</Label>
+              <Input
+                data-testid="input-edit-user-email"
+                type="email"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={userForm.email}
+                onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              data-testid="button-cancel-edit-user"
+              variant="outline"
+              className="border-navy-500"
+              onClick={() => setEditUserOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              data-testid="button-submit-edit-user"
+              className="btn-gold-metallic hover:btn-gold-metallic"
+              onClick={() => handleSubmitUser(false)}
+              disabled={updateUserMutation.isPending}
+            >
+              {updateUserMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ───── CREATE FACILITY DIALOG ───── */}
+      <Dialog open={createFacilityOpen} onOpenChange={setCreateFacilityOpen}>
+        <DialogContent className="bg-navy-900 border-navy-600 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">Add Facility</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-navy-300">Facility Name</Label>
+              <Input
+                data-testid="input-facility-name"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={facilityForm.name}
+                onChange={(e) => setFacilityForm({ ...facilityForm, name: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label className="text-navy-300">Type</Label>
+              <Select
+                value={facilityForm.facilityType}
+                onValueChange={(v) => setFacilityForm({ ...facilityForm, facilityType: v })}
+              >
+                <SelectTrigger
+                  data-testid="select-facility-type"
+                  className="bg-navy-800 border-navy-600 text-white"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-navy-800 border-navy-600">
+                  {FACILITY_TYPES.map((t) => (
+                    <SelectItem key={t} value={t} className="text-white">
+                      {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-navy-300">Address</Label>
+              <Input
+                data-testid="input-facility-address"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={facilityForm.address}
+                onChange={(e) => setFacilityForm({ ...facilityForm, address: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-navy-300">Phone</Label>
+                <Input
+                  data-testid="input-facility-phone"
+                  className="bg-navy-800 border-navy-600 text-white"
+                  value={facilityForm.phone}
+                  onChange={(e) => setFacilityForm({ ...facilityForm, phone: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label className="text-navy-300">Travel Time (min)</Label>
+                <Input
+                  data-testid="input-facility-travel-time"
+                  type="number"
+                  className="bg-navy-800 border-navy-600 text-white"
+                  value={facilityForm.travelTimeMinutes}
+                  onChange={(e) => setFacilityForm({ ...facilityForm, travelTimeMinutes: e.target.value })}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              data-testid="button-cancel-create-facility"
+              variant="outline"
+              className="border-navy-500"
+              onClick={() => setCreateFacilityOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              data-testid="button-submit-create-facility"
+              className="btn-gold-metallic hover:btn-gold-metallic"
+              onClick={() => handleSubmitFacility(true)}
+              disabled={createFacilityMutation.isPending}
+            >
+              {createFacilityMutation.isPending ? "Adding..." : "Add Facility"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ───── EDIT FACILITY DIALOG ───── */}
+      <Dialog open={editFacilityOpen} onOpenChange={setEditFacilityOpen}>
+        <DialogContent className="bg-navy-900 border-navy-600 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">Edit Facility</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-navy-300">Facility Name</Label>
+              <Input
+                data-testid="input-edit-facility-name"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={facilityForm.name}
+                onChange={(e) => setFacilityForm({ ...facilityForm, name: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label className="text-navy-300">Type</Label>
+              <Select
+                value={facilityForm.facilityType}
+                onValueChange={(v) => setFacilityForm({ ...facilityForm, facilityType: v })}
+              >
+                <SelectTrigger
+                  data-testid="select-edit-facility-type"
+                  className="bg-navy-800 border-navy-600 text-white"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-navy-800 border-navy-600">
+                  {FACILITY_TYPES.map((t) => (
+                    <SelectItem key={t} value={t} className="text-white">
+                      {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-navy-300">Address</Label>
+              <Input
+                data-testid="input-edit-facility-address"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={facilityForm.address}
+                onChange={(e) => setFacilityForm({ ...facilityForm, address: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-navy-300">Phone</Label>
+                <Input
+                  data-testid="input-edit-facility-phone"
+                  className="bg-navy-800 border-navy-600 text-white"
+                  value={facilityForm.phone}
+                  onChange={(e) => setFacilityForm({ ...facilityForm, phone: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label className="text-navy-300">Travel Time (min)</Label>
+                <Input
+                  data-testid="input-edit-facility-travel-time"
+                  type="number"
+                  className="bg-navy-800 border-navy-600 text-white"
+                  value={facilityForm.travelTimeMinutes}
+                  onChange={(e) => setFacilityForm({ ...facilityForm, travelTimeMinutes: e.target.value })}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              data-testid="button-cancel-edit-facility"
+              variant="outline"
+              className="border-navy-500"
+              onClick={() => setEditFacilityOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              data-testid="button-submit-edit-facility"
+              className="btn-gold-metallic hover:btn-gold-metallic"
+              onClick={() => handleSubmitFacility(false)}
+              disabled={updateFacilityMutation.isPending}
+            >
+              {updateFacilityMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

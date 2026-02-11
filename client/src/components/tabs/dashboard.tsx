@@ -581,17 +581,44 @@ export function DashboardTab() {
     static: false,
   }));
 
+  const { data: projects } = useQuery<any[]>({
+    queryKey: ["projects"],
+    queryFn: async () => {
+      const res = await fetch("/api/projects", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+  const activeProject = projects?.[0];
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      <div className="bg-navy-800 p-3 border-b border-navy-600 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold text-white">Dashboard</h2>
-          <span className="text-xs text-navy-400">Quick access to key information</span>
-        </div>
-        <div className="flex gap-2">
-          {isEditing ? (
-            <>
-              <DropdownMenu>
+      <div className="bg-navy-800 p-3 border-b border-navy-600 shrink-0">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-semibold text-white" data-testid="text-dashboard-title">
+              {activeProject?.name || "DiveOps"}
+            </h2>
+            {stats.dayStatus && (
+              <Badge data-testid="badge-shift-status" className={stats.dayStatus === "ACTIVE" ? "bg-green-600" : stats.dayStatus === "CLOSED" ? "bg-red-600" : "bg-yellow-600"}>
+                {stats.dayStatus === "ACTIVE" ? "SHIFT ACTIVE" : stats.dayStatus}
+              </Badge>
+            )}
+            {stats.activeDives > 0 && (
+              <Badge className="btn-gold-metallic animate-pulse" data-testid="badge-in-water">
+                {stats.activeDives} IN WATER
+              </Badge>
+            )}
+            {stats.openRisks > 0 && (
+              <Badge className="bg-red-600" data-testid="badge-open-risks-header">
+                {stats.openRisks} OPEN RISK{stats.openRisks > 1 ? "S" : ""}
+              </Badge>
+            )}
+          </div>
+          <div className="flex gap-2">
+            {isEditing ? (
+              <>
+                <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button data-testid="button-add-widget" variant="outline" size="sm" className="text-xs border-green-500 text-green-400">
                     <Plus className="h-3 w-3 mr-1" /> Add Widget
@@ -651,6 +678,7 @@ export function DashboardTab() {
               <Settings className="h-3 w-3 mr-1" /> Customize
             </Button>
           )}
+          </div>
         </div>
       </div>
 

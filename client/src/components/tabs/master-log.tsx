@@ -188,12 +188,17 @@ export function MasterLogTab() {
               </CardHeader>
               <CardContent>
                 {directiveEntries.length > 0 ? (
-                  <ul className="space-y-2">
-                    {directiveEntries.map((entry) => (
-                      <li key={entry.id} className="flex gap-3 py-1">
-                        <span className="text-sm font-mono text-navy-400 w-14 shrink-0">
-                          {formatTime(entry.eventTime)}
-                        </span>
+                  <ul className="space-y-3">
+                    {directiveEntries.map((entry, idx) => (
+                      <li key={entry.id} className="border-l-2 border-purple-500/50 pl-3 py-1">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <Badge className="bg-purple-600 text-[10px] px-1.5 py-0 font-mono">
+                            CD-{String(idx + 1).padStart(3, "0")}
+                          </Badge>
+                          <span className="text-sm font-mono text-navy-400">
+                            {formatTime(entry.eventTime)}
+                          </span>
+                        </div>
                         <p className="text-sm text-navy-100">{entry.masterLogLine}</p>
                       </li>
                     ))}

@@ -20,28 +20,10 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Mic, Square, AlertTriangle, CheckCircle, Edit2, ChevronDown, ChevronRight } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Mic, Square, CheckCircle, Edit2, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 
 const COMMON_STATIONS = ["Dive Team 1", "Dive Team 2", "Dive Team 3", "Subcontractor Dive Team 1", "Subcontractor Dive Team 2", "Night Shift"];
 
-interface ValidationEntry {
-  entry: string;
-  valid: boolean;
-  payload: {
-    directives: Array<{ time: string; text: string }>;
-    station_logs: Array<{ text: string }>;
-    risks: Array<{ description: string }>;
-  };
-  errors: string[];
-}
-
-interface ValidationResult {
-  valid: boolean;
-  errors: string[];
-  entries?: ValidationEntry[];
-  totalEntries?: number;
-}
 
 interface AIAnnotation {
   type: "typo" | "missing_info" | "ambiguous" | "safety_flag" | "suggestion";
@@ -134,10 +116,6 @@ export function DailyLogTab() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
-
-  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
-  const [isValidating, setIsValidating] = useState(false);
-  const [showValidationPreview, setShowValidationPreview] = useState(false);
 
   const [expandedStations, setExpandedStations] = useState<Record<string, boolean>>({});
 
@@ -472,38 +450,6 @@ export function DailyLogTab() {
     };
   }, [isRecording, isTranscribing, pttPendingSubmit, rawInput, startRecording, stopRecording, handlePttSubmit, canWriteLogEvents, currentDay?.status]);
 
-  const validateEntry = async (text: string): Promise<ValidationResult> => {
-    setIsValidating(true);
-    try {
-      const res = await fetch("/api/log-events/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ rawText: text }),
-      });
-      if (!res.ok) throw new Error("Validation failed");
-      return await res.json();
-    } catch (error) {
-      return { valid: false, errors: ["Failed to validate entry"] };
-    } finally {
-      setIsValidating(false);
-    }
-  };
-
-  const handleValidate = async () => {
-    if (!rawInput.trim()) return;
-    const result = await validateEntry(rawInput.trim());
-    setValidationResult(result);
-    setShowValidationPreview(true);
-  };
-
-  useEffect(() => {
-    if (validationResult) {
-      setValidationResult(null);
-      setShowValidationPreview(false);
-    }
-  }, [rawInput]);
-
   const handleSend = async () => {
     if (!rawInput.trim()) return;
     
@@ -799,7 +745,7 @@ export function DailyLogTab() {
                 ) : (
                   <div>
                     <p className="text-sm text-white font-mono">{event.rawText}</p>
-                    {event.renders && event.renders.length > 0 && (() => {
+                    {event.renders && event.renders.length > 0 ? (() => {
                       const masterRender = event.renders!.find(r => r.renderType === "master_log_line");
                       if (!masterRender || masterRender.renderText === event.rawText) return null;
                       return (
@@ -811,7 +757,12 @@ export function DailyLogTab() {
                           <p className="text-xs text-navy-200 italic">{masterRender.renderText}</p>
                         </div>
                       );
-                    })()}
+                    })() : (
+                      <div className="mt-1.5 flex items-center gap-1.5">
+                        <Loader2 className="w-3 h-3 text-amber-400/60 animate-spin" />
+                        <span className="text-[10px] text-navy-500">AI processing...</span>
+                      </div>
+                    )}
                   </div>
                 )}
                 {event.aiAnnotations && event.aiAnnotations.length > 0 && (
@@ -844,58 +795,62 @@ export function DailyLogTab() {
         </div>
 
         {canWriteLogEvents && currentDay?.status !== "CLOSED" && (
-          <div className="p-4 border-t border-navy-600 bg-navy-800 shrink-0">
+          <div className="p-3 border-t border-navy-600 bg-navy-800 shrink-0">
             {(isRecording || isTranscribing || pttTranscript) && (
-              <div className="mb-3 p-3 bg-orange-900/30 border border-orange-500/50 rounded-lg">
-                <div className="flex items-center gap-2 mb-1">
+              <div className="mb-2 px-3 py-2 bg-orange-900/30 border border-orange-500/50 rounded-lg">
+                <div className="flex items-center gap-2">
                   {isRecording && (
                     <>
-                      <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-                      <span className="text-sm text-orange-300 font-medium">Recording...</span>
+                      <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
+                      <span className="text-xs text-orange-300 font-medium">Recording — release to stop</span>
                     </>
                   )}
                   {isTranscribing && !isRecording && (
                     <>
-                      <div className="w-3 h-3 bg-orange-500 rounded-full animate-pulse" />
-                      <span className="text-sm text-orange-300 font-medium">Transcribing...</span>
+                      <div className="w-2.5 h-2.5 bg-orange-500 rounded-full animate-pulse" />
+                      <span className="text-xs text-orange-300 font-medium">Transcribing...</span>
                     </>
                   )}
                 </div>
                 {pttTranscript && (
-                  <p className="text-sm text-white font-mono">{pttTranscript}</p>
+                  <p className="text-sm text-white font-mono mt-1">{pttTranscript}</p>
                 )}
               </div>
             )}
-            <div className="mb-2">
-              <select
-                data-testid="select-station"
-                value={selectedStation}
-                onChange={(e) => setSelectedStation(e.target.value)}
-                className="w-full bg-navy-900 border border-navy-600 text-white text-sm rounded px-3 py-1.5 focus:outline-none focus:border-amber-500"
-              >
-                <option value="">No station selected</option>
-                {COMMON_STATIONS.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex gap-2">
-              <Textarea
-                data-testid="input-raw-text"
-                placeholder="Enter log entry or batch with slashes (e.g., '0530-safety meeting/0600-crew briefing/0630-L/S-JS down')"
-                value={rawInput}
-                onChange={(e) => setRawInput(e.target.value)}
-                className="bg-navy-900 border-navy-600 text-white font-mono text-sm min-h-[60px]"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                  }
-                }}
-              />
-              <div className="flex flex-col gap-2">
+            <div className="flex gap-2 items-end">
+              <div className="flex-1 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <select
+                    data-testid="select-station"
+                    value={selectedStation}
+                    onChange={(e) => setSelectedStation(e.target.value)}
+                    className="bg-navy-900 border border-navy-600 text-white text-xs rounded px-2 py-1 focus:outline-none focus:border-amber-500 w-44"
+                  >
+                    <option value="">No station</option>
+                    {COMMON_STATIONS.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                  <span className="text-[10px] text-navy-500">Enter to send • Shift+Enter for new line • Hold mic to dictate</span>
+                </div>
+                <Textarea
+                  data-testid="input-raw-text"
+                  placeholder="0800 commenced ops, safety brief held / 0830 JM L/S 42 fsw pier 7 bracing..."
+                  value={rawInput}
+                  onChange={(e) => setRawInput(e.target.value)}
+                  className="bg-navy-900 border-navy-600 text-white font-mono text-sm min-h-[48px] max-h-[120px] resize-none"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5 pb-0.5">
                 <Button
                   data-testid="button-ptt"
+                  size="sm"
                   onMouseDown={() => {
                     if (!pttPendingSubmit) startRecording();
                   }}
@@ -910,94 +865,33 @@ export function DailyLogTab() {
                     }
                   }}
                   disabled={isTranscribing}
-                  className={`${
+                  className={`h-9 w-9 p-0 ${
                     isRecording 
                       ? "bg-red-600 hover:bg-red-700" 
                       : pttPendingSubmit 
                         ? "bg-green-600 hover:bg-green-700 animate-pulse" 
-                        : "bg-orange-600 hover:bg-orange-700"
-                  } min-w-[60px]`}
-                  title={pttPendingSubmit ? "Click to submit (or press Alt)" : "Hold to talk, release to review, click again to submit"}
+                        : "bg-navy-600 hover:bg-navy-500 border border-navy-500"
+                  }`}
+                  title={pttPendingSubmit ? "Click to submit" : "Hold to talk"}
                 >
-                  {isRecording ? <Square className="h-4 w-4" /> : pttPendingSubmit ? "Send" : <Mic className="h-4 w-4" />}
-                </Button>
-                <Button
-                  data-testid="button-validate"
-                  onClick={handleValidate}
-                  disabled={!rawInput.trim() || isValidating}
-                  variant="outline"
-                  className="border-yellow-500 text-yellow-400 hover:bg-yellow-500/20"
-                  title="Check entry before saving"
-                >
-                  {isValidating ? "..." : <Edit2 className="h-4 w-4" />}
+                  {isRecording ? <Square className="h-3.5 w-3.5" /> : pttPendingSubmit ? <CheckCircle className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
                 </Button>
                 <Button
                   data-testid="button-send"
+                  size="sm"
                   onClick={handleSend}
                   disabled={!rawInput.trim() || createEventMutation.isPending}
-                  className="btn-gold-metallic hover:btn-gold-metallic"
+                  className="h-9 w-9 p-0 btn-gold-metallic hover:btn-gold-metallic"
+                  title="Send (Enter)"
                 >
-                  Send
+                  {createEventMutation.isPending ? (
+                    <div className="w-3.5 h-3.5 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5"><path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" /></svg>
+                  )}
                 </Button>
               </div>
             </div>
-
-            {showValidationPreview && validationResult && (
-              <Alert className={`mt-3 ${validationResult.valid ? "border-green-500 bg-green-500/10" : "border-yellow-500 bg-yellow-500/10"}`}>
-                <div className="flex items-start gap-2">
-                  {validationResult.valid ? (
-                    <CheckCircle className="h-4 w-4 text-green-500 mt-0.5" />
-                  ) : (
-                    <AlertTriangle className="h-4 w-4 text-yellow-500 mt-0.5" />
-                  )}
-                  <AlertDescription className="text-sm flex-1">
-                    {validationResult.valid ? (
-                      <span className="text-green-400">
-                        {validationResult.totalEntries && validationResult.totalEntries > 1 
-                          ? `${validationResult.totalEntries} entries validated. Ready to submit.`
-                          : "Entry validated. Ready to submit."}
-                      </span>
-                    ) : (
-                      <div className="space-y-2">
-                        <span className="text-yellow-400 font-medium">Please fix before submitting:</span>
-                        <ul className="list-disc list-inside text-yellow-300 text-xs space-y-1">
-                          {validationResult.errors.map((error, idx) => (
-                            <li key={idx}>{error}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    {validationResult.entries && validationResult.entries.length > 0 && (
-                      <div className="mt-2 text-xs border-t border-navy-600 pt-2 space-y-2">
-                        <span className="text-navy-400">Preview ({validationResult.entries.length} entries):</span>
-                        {validationResult.entries.map((entry, idx) => (
-                          <div key={idx} className={`p-2 rounded ${entry.valid ? "bg-green-500/10" : "bg-yellow-500/10"}`}>
-                            <div className="flex items-center gap-2 mb-1">
-                              {entry.valid ? (
-                                <CheckCircle className="h-3 w-3 text-green-500" />
-                              ) : (
-                                <AlertTriangle className="h-3 w-3 text-yellow-500" />
-                              )}
-                              <span className="font-mono text-navy-300">{entry.entry}</span>
-                            </div>
-                            {entry.payload.directives.map((d, i) => (
-                              <div key={`d-${i}`} className="font-mono text-navy-200 ml-5">[{d.time}] {d.text}</div>
-                            ))}
-                            {entry.payload.station_logs.map((s, i) => (
-                              <div key={`s-${i}`} className="font-mono text-navy-400 ml-5">{s.text}</div>
-                            ))}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </AlertDescription>
-                </div>
-              </Alert>
-            )}
-
-            <p className="text-xs text-navy-400 mt-2">
-              Entries are autosaved immediately. Press Enter to send. Click ✎ to validate before saving.
-            </p>
           </div>
         )}
       </div>
@@ -1079,12 +973,17 @@ export function DailyLogTab() {
                 </CardHeader>
                 <CardContent>
                   {directiveEntries.length > 0 ? (
-                    <ul className="space-y-1">
-                      {directiveEntries.map((entry) => (
-                        <li key={entry.id} className="flex gap-3 py-1">
-                          <span className="text-xs font-mono text-navy-400 w-12 shrink-0">
-                            {formatTime(entry.eventTime)}
-                          </span>
+                    <ul className="space-y-2">
+                      {directiveEntries.map((entry, idx) => (
+                        <li key={entry.id} className="border-l-2 border-purple-500/50 pl-2 py-0.5">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <Badge className="bg-purple-600 text-[9px] px-1 py-0 font-mono">
+                              CD-{String(idx + 1).padStart(3, "0")}
+                            </Badge>
+                            <span className="text-xs font-mono text-navy-400">
+                              {formatTime(entry.eventTime)}
+                            </span>
+                          </div>
                           <p className="text-xs text-navy-100">{entry.masterLogLine}</p>
                         </li>
                       ))}

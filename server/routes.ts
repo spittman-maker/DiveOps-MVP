@@ -2252,5 +2252,74 @@ Respond with ONLY the updated JSON object. No other text.`;
     }
   });
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // ADMIN: USER MANAGEMENT
+  // ──────────────────────────────────────────────────────────────────────────
+
+  app.get("/api/users", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const users = await storage.listUsers();
+      const sanitized = users.map(({ password, ...rest }) => rest);
+      res.json(sanitized);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to list users" });
+    }
+  });
+
+  app.post("/api/users", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const data = registerSchema.parse(req.body);
+
+      const existing = await storage.getUserByUsername(data.username);
+      if (existing) {
+        return res.status(400).json({ message: "Username already exists" });
+      }
+
+      const user = await storage.createUser({
+        username: data.username,
+        password: hashPassword(data.password),
+        role: data.role,
+        fullName: data.fullName || null,
+        initials: data.initials || null,
+        email: data.email || null,
+      });
+
+      const { password, ...sanitized } = user;
+      res.status(201).json(sanitized);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Validation error", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to create user" });
+    }
+  });
+
+  app.patch("/api/users/:id", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const updates = { ...req.body };
+      if (updates.password) {
+        updates.password = hashPassword(updates.password);
+      }
+
+      const user = await storage.updateUser(req.params.id, updates);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      const { password, ...sanitized } = user;
+      res.json(sanitized);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update user" });
+    }
+  });
+
+  app.delete("/api/projects/:projectId/members/:userId", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const removed = await storage.removeProjectMember(req.params.projectId, req.params.userId);
+      if (!removed) return res.status(404).json({ message: "Member not found" });
+      res.json({ message: "Member removed" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to remove member" });
+    }
+  });
+
   return httpServer;
 }
