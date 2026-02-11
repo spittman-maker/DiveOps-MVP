@@ -9,8 +9,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
   Send, FileText, Download, Trash2, CheckCircle, History,
-  Save, Loader2, MessageSquare, Sparkles, ChevronDown, ChevronRight
+  Save, Loader2, MessageSquare, Sparkles, ChevronDown, ChevronRight,
+  Mic, Square
 } from "lucide-react";
+import { usePTT } from "@/hooks/use-ptt";
 import type { ProjectDivePlan, ProjectDivePlanData } from "@shared/schema";
 
 interface ChatMessage {
@@ -363,8 +365,16 @@ export function DivePlanTab() {
   const [inputText, setInputText] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [planData, setPlanData] = useState<AIDivePlanData | null>(null);
+  const [pttPendingSubmit, setPttPendingSubmit] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const { isRecording, isTranscribing, transcript, startRecording, stopRecording } = usePTT(
+    useCallback((fullText: string) => {
+      setInputText(prev => prev ? prev + " " + fullText : fullText);
+      setPttPendingSubmit(true);
+    }, [])
+  );
 
   const canEdit = isSupervisor || isAdmin;
 
@@ -706,22 +716,66 @@ export function DivePlanTab() {
               </Button>
             </div>
           )}
+          {(isRecording || isTranscribing || transcript) && (
+            <div className="flex items-center gap-2 mb-2 px-1">
+              {isRecording && (
+                <span className="flex items-center gap-1.5 text-xs text-red-400">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                  Recording...
+                </span>
+              )}
+              {isTranscribing && (
+                <span className="flex items-center gap-1.5 text-xs text-amber-400">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Transcribing...
+                </span>
+              )}
+              {transcript && (
+                <p className="text-xs text-white font-mono truncate">{transcript}</p>
+              )}
+            </div>
+          )}
           <div className="flex gap-2">
             <Textarea
               ref={textareaRef}
               data-testid="input-plan-chat"
               value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
+              onChange={(e) => { setInputText(e.target.value); setPttPendingSubmit(false); }}
               onKeyDown={handleKeyDown}
               placeholder="Describe your dive operation..."
               className="bg-navy-900 border-navy-600 text-white resize-none min-h-[44px] max-h-[120px]"
               rows={1}
               disabled={isGenerating}
             />
+            <div className="flex flex-col gap-1 shrink-0">
+              <Button
+                data-testid="button-ptt-plan"
+                onMouseDown={() => { if (!pttPendingSubmit) startRecording(); }}
+                onMouseUp={() => { if (isRecording) stopRecording(); }}
+                onMouseLeave={() => isRecording && stopRecording()}
+                onClick={() => {
+                  if (pttPendingSubmit && inputText.trim()) {
+                    sendMessage();
+                    setPttPendingSubmit(false);
+                  }
+                }}
+                disabled={isTranscribing || isGenerating}
+                className={`h-[44px] w-[44px] p-0 ${
+                  isRecording
+                    ? "bg-red-600 hover:bg-red-700"
+                    : pttPendingSubmit
+                      ? "bg-green-600 hover:bg-green-700 animate-pulse"
+                      : "bg-orange-600 hover:bg-orange-700"
+                }`}
+                title={pttPendingSubmit ? "Click to send" : "Hold to talk"}
+              >
+                {isRecording ? <Square className="h-4 w-4" /> : pttPendingSubmit ? <Send className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              </Button>
+            </div>
             <Button
-              onClick={sendMessage}
+              onClick={() => { sendMessage(); setPttPendingSubmit(false); }}
               disabled={!inputText.trim() || isGenerating}
-              className="btn-gold-metallic hover:btn-gold-metallic shrink-0"
+              className="btn-gold-metallic hover:btn-gold-metallic shrink-0 h-[44px]"
               data-testid="button-send-plan-message"
             >
               {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
