@@ -166,6 +166,24 @@ function ProjectDivePlanSection() {
     },
   });
 
+  const deletePlanMutation = useMutation({
+    mutationFn: async (planId: string) => {
+      const res = await fetch(`/api/project-dive-plans/${planId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ message: "Failed to delete plan" }));
+        throw new Error(data.message);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["project-dive-plans"] });
+      setSelectedPlan(null);
+    },
+  });
+
   const downloadPlan = async (planId: string, revision: number) => {
     const res = await fetch(`/api/project-dive-plans/${planId}/download`, { credentials: "include" });
     if (!res.ok) return;
@@ -561,6 +579,23 @@ function ProjectDivePlanSection() {
                             >
                               <CheckCircle className="w-4 h-4 mr-1" />
                               Approve
+                            </Button>
+                          )}
+                          {canEdit && (plan.status !== "Approved" || isAdmin) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              data-testid={`button-delete-plan-${plan.id}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm(`Delete Rev ${plan.revision}? This cannot be undone.`)) {
+                                  deletePlanMutation.mutate(plan.id);
+                                }
+                              }}
+                              disabled={deletePlanMutation.isPending}
+                              className="border-red-600/50 text-red-400 hover:bg-red-600/20"
+                            >
+                              <Trash2 className="w-4 h-4" />
                             </Button>
                           )}
                         </div>
