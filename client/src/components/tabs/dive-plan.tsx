@@ -735,6 +735,69 @@ export function DivePlanTab() {
                 </CardContent>
               </Card>
 
+              {editingStation && editingStation.stationId && (
+                <Card className="bg-navy-800/50 border-amber-500/40 border-dashed">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-amber-400 text-base flex items-center gap-2">
+                      <MapPin className="w-4 h-4" />
+                      Building: {editingStation.stationId}
+                      <Badge className="bg-amber-600/50 text-xs">Live Preview</Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <span className="text-navy-400">Planned Dives:</span>
+                        <span className="text-white ml-2">{editingStation.plannedDives}</span>
+                      </div>
+                      {editingStation.targetDepthFsw && (
+                        <div>
+                          <span className="text-navy-400">Depth:</span>
+                          <span className="text-amber-400 ml-2">{editingStation.targetDepthFsw} fsw</span>
+                        </div>
+                      )}
+                      {editingStation.plannedBottomTimeMin && (
+                        <div>
+                          <span className="text-navy-400">Bottom Time:</span>
+                          <span className="text-white ml-2">{editingStation.plannedBottomTimeMin} min</span>
+                        </div>
+                      )}
+                    </div>
+                    {(editingStation.crew.supervisor || editingStation.crew.divers.length > 0) && (
+                      <div className="pt-1">
+                        <span className="text-navy-400 text-xs">Crew:</span>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {editingStation.crew.supervisor && (
+                            <Badge className="bg-amber-600 text-xs">SUP: {editingStation.crew.supervisor}</Badge>
+                          )}
+                          {editingStation.crew.divers.map((d, i) => (
+                            <Badge key={i} variant="outline" className="border-cyan-500 text-cyan-300 text-xs">{d}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {editingStation.plannedTasks.length > 0 && (
+                      <div className="pt-1">
+                        <span className="text-navy-400 text-xs">Tasks:</span>
+                        <ul className="mt-1 space-y-0.5">
+                          {editingStation.plannedTasks.map((task, i) => (
+                            <li key={i} className="text-navy-200 text-xs flex items-start gap-1">
+                              <span className="text-green-400">•</span> {task}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {editingStation.notes && (
+                      <div className="pt-1">
+                        <span className="text-navy-400 text-xs">Notes:</span>
+                        <p className="text-navy-200 text-xs mt-0.5">{editingStation.notes}</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
               {activePlan.planJson && (activePlan.planJson as any).notes && (
                 <Card className="bg-navy-800/50 border-navy-600">
                   <CardHeader className="pb-2">
@@ -747,12 +810,97 @@ export function DivePlanTab() {
               )}
             </div>
           ) : (
-            <div className="text-center py-12">
-              <Anchor className="w-16 h-16 mx-auto text-navy-600 mb-4" />
-              <p className="text-navy-400 text-lg">No active dive plan</p>
-              <p className="text-sm text-navy-500 mt-1">
-                Create a new dive plan to get started
-              </p>
+            <div className="space-y-4">
+              {planNotes ? (
+                <Card className="bg-navy-800/50 border-navy-600 border-dashed">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-white text-base flex items-center gap-2">
+                      <ClipboardList className="w-4 h-4 text-amber-400" />
+                      Plan Preview
+                      <Badge className="bg-amber-600/50 text-xs">Draft</Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-navy-200">{planNotes}</p>
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              {editingStation && editingStation.stationId ? (
+                <Card className="bg-navy-800/50 border-amber-500/40 border-dashed">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-amber-400 text-base flex items-center gap-2">
+                      <MapPin className="w-4 h-4" />
+                      Station Preview: {editingStation.stationId}
+                      <Badge className="bg-amber-600/50 text-xs">Building</Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <span className="text-navy-400">Planned Dives:</span>
+                        <span className="text-white ml-2">{editingStation.plannedDives}</span>
+                      </div>
+                      {editingStation.targetDepthFsw && (
+                        <div>
+                          <span className="text-navy-400">Depth:</span>
+                          <span className="text-amber-400 ml-2">{editingStation.targetDepthFsw} fsw</span>
+                        </div>
+                      )}
+                      {editingStation.plannedBottomTimeMin && (
+                        <div>
+                          <span className="text-navy-400">Bottom Time:</span>
+                          <span className="text-white ml-2">{editingStation.plannedBottomTimeMin} min</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {(editingStation.crew.supervisor || editingStation.crew.divers.length > 0) && (
+                      <div className="pt-1">
+                        <span className="text-navy-400 text-xs">Crew:</span>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {editingStation.crew.supervisor && (
+                            <Badge className="bg-amber-600 text-xs">SUP: {editingStation.crew.supervisor}</Badge>
+                          )}
+                          {editingStation.crew.divers.map((d, i) => (
+                            <Badge key={i} variant="outline" className="border-cyan-500 text-cyan-300 text-xs">{d}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {editingStation.plannedTasks.length > 0 && (
+                      <div className="pt-1">
+                        <span className="text-navy-400 text-xs">Tasks:</span>
+                        <ul className="mt-1 space-y-0.5">
+                          {editingStation.plannedTasks.map((task, i) => (
+                            <li key={i} className="text-navy-200 text-xs flex items-start gap-1">
+                              <span className="text-green-400">•</span> {task}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {editingStation.notes && (
+                      <div className="pt-1">
+                        <span className="text-navy-400 text-xs">Notes:</span>
+                        <p className="text-navy-200 text-xs mt-0.5">{editingStation.notes}</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              {!planNotes && !editingStation?.stationId && (
+                <div className="text-center py-12">
+                  <Anchor className="w-16 h-16 mx-auto text-navy-600 mb-4" />
+                  <p className="text-navy-400 text-lg">No active dive plan</p>
+                  <p className="text-sm text-navy-500 mt-1">
+                    Create a new dive plan to get started
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </ScrollArea>
