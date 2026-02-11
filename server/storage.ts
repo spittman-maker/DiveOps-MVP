@@ -163,6 +163,7 @@ export interface IStorage {
   getActiveProjectDivePlan(projectId: string): Promise<ProjectDivePlan | undefined>;
   getLatestProjectDivePlanRevision(projectId: string): Promise<number>;
   updateProjectDivePlan(id: string, updates: Partial<InsertProjectDivePlan>): Promise<ProjectDivePlan | undefined>;
+  deleteProjectDivePlan(id: string): Promise<boolean>;
 
   // Companies
   getCompany(id: string): Promise<Company | undefined>;
@@ -837,6 +838,12 @@ export class DbStorage implements IStorage {
       .where(eq(schema.projectDivePlans.id, id))
       .returning();
     return updated;
+  }
+
+  async deleteProjectDivePlan(id: string): Promise<boolean> {
+    const result = await db.delete(schema.projectDivePlans)
+      .where(eq(schema.projectDivePlans.id, id));
+    return (result as any).rowCount > 0;
   }
 
   // Companies

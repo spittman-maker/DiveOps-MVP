@@ -1906,6 +1906,22 @@ export async function registerRoutes(
     res.status(201).json(newPlan);
   });
 
+  app.delete("/api/project-dive-plans/:id", requireRole("SUPERVISOR", "GOD"), async (req: Request, res: Response) => {
+    const plan = await storage.getProjectDivePlan(req.params.id);
+    if (!plan) return res.status(404).json({ message: "Project dive plan not found" });
+
+    if (plan.status === "Approved") {
+      const user = req.user as any;
+      if (user.role !== "GOD") {
+        return res.status(403).json({ message: "Only GOD role can delete approved plans" });
+      }
+    }
+
+    const deleted = await storage.deleteProjectDivePlan(req.params.id);
+    if (!deleted) return res.status(500).json({ message: "Failed to delete plan" });
+    res.json({ message: "Plan deleted" });
+  });
+
   app.get("/api/project-dive-plans/:id/download", requireAuth, async (req: Request, res: Response) => {
     const { generateDD5DivePlanDocx } = await import("./dive-plan-generator");
     
