@@ -9,6 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Trash2, Users, FileText, Download, Send, CheckCircle, History, ChevronDown, ChevronRight, Check } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useToast } from "@/hooks/use-toast";
 import type { ProjectDivePlan, ProjectDivePlanData, DD5Contact } from "@shared/schema";
 import { DD5_CONTROLLED_TASK_LIBRARY } from "@shared/schema";
 
@@ -21,9 +22,10 @@ export function DivePlanTab() {
 }
 
 function ProjectDivePlanSection() {
-  const { isSupervisor, isAdmin, user } = useAuth();
+  const { isSupervisor, isAdmin, isGod, user } = useAuth();
   const { activeProject } = useProject();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [isCreating, setIsCreating] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<ProjectDivePlan | null>(null);
   
@@ -181,6 +183,10 @@ function ProjectDivePlanSection() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["project-dive-plans"] });
       setSelectedPlan(null);
+      toast({ title: "Plan deleted", description: "The dive plan revision has been removed." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Delete failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -581,7 +587,7 @@ function ProjectDivePlanSection() {
                               Approve
                             </Button>
                           )}
-                          {canEdit && (plan.status !== "Approved" || isAdmin) && (
+                          {canEdit && (plan.status !== "Approved" || isGod) && (
                             <Button
                               size="sm"
                               variant="outline"
