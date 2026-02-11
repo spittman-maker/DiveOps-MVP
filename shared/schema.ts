@@ -646,6 +646,15 @@ export interface ProjectDivePlanData {
   natureOfWork: DD5NatureOfWork;
   revisionHistory: DD5RevisionEntry[];
   previousPayloadHash?: string;
+  scopeOfWork?: string;
+  divingMode?: string;
+  maxDepth?: string;
+  estimatedDuration?: string;
+  personnelCount?: string;
+  equipmentNotes?: string;
+  siteConditions?: string;
+  hazardNotes?: string;
+  additionalNotes?: string;
 }
 
 // Controlled task library for Section 2.9 Nature of Work

@@ -1,113 +1,341 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useProject } from "@/hooks/use-project";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, Users, FileText, Download, Send, CheckCircle, History, ChevronDown, ChevronRight, Check } from "lucide-react";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import type { ProjectDivePlan, ProjectDivePlanData, DD5Contact } from "@shared/schema";
-import { DD5_CONTROLLED_TASK_LIBRARY } from "@shared/schema";
+import {
+  Send, FileText, Download, Trash2, CheckCircle, History,
+  Save, Loader2, MessageSquare, Sparkles, ChevronDown, ChevronRight
+} from "lucide-react";
+import type { ProjectDivePlan, ProjectDivePlanData } from "@shared/schema";
 
-export function DivePlanTab() {
+interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: Date;
+}
+
+interface AIDivePlanData {
+  coverPage?: {
+    companyName?: string;
+    projectTitle?: string;
+    jobNumber?: string;
+    client?: string;
+    siteLocation?: string;
+    submissionDate?: string;
+    revisionNumber?: number;
+  };
+  projectContacts?: {
+    primeContractor?: string;
+    siteAddress?: string;
+    keyContacts?: Array<{ name: string; role: string; phone: string; email?: string }>;
+  };
+  natureOfWork?: {
+    selectedTasks?: string[];
+  };
+  scopeOfWork?: string;
+  divingMode?: string;
+  maxDepth?: string;
+  estimatedDuration?: string;
+  personnelCount?: string;
+  equipmentNotes?: string;
+  siteConditions?: string;
+  hazardNotes?: string;
+  additionalNotes?: string;
+  revisionHistory?: Array<{ revision: number; date: string; description: string; section: string; changedBy: string }>;
+}
+
+function PlanCanvas({ planData, isGenerating }: { planData: AIDivePlanData | null; isGenerating: boolean }) {
+  if (!planData) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-center p-8">
+        <div>
+          <Sparkles className="w-16 h-16 mx-auto text-navy-600 mb-4" />
+          <p className="text-navy-400 text-lg">Your dive plan will appear here</p>
+          <p className="text-sm text-navy-500 mt-2">
+            Start describing your operation on the left and the AI will build your professional DD5 dive plan in real-time
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const cp = planData.coverPage;
+  const pc = planData.projectContacts;
+  const now = planData.natureOfWork;
+
   return (
-    <div className="h-full flex flex-col">
-      <ProjectDivePlanSection />
+    <div className="flex-1 overflow-y-auto p-4 space-y-4" data-testid="plan-canvas">
+      {isGenerating && (
+        <div className="flex items-center gap-2 text-amber-400 text-xs mb-2">
+          <Loader2 className="w-3 h-3 animate-spin" />
+          <span>Updating plan...</span>
+        </div>
+      )}
+
+      <div className="border border-navy-600 rounded-lg overflow-hidden">
+        <div className="bg-gradient-to-r from-navy-800 to-navy-700 p-4 border-b border-navy-600">
+          <div className="flex justify-between items-start">
+            <div>
+              <h2 className="text-lg font-bold text-white tracking-wide">
+                {cp?.companyName || "Precision Subsea Group LLC"}
+              </h2>
+              <p className="text-amber-400 text-sm font-medium mt-1">DD5 PROJECT DIVE PLAN</p>
+            </div>
+            <Badge className="btn-gold-metallic text-xs">DRAFT</Badge>
+          </div>
+        </div>
+
+        {cp && (cp.projectTitle || cp.client || cp.siteLocation) && (
+          <div className="p-4 border-b border-navy-700">
+            <h3 className="text-xs font-semibold text-amber-400/80 uppercase tracking-wider mb-3">Cover Page</h3>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              {cp.projectTitle && (
+                <div><span className="text-navy-400">Project:</span> <span className="text-white font-medium">{cp.projectTitle}</span></div>
+              )}
+              {cp.client && (
+                <div><span className="text-navy-400">Client:</span> <span className="text-white font-medium">{cp.client}</span></div>
+              )}
+              {cp.jobNumber && (
+                <div><span className="text-navy-400">Job #:</span> <span className="text-white font-mono">{cp.jobNumber}</span></div>
+              )}
+              {cp.siteLocation && (
+                <div><span className="text-navy-400">Location:</span> <span className="text-white">{cp.siteLocation}</span></div>
+              )}
+              {cp.submissionDate && (
+                <div><span className="text-navy-400">Date:</span> <span className="text-white">{cp.submissionDate}</span></div>
+              )}
+              {cp.revisionNumber != null && (
+                <div><span className="text-navy-400">Revision:</span> <span className="text-white">{cp.revisionNumber}</span></div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {planData.scopeOfWork && (
+          <div className="p-4 border-b border-navy-700">
+            <h3 className="text-xs font-semibold text-amber-400/80 uppercase tracking-wider mb-2">Scope of Work</h3>
+            <p className="text-white text-sm leading-relaxed">{planData.scopeOfWork}</p>
+          </div>
+        )}
+
+        {(planData.divingMode || planData.maxDepth || planData.estimatedDuration || planData.personnelCount) && (
+          <div className="p-4 border-b border-navy-700">
+            <h3 className="text-xs font-semibold text-amber-400/80 uppercase tracking-wider mb-3">Dive Operations Parameters</h3>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              {planData.divingMode && (
+                <div><span className="text-navy-400">Diving Mode:</span> <span className="text-white font-medium">{planData.divingMode}</span></div>
+              )}
+              {planData.maxDepth && (
+                <div><span className="text-navy-400">Max Depth:</span> <span className="text-white font-medium">{planData.maxDepth}</span></div>
+              )}
+              {planData.estimatedDuration && (
+                <div><span className="text-navy-400">Est. Duration:</span> <span className="text-white">{planData.estimatedDuration}</span></div>
+              )}
+              {planData.personnelCount && (
+                <div><span className="text-navy-400">Personnel:</span> <span className="text-white">{planData.personnelCount}</span></div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {now?.selectedTasks && now.selectedTasks.length > 0 && (
+          <div className="p-4 border-b border-navy-700">
+            <h3 className="text-xs font-semibold text-amber-400/80 uppercase tracking-wider mb-3">Section 2.9 - Nature of Work</h3>
+            <div className="flex flex-wrap gap-1.5">
+              {now.selectedTasks.map((task, idx) => (
+                <Badge key={idx} variant="secondary" className="text-xs bg-navy-700 text-white border border-navy-600">{task}</Badge>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {pc && (pc.primeContractor || (pc.keyContacts && pc.keyContacts.length > 0)) && (
+          <div className="p-4 border-b border-navy-700">
+            <h3 className="text-xs font-semibold text-amber-400/80 uppercase tracking-wider mb-3">Project Contacts</h3>
+            {pc.primeContractor && (
+              <div className="text-sm mb-2">
+                <span className="text-navy-400">Prime Contractor:</span>{" "}
+                <span className="text-white font-medium">{pc.primeContractor}</span>
+              </div>
+            )}
+            {pc.siteAddress && (
+              <div className="text-sm mb-2">
+                <span className="text-navy-400">Site Address:</span>{" "}
+                <span className="text-white">{pc.siteAddress}</span>
+              </div>
+            )}
+            {pc.keyContacts && pc.keyContacts.length > 0 && pc.keyContacts.some(c => c.name) && (
+              <div className="space-y-1 mt-2">
+                {pc.keyContacts.filter(c => c.name).map((contact, idx) => (
+                  <div key={idx} className="text-xs text-white bg-navy-800 rounded px-2 py-1">
+                    <span className="font-medium">{contact.name}</span>
+                    {contact.role && <span className="text-navy-400"> ({contact.role})</span>}
+                    {contact.phone && <span className="text-navy-400">: {contact.phone}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {planData.equipmentNotes && (
+          <div className="p-4 border-b border-navy-700">
+            <h3 className="text-xs font-semibold text-amber-400/80 uppercase tracking-wider mb-2">Equipment</h3>
+            <p className="text-white text-sm">{planData.equipmentNotes}</p>
+          </div>
+        )}
+
+        {planData.siteConditions && (
+          <div className="p-4 border-b border-navy-700">
+            <h3 className="text-xs font-semibold text-amber-400/80 uppercase tracking-wider mb-2">Site Conditions</h3>
+            <p className="text-white text-sm">{planData.siteConditions}</p>
+          </div>
+        )}
+
+        {planData.hazardNotes && (
+          <div className="p-4 border-b border-navy-700">
+            <h3 className="text-xs font-semibold text-amber-400/80 uppercase tracking-wider mb-2">Hazard Assessment</h3>
+            <p className="text-white text-sm">{planData.hazardNotes}</p>
+          </div>
+        )}
+
+        {planData.additionalNotes && (
+          <div className="p-4 border-b border-navy-700">
+            <h3 className="text-xs font-semibold text-amber-400/80 uppercase tracking-wider mb-2">Additional Notes</h3>
+            <p className="text-white text-sm">{planData.additionalNotes}</p>
+          </div>
+        )}
+
+        <div className="p-3 bg-navy-900/50">
+          <p className="text-[10px] text-navy-500 italic">
+            Locked sections (2.5, 2.12, 4.9-4.18, Section 5) preserved from DD5 master template.
+            Emergency procedures, EM385 tables, USN dive tables, and appendices included in final document.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
 
-function ProjectDivePlanSection() {
+function SavedPlansDrawer({ 
+  plans, 
+  onSelect, 
+  onDownload, 
+  onDelete, 
+  onSubmit, 
+  onApprove,
+  canEdit, 
+  isAdmin,
+  isGod,
+}: {
+  plans: ProjectDivePlan[];
+  onSelect: (plan: ProjectDivePlan) => void;
+  onDownload: (id: string, rev: number) => void;
+  onDelete: (id: string, rev: number) => void;
+  onSubmit: (id: string) => void;
+  onApprove: (id: string) => void;
+  canEdit: boolean;
+  isAdmin: boolean;
+  isGod: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  if (plans.length === 0) return null;
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "Draft": return <Badge variant="outline" className="border-yellow-500 text-yellow-400 text-[10px]">Draft</Badge>;
+      case "Submitted": return <Badge variant="outline" className="border-amber-500 text-amber-400 text-[10px]">Submitted</Badge>;
+      case "Approved": return <Badge className="bg-green-600 text-[10px]">Approved</Badge>;
+      case "Superseded": return <Badge variant="outline" className="border-gray-500 text-gray-400 text-[10px]">Superseded</Badge>;
+      default: return <Badge variant="outline" className="text-[10px]">{status}</Badge>;
+    }
+  };
+
+  return (
+    <div className="border-t border-navy-600">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between p-3 text-sm text-navy-300 hover:text-white transition-colors"
+      >
+        <span className="flex items-center gap-2">
+          <History className="w-4 h-4" />
+          Saved Plans ({plans.length})
+        </span>
+        {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+      </button>
+      {isOpen && (
+        <div className="px-3 pb-3 space-y-2 max-h-[300px] overflow-y-auto">
+          {plans.map((plan) => (
+            <div
+              key={plan.id}
+              className="bg-navy-800/50 border border-navy-600 rounded p-2 cursor-pointer hover:border-navy-500 transition-colors"
+              onClick={() => onSelect(plan)}
+            >
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <span className="text-white text-xs font-medium">Rev {plan.revision}</span>
+                  {getStatusBadge(plan.status)}
+                </div>
+                <div className="flex gap-1">
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={(e) => { e.stopPropagation(); onDownload(plan.id, plan.revision); }}>
+                    <Download className="w-3 h-3 text-navy-400" />
+                  </Button>
+                  {plan.status === "Draft" && canEdit && (
+                    <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={(e) => { e.stopPropagation(); onSubmit(plan.id); }}>
+                      <Send className="w-3 h-3 text-amber-400" />
+                    </Button>
+                  )}
+                  {plan.status === "Submitted" && isAdmin && (
+                    <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={(e) => { e.stopPropagation(); onApprove(plan.id); }}>
+                      <CheckCircle className="w-3 h-3 text-green-400" />
+                    </Button>
+                  )}
+                  {canEdit && (plan.status !== "Approved" || isGod) && (
+                    <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm(`Delete Rev ${plan.revision}?`)) onDelete(plan.id, plan.revision);
+                    }}>
+                      <Trash2 className="w-3 h-3 text-red-400" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <p className="text-[10px] text-navy-500 mt-1">
+                {new Date(plan.createdAt).toLocaleDateString()}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function DivePlanTab() {
   const { isSupervisor, isAdmin, isGod, user } = useAuth();
   const { activeProject } = useProject();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [isCreating, setIsCreating] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<ProjectDivePlan | null>(null);
-  
-  const today = new Date().toISOString().split("T")[0];
-  const storageKey = `divePlanDraft_${activeProject?.id || 'default'}`;
-  
-  const getDefaultFormData = useCallback((): ProjectDivePlanData => ({
-    coverPage: {
-      companyName: "Precision Subsea Group LLC",
-      projectTitle: activeProject?.name || "",
-      jobNumber: activeProject?.id?.substring(0, 8).toUpperCase() || "",
-      client: activeProject?.clientName || "",
-      siteLocation: "",
-      submissionDate: today,
-      revisionNumber: 0,
-    },
-    projectContacts: {
-      primeContractor: "",
-      siteAddress: "",
-      keyContacts: [],
-    },
-    natureOfWork: {
-      selectedTasks: [],
-    },
-    revisionHistory: [{
-      revision: 0,
-      date: today,
-      description: "Initial release",
-      section: "All",
-      changedBy: user?.fullName || user?.username || "",
-    }],
-  }), [activeProject, today, user]);
 
-  const [formData, setFormData] = useState<ProjectDivePlanData>(() => {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.error("Failed to load saved draft:", e);
-    }
-    return getDefaultFormData();
-  });
-  
-  const [newContact, setNewContact] = useState<DD5Contact>({ name: "", role: "", phone: "", email: "" });
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [inputText, setInputText] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [planData, setPlanData] = useState<AIDivePlanData | null>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const canEdit = isSupervisor || isAdmin;
 
   useEffect(() => {
-    if (isCreating && formData) {
-      try {
-        localStorage.setItem(storageKey, JSON.stringify(formData));
-      } catch (e) {
-        console.error("Failed to save draft:", e);
-      }
-    }
-  }, [formData, isCreating, storageKey]);
-
-  useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (isCreating && formData.natureOfWork.selectedTasks.length > 0) {
-        try {
-          localStorage.setItem(storageKey, JSON.stringify(formData));
-        } catch (err) {
-          console.error("Failed to save draft on unload:", err);
-        }
-        e.preventDefault();
-        e.returnValue = "You have unsaved changes. Are you sure you want to leave?";
-        return e.returnValue;
-      }
-    };
-
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [isCreating, formData, storageKey]);
-
-  const clearDraft = useCallback(() => {
-    try {
-      localStorage.removeItem(storageKey);
-    } catch (e) {
-      console.error("Failed to clear draft:", e);
-    }
-  }, [storageKey]);
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const { data: projectPlans = [] } = useQuery<ProjectDivePlan[]>({
     queryKey: ["project-dive-plans", activeProject?.id],
@@ -120,70 +348,90 @@ function ProjectDivePlanSection() {
     enabled: !!activeProject?.id,
   });
 
-  const createPlanMutation = useMutation({
+  const savePlanMutation = useMutation({
     mutationFn: async () => {
-      if (!activeProject?.id) throw new Error("No active project");
+      if (!activeProject?.id || !planData) throw new Error("No plan data");
+      const fullPlanData: ProjectDivePlanData = {
+        coverPage: {
+          companyName: planData.coverPage?.companyName || "Precision Subsea Group LLC",
+          projectTitle: planData.coverPage?.projectTitle || activeProject.name || "",
+          jobNumber: planData.coverPage?.jobNumber || activeProject.id.substring(0, 8).toUpperCase(),
+          client: planData.coverPage?.client || (activeProject as any).clientName || "",
+          siteLocation: planData.coverPage?.siteLocation || "",
+          submissionDate: planData.coverPage?.submissionDate || new Date().toISOString().split("T")[0],
+          revisionNumber: planData.coverPage?.revisionNumber || 0,
+        },
+        projectContacts: {
+          primeContractor: planData.projectContacts?.primeContractor || "",
+          siteAddress: planData.projectContacts?.siteAddress || "",
+          keyContacts: planData.projectContacts?.keyContacts || [],
+        },
+        natureOfWork: {
+          selectedTasks: planData.natureOfWork?.selectedTasks || [],
+        },
+        revisionHistory: [{
+          revision: 0,
+          date: new Date().toISOString().split("T")[0],
+          description: "AI-generated initial release",
+          section: "All",
+          changedBy: user?.fullName || user?.username || "System",
+        }],
+        scopeOfWork: planData.scopeOfWork || undefined,
+        divingMode: planData.divingMode || undefined,
+        maxDepth: planData.maxDepth || undefined,
+        estimatedDuration: planData.estimatedDuration || undefined,
+        personnelCount: planData.personnelCount || undefined,
+        equipmentNotes: planData.equipmentNotes || undefined,
+        siteConditions: planData.siteConditions || undefined,
+        hazardNotes: planData.hazardNotes || undefined,
+        additionalNotes: planData.additionalNotes || undefined,
+      };
+
       const res = await fetch(`/api/projects/${activeProject.id}/project-dive-plans`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ planData: formData }),
+        body: JSON.stringify({ planData: fullPlanData }),
       });
-      if (!res.ok) throw new Error("Failed to create project dive plan");
+      if (!res.ok) throw new Error("Failed to save plan");
       return res.json();
     },
     onSuccess: () => {
-      clearDraft();
       queryClient.invalidateQueries({ queryKey: ["project-dive-plans"] });
-      setIsCreating(false);
-      setFormData(getDefaultFormData());
+      toast({ title: "Plan saved", description: "Your dive plan has been saved as a draft revision." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Save failed", description: error.message, variant: "destructive" });
     },
   });
 
   const submitPlanMutation = useMutation({
     mutationFn: async (planId: string) => {
-      const res = await fetch(`/api/project-dive-plans/${planId}/submit`, {
-        method: "POST",
-        credentials: "include",
-      });
+      const res = await fetch(`/api/project-dive-plans/${planId}/submit`, { method: "POST", credentials: "include" });
       if (!res.ok) throw new Error("Failed to submit plan");
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["project-dive-plans"] });
-    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["project-dive-plans"] }); },
   });
 
   const approvePlanMutation = useMutation({
     mutationFn: async (planId: string) => {
-      const res = await fetch(`/api/project-dive-plans/${planId}/approve`, {
-        method: "POST",
-        credentials: "include",
-      });
+      const res = await fetch(`/api/project-dive-plans/${planId}/approve`, { method: "POST", credentials: "include" });
       if (!res.ok) throw new Error("Failed to approve plan");
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["project-dive-plans"] });
-    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["project-dive-plans"] }); },
   });
 
   const deletePlanMutation = useMutation({
     mutationFn: async (planId: string) => {
-      const res = await fetch(`/api/project-dive-plans/${planId}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({ message: "Failed to delete plan" }));
-        throw new Error(data.message);
-      }
+      const res = await fetch(`/api/project-dive-plans/${planId}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) { const d = await res.json().catch(() => ({ message: "Failed" })); throw new Error(d.message); }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["project-dive-plans"] });
-      setSelectedPlan(null);
-      toast({ title: "Plan deleted", description: "The dive plan revision has been removed." });
+      toast({ title: "Plan deleted" });
     },
     onError: (error: Error) => {
       toast({ title: "Delete failed", description: error.message, variant: "destructive" });
@@ -202,551 +450,278 @@ function ProjectDivePlanSection() {
     URL.revokeObjectURL(url);
   };
 
-  const canEdit = isSupervisor || isAdmin;
-
-  const toggleTask = (task: string) => {
-    const currentTasks = formData.natureOfWork.selectedTasks;
-    const newTasks = currentTasks.includes(task)
-      ? currentTasks.filter(t => t !== task)
-      : [...currentTasks, task];
-    
-    setFormData({
-      ...formData,
-      natureOfWork: { selectedTasks: newTasks },
+  const loadPlanToCanvas = (plan: ProjectDivePlan) => {
+    const data = plan.planData as ProjectDivePlanData;
+    setPlanData({
+      coverPage: data.coverPage,
+      projectContacts: data.projectContacts,
+      natureOfWork: data.natureOfWork,
+      revisionHistory: data.revisionHistory,
+      scopeOfWork: data.scopeOfWork,
+      divingMode: data.divingMode,
+      maxDepth: data.maxDepth,
+      estimatedDuration: data.estimatedDuration,
+      personnelCount: data.personnelCount,
+      equipmentNotes: data.equipmentNotes,
+      siteConditions: data.siteConditions,
+      hazardNotes: data.hazardNotes,
+      additionalNotes: data.additionalNotes,
     });
+    setMessages([{
+      id: "loaded",
+      role: "assistant",
+      content: `Loaded Rev ${plan.revision} (${data.coverPage?.projectTitle || "Untitled"}) into the canvas. You can continue editing by describing any changes.`,
+      timestamp: new Date(),
+    }]);
   };
 
-  const addContact = () => {
-    if (newContact.name && newContact.role && newContact.phone) {
-      setFormData({
-        ...formData,
-        projectContacts: {
-          ...formData.projectContacts,
-          keyContacts: [...formData.projectContacts.keyContacts, { ...newContact }],
-        },
+  const sendMessage = useCallback(async () => {
+    if (!inputText.trim() || isGenerating) return;
+
+    const userMsg: ChatMessage = {
+      id: Date.now().toString(),
+      role: "user",
+      content: inputText.trim(),
+      timestamp: new Date(),
+    };
+
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
+    setInputText("");
+    setIsGenerating(true);
+
+    try {
+      const projectContext = activeProject ? {
+        name: activeProject.name,
+        clientName: (activeProject as any).clientName,
+        jobsiteName: (activeProject as any).jobsiteName,
+        jobsiteAddress: (activeProject as any).jobsiteAddress,
+        jobNumber: activeProject.id.substring(0, 8).toUpperCase(),
+      } : null;
+
+      const res = await fetch("/api/dive-plan/ai-generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          messages: newMessages.filter(m => m.id !== "loaded").map(m => ({
+            role: m.role,
+            content: m.role === "assistant" ? `[Previous plan update acknowledged]` : m.content,
+          })),
+          currentPlan: planData,
+          projectContext,
+        }),
       });
-      setNewContact({ name: "", role: "", phone: "", email: "" });
+
+      if (!res.ok) throw new Error("AI generation failed");
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No stream");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6);
+          if (data === "[DONE]") continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.type === "plan") {
+              setPlanData(parsed.data);
+            }
+          } catch {}
+        }
+      }
+
+      setMessages(prev => [...prev, {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: "I've updated the dive plan based on your input. You can see the changes on the right. Keep describing any additional details or modifications.",
+        timestamp: new Date(),
+      }]);
+    } catch (error: any) {
+      toast({ title: "AI Error", description: error.message, variant: "destructive" });
+      setMessages(prev => [...prev, {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: "Sorry, I had trouble processing that. Please try again.",
+        timestamp: new Date(),
+      }]);
+    } finally {
+      setIsGenerating(false);
     }
-  };
+  }, [inputText, isGenerating, messages, planData, activeProject, toast]);
 
-  const removeContact = (index: number) => {
-    setFormData({
-      ...formData,
-      projectContacts: {
-        ...formData.projectContacts,
-        keyContacts: formData.projectContacts.keyContacts.filter((_, i) => i !== index),
-      },
-    });
-  };
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "Draft":
-        return <Badge variant="outline" className="border-yellow-500 text-yellow-400">Draft</Badge>;
-      case "Submitted":
-        return <Badge variant="outline" className="border-amber-500 text-amber-400">Submitted</Badge>;
-      case "Approved":
-        return <Badge className="bg-green-600">Approved</Badge>;
-      case "Superseded":
-        return <Badge variant="outline" className="border-gray-500 text-gray-400">Superseded</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
     }
   };
 
   if (!activeProject) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div className="h-full flex items-center justify-center">
         <div className="text-center">
           <FileText className="w-16 h-16 mx-auto text-navy-600 mb-4" />
-          <p className="text-navy-400 text-lg">Select a project to manage dive plans</p>
+          <p className="text-navy-400 text-lg">Select a project to create dive plans</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 flex h-full overflow-hidden">
-      <div className="w-1/2 border-r border-navy-600 flex flex-col h-full overflow-hidden">
-        <div className="bg-navy-800/50 p-3 border-b border-navy-600 flex justify-between items-center shrink-0">
+    <div className="h-full flex overflow-hidden">
+      <div className="w-[400px] min-w-[350px] border-r border-navy-600 flex flex-col h-full bg-navy-900/30">
+        <div className="bg-navy-800/50 p-3 border-b border-navy-600 shrink-0">
+          <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+            <MessageSquare className="w-4 h-4 text-amber-400" />
+            Dive Plan Builder
+          </h2>
+          <p className="text-xs text-navy-400 mt-0.5">Describe your operation in plain language</p>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+          {messages.length === 0 && (
+            <div className="text-center py-8">
+              <Sparkles className="w-10 h-10 mx-auto text-amber-400/40 mb-3" />
+              <p className="text-navy-400 text-sm">Start typing to build your dive plan</p>
+              <div className="mt-4 space-y-2 text-xs text-navy-500">
+                <p className="bg-navy-800/50 rounded p-2 text-left">
+                  "We're doing underwater welding on pier bravo at pearl harbor, 3 divers, max depth 45 feet, surface supplied"
+                </p>
+                <p className="bg-navy-800/50 rounded p-2 text-left">
+                  "Client is NAVFAC Pacific, prime contractor is pacific shipyard. Add John Doe as safety officer 808-555-1234"
+                </p>
+                <p className="bg-navy-800/50 rounded p-2 text-left">
+                  "We'll also be doing hull cleaning and cathodic protection survey"
+                </p>
+              </div>
+            </div>
+          )}
+
+          {messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+            >
+              <div
+                className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+                  msg.role === "user"
+                    ? "bg-amber-600/20 border border-amber-600/30 text-white"
+                    : "bg-navy-800 border border-navy-700 text-navy-200"
+                }`}
+                data-testid={`chat-message-${msg.role}`}
+              >
+                {msg.content}
+              </div>
+            </div>
+          ))}
+
+          {isGenerating && (
+            <div className="flex justify-start">
+              <div className="bg-navy-800 border border-navy-700 rounded-lg px-3 py-2 text-sm text-navy-300 flex items-center gap-2">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Building your dive plan...
+              </div>
+            </div>
+          )}
+          <div ref={chatEndRef} />
+        </div>
+
+        <div className="p-3 border-t border-navy-600 shrink-0">
+          {planData && (
+            <div className="flex gap-2 mb-2">
+              <Button
+                size="sm"
+                onClick={() => savePlanMutation.mutate()}
+                disabled={savePlanMutation.isPending}
+                className="flex-1 btn-gold-metallic hover:btn-gold-metallic text-xs"
+                data-testid="button-save-plan"
+              >
+                {savePlanMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}
+                Save as Draft
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => { setPlanData(null); setMessages([]); }}
+                className="border-navy-600 text-xs"
+                data-testid="button-clear-plan"
+              >
+                <Trash2 className="w-3 h-3 mr-1" />
+                Clear
+              </Button>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Textarea
+              ref={textareaRef}
+              data-testid="input-plan-chat"
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Describe your dive operation..."
+              className="bg-navy-900 border-navy-600 text-white resize-none min-h-[44px] max-h-[120px]"
+              rows={1}
+              disabled={isGenerating}
+            />
+            <Button
+              onClick={sendMessage}
+              disabled={!inputText.trim() || isGenerating}
+              className="btn-gold-metallic hover:btn-gold-metallic shrink-0"
+              data-testid="button-send-plan-message"
+            >
+              {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            </Button>
+          </div>
+        </div>
+
+        <SavedPlansDrawer
+          plans={projectPlans}
+          onSelect={loadPlanToCanvas}
+          onDownload={downloadPlan}
+          onDelete={(id, rev) => deletePlanMutation.mutate(id)}
+          onSubmit={(id) => submitPlanMutation.mutate(id)}
+          onApprove={(id) => approvePlanMutation.mutate(id)}
+          canEdit={canEdit}
+          isAdmin={isAdmin}
+          isGod={isGod}
+        />
+      </div>
+
+      <div className="flex-1 flex flex-col h-full bg-navy-900/20">
+        <div className="bg-navy-800/50 p-3 border-b border-navy-600 shrink-0 flex justify-between items-center">
           <div>
             <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-              <FileText className="w-4 h-4" />
-              Project Dive Plan Document
+              <FileText className="w-4 h-4 text-amber-400" />
+              DD5 Dive Plan Document
             </h2>
-            <p className="text-xs text-navy-400">Generate formal DD5 dive plan documents</p>
+            <p className="text-xs text-navy-400">Live preview - updates as you describe your operation</p>
           </div>
-          {canEdit && !isCreating && (
+          {planData && (
             <Button
-              data-testid="button-new-project-plan"
               size="sm"
-              onClick={() => setIsCreating(true)}
-              className="btn-gold-metallic hover:btn-gold-metallic"
+              onClick={() => savePlanMutation.mutate()}
+              disabled={savePlanMutation.isPending}
+              className="btn-gold-metallic hover:btn-gold-metallic text-xs"
             >
-              <Plus className="w-4 h-4 mr-1" />
-              New Revision
+              <Save className="w-3 h-3 mr-1" />
+              Save
             </Button>
           )}
         </div>
-
-        <div className="flex-1 overflow-y-auto p-4">
-          {isCreating ? (
-            <div className="space-y-4">
-              <Card className="bg-navy-800/50 border-navy-600">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-white text-sm">DD5 Dive Plan - Controlled Fill Zones</CardTitle>
-                  <p className="text-xs text-navy-400">Only editable fields shown. Locked boilerplate sections preserved from master template.</p>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="bg-navy-900/50 p-3 rounded border border-navy-700">
-                    <h3 className="text-sm font-medium text-white mb-3">Cover Page</h3>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-xs text-navy-400 mb-1 block">Company Name</label>
-                        <Input
-                          data-testid="input-company-name"
-                          value={formData.coverPage.companyName}
-                          onChange={(e) => setFormData({ 
-                            ...formData, 
-                            coverPage: { ...formData.coverPage, companyName: e.target.value } 
-                          })}
-                          className="bg-navy-900 border-navy-600 text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs text-navy-400 mb-1 block">Project Title</label>
-                        <Input
-                          data-testid="input-project-title"
-                          value={formData.coverPage.projectTitle}
-                          onChange={(e) => setFormData({ 
-                            ...formData, 
-                            coverPage: { ...formData.coverPage, projectTitle: e.target.value } 
-                          })}
-                          className="bg-navy-900 border-navy-600 text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs text-navy-400 mb-1 block">Job Number</label>
-                        <Input
-                          data-testid="input-job-number"
-                          value={formData.coverPage.jobNumber}
-                          onChange={(e) => setFormData({ 
-                            ...formData, 
-                            coverPage: { ...formData.coverPage, jobNumber: e.target.value } 
-                          })}
-                          className="bg-navy-900 border-navy-600 text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs text-navy-400 mb-1 block">Client</label>
-                        <Input
-                          data-testid="input-client"
-                          value={formData.coverPage.client}
-                          onChange={(e) => setFormData({ 
-                            ...formData, 
-                            coverPage: { ...formData.coverPage, client: e.target.value } 
-                          })}
-                          className="bg-navy-900 border-navy-600 text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs text-navy-400 mb-1 block">Site Location</label>
-                        <Input
-                          data-testid="input-site-location"
-                          value={formData.coverPage.siteLocation}
-                          onChange={(e) => setFormData({ 
-                            ...formData, 
-                            coverPage: { ...formData.coverPage, siteLocation: e.target.value } 
-                          })}
-                          className="bg-navy-900 border-navy-600 text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs text-navy-400 mb-1 block">Submission Date</label>
-                        <Input
-                          data-testid="input-submission-date"
-                          type="date"
-                          value={formData.coverPage.submissionDate}
-                          onChange={(e) => setFormData({ 
-                            ...formData, 
-                            coverPage: { ...formData.coverPage, submissionDate: e.target.value } 
-                          })}
-                          className="bg-navy-900 border-navy-600 text-white"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-navy-900/50 p-3 rounded border border-navy-700">
-                    <h3 className="text-sm font-medium text-white mb-3">Project Contacts (Section 2.13-2.14)</h3>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-xs text-navy-400 mb-1 block">Prime Contractor</label>
-                        <Input
-                          data-testid="input-prime-contractor"
-                          value={formData.projectContacts.primeContractor}
-                          onChange={(e) => setFormData({ 
-                            ...formData, 
-                            projectContacts: { ...formData.projectContacts, primeContractor: e.target.value } 
-                          })}
-                          className="bg-navy-900 border-navy-600 text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs text-navy-400 mb-1 block">Site Address</label>
-                        <Input
-                          data-testid="input-site-address"
-                          value={formData.projectContacts.siteAddress || ""}
-                          onChange={(e) => setFormData({ 
-                            ...formData, 
-                            projectContacts: { ...formData.projectContacts, siteAddress: e.target.value } 
-                          })}
-                          className="bg-navy-900 border-navy-600 text-white"
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className="text-xs text-navy-400 mb-2 block">Key Contacts</label>
-                        <div className="grid grid-cols-4 gap-2 mb-2">
-                          <Input
-                            data-testid="input-contact-name"
-                            value={newContact.name}
-                            onChange={(e) => setNewContact({ ...newContact, name: e.target.value })}
-                            placeholder="Name"
-                            className="bg-navy-900 border-navy-600 text-white text-sm"
-                          />
-                          <Input
-                            data-testid="input-contact-role"
-                            value={newContact.role}
-                            onChange={(e) => setNewContact({ ...newContact, role: e.target.value })}
-                            placeholder="Role"
-                            className="bg-navy-900 border-navy-600 text-white text-sm"
-                          />
-                          <Input
-                            data-testid="input-contact-phone"
-                            value={newContact.phone}
-                            onChange={(e) => setNewContact({ ...newContact, phone: e.target.value })}
-                            placeholder="Phone"
-                            className="bg-navy-900 border-navy-600 text-white text-sm"
-                          />
-                          <Button size="sm" onClick={addContact} className="btn-gold-metallic hover:btn-gold-metallic">
-                            <Plus className="w-4 h-4" />
-                          </Button>
-                        </div>
-                        <div className="space-y-1">
-                          {formData.projectContacts.keyContacts.map((contact, idx) => (
-                            <div key={idx} className="flex items-center justify-between bg-navy-900 p-2 rounded text-sm">
-                              <span className="text-white">{contact.name} ({contact.role}): {contact.phone}</span>
-                              <Button size="sm" variant="ghost" onClick={() => removeContact(idx)}>
-                                <Trash2 className="w-3 h-3 text-red-400" />
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-navy-900/50 p-3 rounded border border-navy-700">
-                    <h3 className="text-sm font-medium text-white mb-2">Section 2.9 - Nature of Work</h3>
-                    <p className="text-xs text-navy-400 mb-3">Select authorized diver tasks from controlled library (no freewriting)</p>
-                    <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto">
-                      {DD5_CONTROLLED_TASK_LIBRARY.map((task) => (
-                        <div
-                          key={task}
-                          data-testid={`task-${task.replace(/\s+/g, "-").toLowerCase()}`}
-                          onClick={() => toggleTask(task)}
-                          className={`flex items-center gap-2 p-2 rounded cursor-pointer text-sm transition-colors ${
-                            formData.natureOfWork.selectedTasks.includes(task)
-                              ? "btn-gold-metallic/20 border border-amber-500"
-                              : "bg-navy-800 border border-navy-700 hover:border-navy-500"
-                          }`}
-                        >
-                          <div className={`w-4 h-4 rounded flex items-center justify-center ${
-                            formData.natureOfWork.selectedTasks.includes(task)
-                              ? "btn-gold-metallic"
-                              : "bg-navy-700"
-                          }`}>
-                            {formData.natureOfWork.selectedTasks.includes(task) && (
-                              <Check className="w-3 h-3 text-white" />
-                            )}
-                          </div>
-                          <span className="text-white text-xs">{task}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="mt-2 text-xs text-navy-400">
-                      {formData.natureOfWork.selectedTasks.length} task(s) selected
-                    </div>
-                  </div>
-
-                  <div className="bg-amber-900/20 border border-amber-600/30 rounded p-3">
-                    <div className="flex items-start gap-2">
-                      <FileText className="w-4 h-4 text-amber-400 mt-0.5" />
-                      <div className="text-xs text-amber-200">
-                        <strong>Locked Sections (preserved from DD5 template):</strong>
-                        <ul className="mt-1 space-y-0.5 text-amber-300">
-                          <li>Section 2.5 - Team Members and Duties</li>
-                          <li>Section 2.12 - Equipment Procedures Checklist</li>
-                          <li>Sections 4.9-4.18 - Emergency Procedures</li>
-                          <li>Section 5 - Reporting + Forms</li>
-                          <li>All EM385 tables, USN tables, appendices</li>
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <Button
-                      data-testid="button-save-project-plan"
-                      onClick={() => createPlanMutation.mutate()}
-                      disabled={createPlanMutation.isPending || formData.natureOfWork.selectedTasks.length === 0}
-                      className="flex-1 btn-gold-metallic hover:btn-gold-metallic"
-                    >
-                      Create Draft (Rev 0)
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => setIsCreating(false)}
-                      className="border-navy-600"
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {projectPlans.length === 0 ? (
-                <div className="text-center py-12">
-                  <FileText className="w-16 h-16 mx-auto text-navy-600 mb-4" />
-                  <p className="text-navy-400">No project dive plans yet</p>
-                  <p className="text-sm text-navy-500 mt-1">
-                    Create a new dive plan document to get started
-                  </p>
-                </div>
-              ) : (
-                projectPlans.map((plan) => (
-                  <Card
-                    key={plan.id}
-                    data-testid={`card-project-plan-${plan.id}`}
-                    className={`bg-navy-800/50 border-navy-600 cursor-pointer hover:border-navy-500 transition-colors ${
-                      selectedPlan?.id === plan.id ? "border-amber-500" : ""
-                    }`}
-                    onClick={() => setSelectedPlan(plan)}
-                  >
-                    <CardContent className="p-4">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-white font-medium">Rev {plan.revision}</h3>
-                            {getStatusBadge(plan.status)}
-                          </div>
-                          <p className="text-sm text-navy-400 mt-1">
-                            Created {new Date(plan.createdAt).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              downloadPlan(plan.id, plan.revision);
-                            }}
-                            className="border-navy-600"
-                          >
-                            <Download className="w-4 h-4" />
-                          </Button>
-                          {plan.status === "Draft" && canEdit && (
-                            <Button
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                submitPlanMutation.mutate(plan.id);
-                              }}
-                              disabled={submitPlanMutation.isPending}
-                              className="btn-gold-metallic hover:btn-gold-metallic"
-                            >
-                              <Send className="w-4 h-4 mr-1" />
-                              Submit
-                            </Button>
-                          )}
-                          {plan.status === "Submitted" && isAdmin && (
-                            <Button
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                approvePlanMutation.mutate(plan.id);
-                              }}
-                              disabled={approvePlanMutation.isPending}
-                              className="bg-green-600 hover:bg-green-700"
-                            >
-                              <CheckCircle className="w-4 h-4 mr-1" />
-                              Approve
-                            </Button>
-                          )}
-                          {canEdit && (plan.status !== "Approved" || isGod) && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              data-testid={`button-delete-plan-${plan.id}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (confirm(`Delete Rev ${plan.revision}? This cannot be undone.`)) {
-                                  deletePlanMutation.mutate(plan.id);
-                                }
-                              }}
-                              disabled={deletePlanMutation.isPending}
-                              className="border-red-600/50 text-red-400 hover:bg-red-600/20"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="w-1/2 flex flex-col h-full overflow-hidden">
-        <div className="bg-navy-800/50 p-3 border-b border-navy-600 shrink-0">
-          <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-            <History className="w-4 h-4" />
-            Plan Details
-          </h2>
-          <p className="text-xs text-navy-400">View plan content and revision history</p>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4">
-          {selectedPlan ? (
-            <div className="space-y-4">
-              <Card className="bg-navy-800/50 border-navy-600">
-                <CardHeader className="pb-2">
-                  <div className="flex justify-between items-center">
-                    <CardTitle className="text-white text-base">
-                      Dive Plan Rev {selectedPlan.revision}
-                    </CardTitle>
-                    {getStatusBadge(selectedPlan.status)}
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {(() => {
-                    const data = selectedPlan.planData as ProjectDivePlanData;
-                    return (
-                      <>
-                        <div className="bg-navy-900/50 p-2 rounded">
-                          <h4 className="text-navy-400 text-xs mb-2">Cover Page</h4>
-                          <div className="grid grid-cols-2 gap-2 text-sm">
-                            <div>
-                              <span className="text-navy-400">Company:</span>{" "}
-                              <span className="text-white">{data.coverPage?.companyName}</span>
-                            </div>
-                            <div>
-                              <span className="text-navy-400">Project:</span>{" "}
-                              <span className="text-white">{data.coverPage?.projectTitle}</span>
-                            </div>
-                            <div>
-                              <span className="text-navy-400">Job #:</span>{" "}
-                              <span className="text-white">{data.coverPage?.jobNumber}</span>
-                            </div>
-                            <div>
-                              <span className="text-navy-400">Client:</span>{" "}
-                              <span className="text-white">{data.coverPage?.client}</span>
-                            </div>
-                            <div>
-                              <span className="text-navy-400">Location:</span>{" "}
-                              <span className="text-white">{data.coverPage?.siteLocation}</span>
-                            </div>
-                            <div>
-                              <span className="text-navy-400">Submitted:</span>{" "}
-                              <span className="text-white">{data.coverPage?.submissionDate}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {data.projectContacts && (
-                          <div className="bg-navy-900/50 p-2 rounded">
-                            <h4 className="text-navy-400 text-xs mb-2">Project Contacts</h4>
-                            <div className="text-sm">
-                              <div className="mb-1">
-                                <span className="text-navy-400">Prime Contractor:</span>{" "}
-                                <span className="text-white">{data.projectContacts.primeContractor}</span>
-                              </div>
-                              {data.projectContacts.keyContacts?.map((contact, idx) => (
-                                <div key={idx} className="text-white text-xs">
-                                  {contact.name} ({contact.role}): {contact.phone}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {data.natureOfWork?.selectedTasks && data.natureOfWork.selectedTasks.length > 0 && (
-                          <div className="bg-navy-900/50 p-2 rounded">
-                            <h4 className="text-navy-400 text-xs mb-2">Section 2.9 - Nature of Work</h4>
-                            <div className="flex flex-wrap gap-1">
-                              {data.natureOfWork.selectedTasks.map((task, idx) => (
-                                <Badge key={idx} variant="secondary" className="text-xs">{task}</Badge>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {data.revisionHistory && data.revisionHistory.length > 0 && (
-                          <div className="bg-navy-900/50 p-2 rounded">
-                            <h4 className="text-navy-400 text-xs mb-2">Revision History</h4>
-                            <div className="space-y-1">
-                              {data.revisionHistory.map((entry, idx) => (
-                                <div key={idx} className="text-xs text-white flex justify-between">
-                                  <span>Rev {entry.revision}: {entry.description}</span>
-                                  <span className="text-navy-400">{entry.section} - {entry.date}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="text-xs text-navy-500 italic">
-                          Locked sections (2.5, 2.12, 4.9-4.18, Section 5) preserved from DD5 template
-                        </div>
-                      </>
-                    );
-                  })()}
-                </CardContent>
-              </Card>
-
-              {selectedPlan.status === "Approved" && (
-                <div className="bg-green-900/20 border border-green-600/30 rounded-lg p-3">
-                  <div className="flex items-center gap-2 text-green-400 text-sm">
-                    <CheckCircle className="w-4 h-4" />
-                    <span>This is the current approved dive plan</span>
-                  </div>
-                </div>
-              )}
-
-              {selectedPlan.status === "Superseded" && (
-                <div className="bg-gray-900/20 border border-gray-600/30 rounded-lg p-3">
-                  <div className="flex items-center gap-2 text-gray-400 text-sm">
-                    <History className="w-4 h-4" />
-                    <span>This plan has been superseded by a newer revision</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <FileText className="w-16 h-16 mx-auto text-navy-600 mb-4" />
-              <p className="text-navy-400">Select a plan to view details</p>
-            </div>
-          )}
-        </div>
+        <PlanCanvas planData={planData} isGenerating={isGenerating} />
       </div>
     </div>
   );

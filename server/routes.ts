@@ -1922,6 +1922,121 @@ export async function registerRoutes(
     res.json({ message: "Plan deleted" });
   });
 
+  app.post("/api/dive-plan/ai-generate", requireRole("SUPERVISOR", "GOD", "ADMIN"), async (req: Request, res: Response) => {
+    try {
+      const { messages, currentPlan, projectContext } = req.body;
+      
+      const openai = new (await import("openai")).default({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      });
+
+      const taskLibrary = (await import("@shared/schema")).DD5_CONTROLLED_TASK_LIBRARY;
+
+      const systemPrompt = `You are a DD5 Dive Plan document generator for Precision Subsea Group LLC. The supervisor will describe their dive operation in natural, everyday language. Your job is to extract the information and produce a structured JSON dive plan document.
+
+## OUTPUT FORMAT
+You MUST respond with ONLY a valid JSON object (no markdown, no code fences, no explanation) matching this exact structure:
+{
+  "coverPage": {
+    "companyName": "Precision Subsea Group LLC",
+    "projectTitle": "",
+    "jobNumber": "",
+    "client": "",
+    "siteLocation": "",
+    "submissionDate": "",
+    "revisionNumber": 0
+  },
+  "projectContacts": {
+    "primeContractor": "",
+    "siteAddress": "",
+    "keyContacts": [{ "name": "", "role": "", "phone": "", "email": "" }]
+  },
+  "natureOfWork": {
+    "selectedTasks": []
+  },
+  "scopeOfWork": "",
+  "divingMode": "",
+  "maxDepth": "",
+  "estimatedDuration": "",
+  "personnelCount": "",
+  "equipmentNotes": "",
+  "siteConditions": "",
+  "hazardNotes": "",
+  "additionalNotes": ""
+}
+
+## RULES
+1. Fill in ONLY what the supervisor has mentioned. Leave fields as empty strings if not discussed.
+2. For "selectedTasks", ONLY use values from this approved list: ${JSON.stringify(taskLibrary)}
+3. For "scopeOfWork", write a professional 2-4 sentence summary of what the dive operation involves.
+4. If the supervisor mentions depths, diving methods (SCUBA, surface-supplied), number of divers, equipment, site conditions, or hazards, populate the appropriate fields.
+5. Write professionally - convert casual language into formal dive plan language while preserving all factual details.
+6. Each new message may add or modify information. Merge it with the existing plan data intelligently.
+7. NEVER invent information not provided by the supervisor.
+8. Convert informal names/descriptions to proper technical terminology where appropriate.
+
+## PROJECT CONTEXT (pre-populated from project settings)
+${projectContext ? JSON.stringify(projectContext) : "No project context available"}
+
+## CURRENT PLAN STATE
+${currentPlan ? JSON.stringify(currentPlan) : "Empty - starting fresh"}
+
+Respond with ONLY the updated JSON object. No other text.`;
+
+      const chatMessages = [
+        { role: "system" as const, content: systemPrompt },
+        ...messages.map((m: any) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        })),
+      ];
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      const stream = await openai.chat.completions.create({
+        model: "gpt-5.2",
+        max_completion_tokens: 2000,
+        temperature: 0.3,
+        messages: chatMessages,
+        stream: true,
+      });
+
+      let fullContent = "";
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content || "";
+        if (delta) {
+          fullContent += delta;
+          res.write(`data: ${JSON.stringify({ type: "delta", content: delta })}\n\n`);
+        }
+      }
+
+      try {
+        let jsonStr = fullContent.trim();
+        if (jsonStr.startsWith("```")) {
+          jsonStr = jsonStr.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+        }
+        const planData = JSON.parse(jsonStr);
+        res.write(`data: ${JSON.stringify({ type: "plan", data: planData })}\n\n`);
+      } catch {
+        res.write(`data: ${JSON.stringify({ type: "error", message: "Failed to parse plan data" })}\n\n`);
+      }
+
+      res.write(`data: [DONE]\n\n`);
+      res.end();
+    } catch (error: any) {
+      console.error("AI dive plan generation failed:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ message: error.message });
+      } else {
+        res.write(`data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`);
+        res.end();
+      }
+    }
+  });
+
   app.get("/api/project-dive-plans/:id/download", requireAuth, async (req: Request, res: Response) => {
     const { generateDD5DivePlanDocx } = await import("./dive-plan-generator");
     
