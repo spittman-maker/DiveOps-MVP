@@ -9,8 +9,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Trash2, MapPin, Users, ClipboardList, Anchor, FileText, Download, Send, CheckCircle, History, ChevronDown, ChevronRight, Check } from "lucide-react";
+import { Plus, Trash2, MapPin, Users, ClipboardList, Anchor, FileText, Download, Send, CheckCircle, History, ChevronDown, ChevronRight, Check, Mic, Square } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { usePTT } from "@/hooks/use-ptt";
 import type { DivePlan, Station, StationCrew, ProjectDivePlan, ProjectDivePlanData, DD5Contact } from "@shared/schema";
 import { DD5_CONTROLLED_TASK_LIBRARY } from "@shared/schema";
 
@@ -43,6 +44,14 @@ export function DivePlanTab() {
   const [newTask, setNewTask] = useState("");
   const [newDiver, setNewDiver] = useState("");
   const [planNotes, setPlanNotes] = useState("");
+
+  const planNotesPTT = usePTT(useCallback((text: string) => {
+    setPlanNotes(prev => prev ? prev + " " + text : text);
+  }, []));
+
+  const stationNotesPTT = usePTT(useCallback((text: string) => {
+    setEditingStation(prev => prev ? { ...prev, notes: prev.notes ? prev.notes + " " + text : text } : prev);
+  }, []));
 
   const { data: plans = [] } = useQuery<DivePlan[]>({
     queryKey: ["dive-plans", activeProject?.id],
@@ -231,13 +240,47 @@ export function DivePlanTab() {
                     <CardTitle className="text-white text-sm">Create New Dive Plan</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <Textarea
-                      data-testid="input-plan-notes"
-                      value={planNotes}
-                      onChange={(e) => setPlanNotes(e.target.value)}
-                      placeholder="Overall plan notes, objectives, or safety considerations..."
-                      className="bg-navy-900 border-navy-600 text-white min-h-[100px]"
-                    />
+                    {(planNotesPTT.isRecording || planNotesPTT.isTranscribing || planNotesPTT.transcript) && (
+                      <div className="mb-2 p-2 bg-orange-900/30 border border-orange-500/50 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          {planNotesPTT.isRecording && (
+                            <>
+                              <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
+                              <span className="text-xs text-orange-300">Recording...</span>
+                            </>
+                          )}
+                          {planNotesPTT.isTranscribing && !planNotesPTT.isRecording && (
+                            <>
+                              <div className="w-2.5 h-2.5 bg-orange-500 rounded-full animate-pulse" />
+                              <span className="text-xs text-orange-300">Transcribing...</span>
+                            </>
+                          )}
+                        </div>
+                        {planNotesPTT.transcript && (
+                          <p className="text-xs text-white font-mono mt-1">{planNotesPTT.transcript}</p>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <Textarea
+                        data-testid="input-plan-notes"
+                        value={planNotes}
+                        onChange={(e) => setPlanNotes(e.target.value)}
+                        placeholder="Overall plan notes, objectives, or safety considerations..."
+                        className="bg-navy-900 border-navy-600 text-white min-h-[100px] flex-1"
+                      />
+                      <Button
+                        data-testid="button-ptt-plan-notes"
+                        onMouseDown={() => { if (!planNotesPTT.isRecording) planNotesPTT.startRecording(); }}
+                        onMouseUp={() => { if (planNotesPTT.isRecording) planNotesPTT.stopRecording(); }}
+                        onMouseLeave={() => planNotesPTT.isRecording && planNotesPTT.stopRecording()}
+                        disabled={planNotesPTT.isTranscribing}
+                        className={`${planNotesPTT.isRecording ? "bg-red-600 hover:bg-red-700" : "bg-orange-600 hover:bg-orange-700"} min-w-[44px] self-start`}
+                        title="Hold to talk, release to transcribe"
+                      >
+                        {planNotesPTT.isRecording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                      </Button>
+                    </div>
                     <Button
                       data-testid="button-create-plan"
                       onClick={() => createPlanMutation.mutate()}
@@ -389,13 +432,47 @@ export function DivePlanTab() {
 
                     <div>
                       <label className="text-xs text-navy-400 mb-1 block">Notes</label>
-                      <Textarea
-                        data-testid="input-station-notes"
-                        value={editingStation.notes}
-                        onChange={(e) => setEditingStation({ ...editingStation, notes: e.target.value })}
-                        placeholder="Additional notes for this station..."
-                        className="bg-navy-900 border-navy-600 text-white min-h-[60px]"
-                      />
+                      {(stationNotesPTT.isRecording || stationNotesPTT.isTranscribing || stationNotesPTT.transcript) && (
+                        <div className="mb-2 p-2 bg-orange-900/30 border border-orange-500/50 rounded-lg">
+                          <div className="flex items-center gap-2">
+                            {stationNotesPTT.isRecording && (
+                              <>
+                                <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
+                                <span className="text-xs text-orange-300">Recording...</span>
+                              </>
+                            )}
+                            {stationNotesPTT.isTranscribing && !stationNotesPTT.isRecording && (
+                              <>
+                                <div className="w-2.5 h-2.5 bg-orange-500 rounded-full animate-pulse" />
+                                <span className="text-xs text-orange-300">Transcribing...</span>
+                              </>
+                            )}
+                          </div>
+                          {stationNotesPTT.transcript && (
+                            <p className="text-xs text-white font-mono mt-1">{stationNotesPTT.transcript}</p>
+                          )}
+                        </div>
+                      )}
+                      <div className="flex gap-2">
+                        <Textarea
+                          data-testid="input-station-notes"
+                          value={editingStation.notes}
+                          onChange={(e) => setEditingStation({ ...editingStation, notes: e.target.value })}
+                          placeholder="Additional notes for this station..."
+                          className="bg-navy-900 border-navy-600 text-white min-h-[60px] flex-1"
+                        />
+                        <Button
+                          data-testid="button-ptt-station-notes"
+                          onMouseDown={() => { if (!stationNotesPTT.isRecording) stationNotesPTT.startRecording(); }}
+                          onMouseUp={() => { if (stationNotesPTT.isRecording) stationNotesPTT.stopRecording(); }}
+                          onMouseLeave={() => stationNotesPTT.isRecording && stationNotesPTT.stopRecording()}
+                          disabled={stationNotesPTT.isTranscribing}
+                          className={`${stationNotesPTT.isRecording ? "bg-red-600 hover:bg-red-700" : "bg-orange-600 hover:bg-orange-700"} min-w-[44px] self-start`}
+                          title="Hold to talk, release to transcribe"
+                        >
+                          {stationNotesPTT.isRecording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                        </Button>
+                      </div>
                     </div>
 
                     <div className="flex gap-2">
