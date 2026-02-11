@@ -324,40 +324,52 @@ interface LightningData {
 }
 
 function WeatherWidget() {
-  const [location, setLocation] = useState("Houston, TX");
-  const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
+  const { data: projects } = useQuery<any[]>({
+    queryKey: ["projects"],
+    queryFn: async () => {
+      const res = await fetch("/api/projects", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const project = projects?.[0];
+  const lat = project?.jobsiteLat;
+  const lon = project?.jobsiteLng;
+  const siteName = project?.jobsiteName || "Jobsite";
 
   const { data: weather, isLoading: weatherLoading } = useQuery<WeatherData>({
-    queryKey: ["weather", location],
+    queryKey: ["weather", lat, lon],
     queryFn: async () => {
-      const res = await fetch(`/api/weather?location=${encodeURIComponent(location)}`, { credentials: "include" });
+      const res = await fetch(`/api/weather?lat=${lat}&lon=${lon}`, { credentials: "include" });
       if (!res.ok) return { configured: false };
       return res.json();
     },
+    enabled: !!lat && !!lon,
     refetchInterval: 300000,
     staleTime: 60000,
   });
 
   const { data: lightning } = useQuery<LightningData>({
-    queryKey: ["lightning", coords?.lat, coords?.lon],
+    queryKey: ["lightning", lat, lon],
     queryFn: async () => {
-      if (!coords) return { configured: false };
-      const res = await fetch(`/api/weather/lightning?lat=${coords.lat}&lon=${coords.lon}`, { credentials: "include" });
+      const res = await fetch(`/api/weather/lightning?lat=${lat}&lon=${lon}`, { credentials: "include" });
       if (!res.ok) return { configured: false };
       return res.json();
     },
-    enabled: !!coords,
+    enabled: !!lat && !!lon,
     refetchInterval: 300000,
   });
 
-  useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => setCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-        () => {}
-      );
-    }
-  }, []);
+  if (!lat || !lon) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm">
+        <Cloud className="h-8 w-8 mb-2 opacity-50" />
+        <p>No jobsite coordinates set</p>
+        <p className="text-xs mt-1">Set lat/lng in project settings</p>
+      </div>
+    );
+  }
 
   if (weatherLoading) {
     return <div className="flex items-center justify-center h-full text-muted-foreground">Loading weather...</div>;
@@ -382,26 +394,30 @@ function WeatherWidget() {
     return <Cloud className="h-8 w-8" />;
   };
 
+  const tempF = weather.temp != null ? Math.round(weather.temp * 9 / 5 + 32) : null;
+  const feelsLikeF = weather.feelsLike != null ? Math.round(weather.feelsLike * 9 / 5 + 32) : null;
+  const windMph = weather.windSpeed != null ? Math.round(weather.windSpeed * 2.237) : null;
+
   return (
-    <div className="space-y-2 p-1">
+    <div className="space-y-2 p-1" data-testid="widget-weather">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {getWeatherIcon(weather.icon)}
           <div>
-            <div className="text-xl font-bold text-white">{weather.temp}°C</div>
+            <div className="text-xl font-bold text-white">{tempF}°F</div>
             <div className="text-xs text-navy-300">{weather.conditions}</div>
           </div>
         </div>
         <div className="text-right">
-          <div className="text-sm text-navy-200">{weather.location}</div>
-          <div className="text-xs text-navy-400">Feels like {weather.feelsLike}°C</div>
+          <div className="text-sm text-navy-200">{weather.location || siteName}</div>
+          <div className="text-xs text-navy-400">Feels like {feelsLikeF}°F</div>
         </div>
       </div>
       
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="flex items-center gap-1 text-navy-300">
           <Wind className="h-3 w-3" />
-          {weather.windSpeed} m/s
+          {windMph} mph
         </div>
         <div className="flex items-center gap-1 text-navy-300">
           <Droplets className="h-3 w-3" />
