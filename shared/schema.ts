@@ -655,6 +655,7 @@ export interface ProjectDivePlanData {
   siteConditions?: string;
   hazardNotes?: string;
   additionalNotes?: string;
+  decompressionSchedules?: string;
 }
 
 // Controlled task library for Section 2.9 Nature of Work

@@ -1938,6 +1938,7 @@ export async function registerRoutes(
 ## OUTPUT FORMAT
 You MUST respond with ONLY a valid JSON object (no markdown, no code fences, no explanation) matching this exact structure:
 {
+  "chatSummary": "A brief 1-sentence description of what you changed or added in this update. Be specific about which sections were updated.",
   "coverPage": {
     "companyName": "Precision Subsea Group LLC",
     "projectTitle": "",
@@ -1963,8 +1964,17 @@ You MUST respond with ONLY a valid JSON object (no markdown, no code fences, no 
   "equipmentNotes": "",
   "siteConditions": "",
   "hazardNotes": "",
-  "additionalNotes": ""
+  "additionalNotes": "",
+  "decompressionSchedules": ""
 }
+
+## FIELD DEFINITIONS
+- "chatSummary": A unique, specific 1-sentence summary of what you changed. Example: "Added project contacts and updated max depth to 67 ft." NEVER repeat the same summary twice.
+- "equipmentNotes": ONLY list diving equipment, tools, and gear. Examples: "KM-37 helmets, Broco underwater cutting torch, pneumatic grinder." Do NOT include personnel, procedures, or site conditions here.
+- "decompressionSchedules": Information about decompression tables, no-decompression limits, table profiles being used. Example: "No-decompression dives using USN 45 ft, 60 ft, and 70 ft table profiles."
+- "siteConditions": Environmental and site factors. Currents, visibility, water temp, bottom conditions, marine traffic.
+- "hazardNotes": Identified hazards and mitigations only.
+- "additionalNotes": Anything that doesn't fit other fields.
 
 ## RULES
 1. Fill in ONLY what the supervisor has mentioned. Leave fields as empty strings if not discussed.
@@ -1972,9 +1982,10 @@ You MUST respond with ONLY a valid JSON object (no markdown, no code fences, no 
 3. For "scopeOfWork", write a professional 2-4 sentence summary of what the dive operation involves.
 4. If the supervisor mentions depths, diving methods (SCUBA, surface-supplied), number of divers, equipment, site conditions, or hazards, populate the appropriate fields.
 5. Write professionally - convert casual language into formal dive plan language while preserving all factual details.
-6. Each new message may add or modify information. Merge it with the existing plan data intelligently.
+6. Each new message may add or modify information. Merge it with the existing plan data intelligently — preserve all previously populated fields.
 7. NEVER invent information not provided by the supervisor.
 8. Convert informal names/descriptions to proper technical terminology where appropriate.
+9. Keep each field strictly within its defined purpose — do not bleed content between fields.
 
 ## PROJECT CONTEXT (pre-populated from project settings)
 ${projectContext ? JSON.stringify(projectContext) : "No project context available"}

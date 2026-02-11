@@ -47,6 +47,7 @@ interface AIDivePlanData {
   siteConditions?: string;
   hazardNotes?: string;
   additionalNotes?: string;
+  decompressionSchedules?: string;
   revisionHistory?: Array<{ revision: number; date: string; description: string; section: string; changedBy: string }>;
 }
 
@@ -212,13 +213,47 @@ function PlanCanvas({ planData, isGenerating }: { planData: AIDivePlanData | nul
           </div>
         )}
 
-        <div className="p-3 bg-navy-900/50">
-          <p className="text-[10px] text-navy-500 italic">
-            Locked sections (2.5, 2.12, 4.9-4.18, Section 5) preserved from DD5 master template.
-            Emergency procedures, EM385 tables, USN dive tables, and appendices included in final document.
-          </p>
+        {planData.decompressionSchedules && (
+          <div className="p-4 border-b border-navy-700">
+            <h3 className="text-xs font-semibold text-amber-400/80 uppercase tracking-wider mb-2">Decompression Schedules</h3>
+            <p className="text-white text-sm">{planData.decompressionSchedules}</p>
+          </div>
+        )}
+
+        <div className="border-t border-navy-600 mt-2">
+          <div className="p-3 bg-navy-900/30">
+            <h3 className="text-xs font-semibold text-navy-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+              Locked Sections — Preserved from DD5 Master Template
+            </h3>
+            <div className="space-y-2">
+              <LockedSection number="2.5" title="Applicable Codes & Standards" description="OSHA 29 CFR 1910 Subpart T, ADCI Consensus Standards, USCG regulations, EM385-1-1" />
+              <LockedSection number="2.12" title="Emergency Procedures" description="Emergency action plan, evacuation routes, chamber procedures, emergency contacts, nearest hyperbaric facility" />
+              <LockedSection number="4.9" title="Pre-Dive Checklist" description="Equipment checks, communications test, gas analysis, dive supervisor briefing" />
+              <LockedSection number="4.10" title="In-Water Procedures" description="Descent/ascent rates, bottom time management, decompression obligations, abort criteria" />
+              <LockedSection number="4.11" title="Post-Dive Procedures" description="Diver debrief, equipment inspection, log completion, surface interval tracking" />
+              <LockedSection number="4.12" title="Accident / Incident Reporting" description="Notification chain, incident documentation, near-miss reporting, OSHA recordkeeping" />
+              <LockedSection number="4.13–4.18" title="Operational Safety Protocols" description="Lockout/tagout, confined space, hazardous materials, hot work permits, crane/rigging, vessel operations" />
+              <LockedSection number="5.0" title="Appendices" description="USN dive tables, EM385 tables, JHA templates, equipment certifications, personnel qualifications" />
+            </div>
+          </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function LockedSection({ number, title, description }: { number: string; title: string; description: string }) {
+  return (
+    <div className="bg-navy-800/40 border border-navy-700/50 rounded px-3 py-2 flex items-start gap-3">
+      <div className="shrink-0 mt-0.5">
+        <span className="text-[10px] font-mono text-navy-500 bg-navy-800 rounded px-1.5 py-0.5 border border-navy-700">§{number}</span>
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-medium text-navy-300">{title}</p>
+        <p className="text-[10px] text-navy-500 mt-0.5 leading-relaxed">{description}</p>
+      </div>
+      <svg className="w-3 h-3 text-navy-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
     </div>
   );
 }
@@ -385,6 +420,7 @@ export function DivePlanTab() {
         siteConditions: planData.siteConditions || undefined,
         hazardNotes: planData.hazardNotes || undefined,
         additionalNotes: planData.additionalNotes || undefined,
+        decompressionSchedules: planData.decompressionSchedules || undefined,
       };
 
       const res = await fetch(`/api/projects/${activeProject.id}/project-dive-plans`, {
@@ -466,6 +502,7 @@ export function DivePlanTab() {
       siteConditions: data.siteConditions,
       hazardNotes: data.hazardNotes,
       additionalNotes: data.additionalNotes,
+      decompressionSchedules: data.decompressionSchedules,
     });
     setMessages([{
       id: "loaded",
@@ -520,6 +557,7 @@ export function DivePlanTab() {
 
       const decoder = new TextDecoder();
       let buffer = "";
+      let assistantSummary = "";
 
       while (true) {
         const { done, value } = await reader.read();
@@ -538,6 +576,10 @@ export function DivePlanTab() {
             const parsed = JSON.parse(data);
             if (parsed.type === "plan") {
               setPlanData(parsed.data);
+              const summary = parsed.data?.chatSummary;
+              if (summary) {
+                assistantSummary = summary;
+              }
             }
           } catch {}
         }
@@ -546,7 +588,7 @@ export function DivePlanTab() {
       setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: "I've updated the dive plan based on your input. You can see the changes on the right. Keep describing any additional details or modifications.",
+        content: assistantSummary || "Plan updated. Keep describing any additional details.",
         timestamp: new Date(),
       }]);
     } catch (error: any) {
