@@ -28,6 +28,9 @@ interface RiskItem {
   linkedDirectiveId?: string;
   createdAt: string;
   triggerEventId?: string;
+  triggerEventTime?: string;
+  triggerRawText?: string;
+  triggerMasterLine?: string;
 }
 
 export function RiskRegisterTab() {
@@ -176,6 +179,20 @@ export function RiskRegisterTab() {
             )}
             {risk.residualRisk && (
               <p className="text-xs text-navy-400 mt-0.5">Residual: {risk.residualRisk}</p>
+            )}
+            {risk.triggerEventId && (risk.triggerMasterLine || risk.triggerRawText) && (
+              <div className="mt-1.5 pl-2 border-l-2 border-amber-500/30">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  {risk.triggerMasterLine && <div className="w-1.5 h-1.5 rounded-full bg-green-500" />}
+                  <span className="text-[10px] text-navy-500 uppercase">Trigger Event</span>
+                  {risk.triggerEventTime && (
+                    <span className="text-[10px] text-amber-400/60 font-mono">
+                      {new Date(risk.triggerEventTime).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-navy-300 italic">{risk.triggerMasterLine || risk.triggerRawText}</p>
+              </div>
             )}
           </div>
           {risk.owner && (

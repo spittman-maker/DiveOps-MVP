@@ -284,13 +284,27 @@ export async function registerRoutes(
         if (day) {
           const dives = await storage.getDivesByDay(day.id);
           const logs = await storage.getLogEventsByDay(day.id);
+          const activeDiveRecords = dives.filter(d => d.lsTime && !d.rsTime);
+          const completedDiveRecords = dives.filter(d => d.lsTime && d.rsTime);
           
           stats = {
             totalDives: dives.length,
-            activeDives: dives.filter(d => d.lsTime && !d.rsTime).length,
+            activeDives: activeDiveRecords.length,
+            activeDivers: activeDiveRecords.map(d => ({
+              id: d.id,
+              name: d.diverDisplayName || "Unknown",
+              station: d.station || null,
+              lsTime: d.lsTime,
+            })),
+            completedDives: completedDiveRecords.length,
             safetyIncidents: logs.filter(l => l.category === "safety").length,
             openRisks: projectRisks.filter(r => r.status === "open").length,
+            recentRisks: projectRisks
+              .filter(r => r.status === "open")
+              .slice(0, 3)
+              .map(r => ({ id: r.id, riskId: r.riskId, description: r.description, source: r.source })),
             logEntriesToday: logs.length,
+            directivesToday: logs.filter(l => l.category === "directive").length,
             dayStatus: day.status,
             dayDate: day.date,
           };
@@ -328,16 +342,26 @@ export async function registerRoutes(
       }
       
       const logs = await storage.getLogEventsByDay(day.id);
-      const recentLogs = logs
+      const sortedLogs = logs
         .sort((a, b) => new Date(b.captureTime).getTime() - new Date(a.captureTime).getTime())
-        .slice(0, 5)
-        .map(log => ({
+        .slice(0, 8);
+      
+      const recentLogs = await Promise.all(sortedLogs.map(async (log) => {
+        const renders = await storage.getLogRendersByEvent(log.id);
+        const masterRender = renders.find(r => r.renderType === "master_log_line");
+        const internalRender = renders.find(r => r.renderType === "internal_canvas_line");
+        return {
           id: log.id,
           rawText: log.rawText,
           category: log.category,
           eventTime: log.eventTime,
           captureTime: log.captureTime,
-        }));
+          station: log.station,
+          masterLogLine: masterRender?.renderText || null,
+          internalLine: internalRender?.renderText || null,
+          aiStatus: masterRender?.status || null,
+        };
+      }));
       
       res.json(recentLogs);
     } catch (error: any) {
@@ -1103,7 +1127,48 @@ export async function registerRoutes(
 
   app.get("/api/days/:dayId/dives", requireAuth, async (req: Request, res: Response) => {
     const dives = await storage.getDivesByDay(req.params.dayId);
-    res.json(dives);
+    const logEvents = await storage.getLogEventsByDay(req.params.dayId);
+    
+    const allEventIds = logEvents.map(e => e.id);
+    const allRenders = allEventIds.length > 0
+      ? await Promise.all(allEventIds.map(id => storage.getLogRendersByEvent(id)))
+      : [];
+    const rendersByEventId = new Map<string, typeof allRenders[0]>();
+    allEventIds.forEach((id, i) => rendersByEventId.set(id, allRenders[i]));
+    
+    const enriched = dives.map((dive) => {
+      const relatedLogs = logEvents.filter(e => {
+        if (!e.rawText) return false;
+        const name = dive.diverDisplayName || "";
+        const raw = e.rawText.toUpperCase();
+        if (name && raw.includes(name.toUpperCase())) return true;
+        if (name.length > 3) {
+          const parts = name.split(/[\s.]+/).filter(Boolean);
+          if (parts.length >= 2) {
+            const initials = `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+            if (raw.includes(initials) && (e.category === "dive_op" || raw.includes("L/S") || raw.includes("R/S") || raw.includes("L/B") || raw.includes("R/B"))) return true;
+          }
+        }
+        return false;
+      });
+      
+      const logSummaries = relatedLogs.slice(0, 5).map(log => {
+        const renders = rendersByEventId.get(log.id) || [];
+        const masterRender = renders.find(r => r.renderType === "master_log_line");
+        return {
+          id: log.id,
+          eventTime: log.eventTime,
+          rawText: log.rawText,
+          masterLogLine: masterRender?.renderText || null,
+          category: log.category,
+          station: log.station,
+        };
+      });
+      
+      return { ...dive, relatedLogs: logSummaries };
+    });
+    
+    res.json(enriched);
   });
 
   app.get("/api/users/:userId/dives", requireAuth, async (req: Request, res: Response) => {
@@ -1257,7 +1322,23 @@ export async function registerRoutes(
 
   app.get("/api/projects/:projectId/risks", requireAuth, async (req: Request, res: Response) => {
     const risks = await storage.getRiskItemsByProject(req.params.projectId);
-    res.json(risks);
+    const enriched = await Promise.all(risks.map(async (risk) => {
+      if (risk.triggerEventId) {
+        const triggerEvent = await storage.getLogEvent(risk.triggerEventId);
+        if (triggerEvent) {
+          const renders = await storage.getLogRendersByEvent(triggerEvent.id);
+          const masterRender = renders.find(r => r.renderType === "master_log_line");
+          return {
+            ...risk,
+            triggerEventTime: triggerEvent.eventTime,
+            triggerRawText: triggerEvent.rawText,
+            triggerMasterLine: masterRender?.renderText || null,
+          };
+        }
+      }
+      return risk;
+    }));
+    res.json(enriched);
   });
 
   app.get("/api/risks/:id", requireAuth, async (req: Request, res: Response) => {

@@ -8,6 +8,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Edit2, Sparkles } from "lucide-react";
 
+interface RelatedLog {
+  id: string;
+  eventTime: string;
+  rawText: string;
+  masterLogLine?: string;
+  category: string;
+  station?: string;
+}
+
 interface Dive {
   id: string;
   dayId: string;
@@ -34,6 +43,7 @@ interface Dive {
   photoVideoRefs?: string;
   supervisorInitials?: string;
   notes?: string;
+  relatedLogs?: RelatedLog[];
 }
 
 function calculateDiveMinutes(lsTime?: string, lbTime?: string, rsTime?: string): { minutes: number; label: string } | null {
@@ -471,6 +481,36 @@ export function DiveLogsTab() {
                       onSave={saveFn}
                     />
                   </FieldRow>
+
+                  {dive.relatedLogs && dive.relatedLogs.length > 0 && (
+                    <>
+                      <SectionHeader title="Linked Log Entries" />
+                      <div className="space-y-1.5 py-1">
+                        {dive.relatedLogs.map(log => (
+                          <div key={log.id} className="bg-navy-900/50 rounded px-3 py-2 border border-navy-700/50">
+                            <div className="flex items-center gap-2 mb-0.5">
+                              <span className="text-amber-400 font-mono text-[10px]">
+                                {new Date(log.eventTime).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}
+                              </span>
+                              <Badge className="text-[9px] px-1 py-0 bg-navy-600">{log.category === "dive_op" ? "DIVE" : log.category}</Badge>
+                              {log.station && <span className="text-[9px] text-cyan-400/60">{log.station}</span>}
+                            </div>
+                            {log.masterLogLine ? (
+                              <div>
+                                <p className="text-xs text-navy-200 italic">{log.masterLogLine}</p>
+                                <div className="flex items-center gap-1 mt-0.5">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                                  <span className="text-[9px] text-navy-500">AI processed</span>
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="text-xs text-white/70 font-mono">{log.rawText}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             );

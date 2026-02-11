@@ -41,12 +41,30 @@ interface DashboardLayout {
   version: number;
 }
 
+interface ActiveDiver {
+  id: string;
+  name: string;
+  station: string | null;
+  lsTime: string;
+}
+
+interface RecentRisk {
+  id: string;
+  riskId: string;
+  description: string;
+  source: string;
+}
+
 interface DashboardStats {
   totalDives: number;
   activeDives: number;
+  activeDivers?: ActiveDiver[];
+  completedDives?: number;
   safetyIncidents: number;
   openRisks: number;
+  recentRisks?: RecentRisk[];
   logEntriesToday: number;
+  directivesToday?: number;
   dayStatus?: string;
   dayDate?: string;
 }
@@ -64,36 +82,65 @@ const WIDGET_TYPES = [
 
 function DailySummaryWidget({ stats }: { stats: DashboardStats }) {
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-navy-700 rounded p-2 text-center">
-          <div className="text-2xl font-bold text-amber-400">{stats.totalDives}</div>
-          <div className="text-xs text-navy-300">Total Dives</div>
-        </div>
-        <div className="bg-navy-700 rounded p-2 text-center">
-          <div className="text-2xl font-bold text-green-400">{stats.logEntriesToday}</div>
-          <div className="text-xs text-navy-300">Log Entries</div>
-        </div>
-      </div>
+    <div className="space-y-2">
       {stats.dayDate && (
-        <div className="text-xs text-navy-400 text-center">
-          {stats.dayDate} - <Badge className={stats.dayStatus === "ACTIVE" ? "bg-green-600" : "bg-yellow-600"}>{stats.dayStatus}</Badge>
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-navy-400">{stats.dayDate}</span>
+          <Badge className={stats.dayStatus === "ACTIVE" ? "bg-green-600" : stats.dayStatus === "CLOSED" ? "bg-red-600" : "bg-yellow-600"}>
+            {stats.dayStatus}
+          </Badge>
         </div>
       )}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-navy-700 rounded p-2 text-center">
+          <div className="text-xl font-bold text-amber-400">{stats.totalDives}</div>
+          <div className="text-[10px] text-navy-300">Dives</div>
+        </div>
+        <div className="bg-navy-700 rounded p-2 text-center">
+          <div className="text-xl font-bold text-green-400">{stats.logEntriesToday}</div>
+          <div className="text-[10px] text-navy-300">Log Entries</div>
+        </div>
+        <div className="bg-navy-700 rounded p-2 text-center">
+          <div className="text-xl font-bold text-cyan-400">{stats.directivesToday || 0}</div>
+          <div className="text-[10px] text-navy-300">Directives</div>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="flex justify-between bg-navy-700/50 rounded px-2 py-1">
+          <span className="text-navy-400">Completed</span>
+          <span className="text-white font-mono">{stats.completedDives || 0}</span>
+        </div>
+        <div className="flex justify-between bg-navy-700/50 rounded px-2 py-1">
+          <span className="text-navy-400">In Water</span>
+          <span className="text-amber-400 font-mono">{stats.activeDives}</span>
+        </div>
+      </div>
     </div>
   );
 }
 
 function ActiveDivesWidget({ stats }: { stats: DashboardStats }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full">
-      <div className="text-5xl font-bold text-amber-400">{stats.activeDives}</div>
-      <div className="text-sm text-navy-300 mt-2">Divers Currently In Water</div>
-      {stats.activeDives > 0 && (
-        <div className="mt-2">
-          <Badge className="btn-gold-metallic animate-pulse">ACTIVE</Badge>
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-3xl font-bold text-amber-400">{stats.activeDives}</div>
+        {stats.activeDives > 0 && (
+          <Badge className="btn-gold-metallic animate-pulse">IN WATER</Badge>
+        )}
+      </div>
+      <div className="text-xs text-navy-300 mb-2">Divers Currently In Water</div>
+      {stats.activeDivers && stats.activeDivers.length > 0 ? (
+        <div className="space-y-1 overflow-auto flex-1">
+          {stats.activeDivers.map(diver => (
+            <div key={diver.id} className="bg-navy-700 rounded px-2 py-1 flex justify-between items-center">
+              <span className="text-white text-xs font-medium">{diver.name}</span>
+              <span className="text-navy-400 text-xs">{diver.station || ""}</span>
+            </div>
+          ))}
         </div>
-      )}
+      ) : stats.activeDives === 0 ? (
+        <div className="text-navy-500 text-xs text-center mt-2">No active dives</div>
+      ) : null}
     </div>
   );
 }
@@ -153,17 +200,45 @@ function ProjectStatusWidget({ stats }: { stats: DashboardStats }) {
 
 function RiskRegisterWidget({ stats }: { stats: DashboardStats }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full">
-      <div className={`text-4xl font-bold ${stats.openRisks > 0 ? "text-yellow-400" : "text-green-400"}`}>
-        {stats.openRisks}
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between mb-2">
+        <div className={`text-3xl font-bold ${stats.openRisks > 0 ? "text-yellow-400" : "text-green-400"}`}>
+          {stats.openRisks}
+        </div>
+        {stats.openRisks === 0 && <Badge className="bg-green-600 text-xs">ALL CLEAR</Badge>}
       </div>
-      <div className="text-sm text-navy-300 mt-2">Open Risk Items</div>
+      <div className="text-xs text-navy-300 mb-2">Open Risk Items</div>
+      {stats.recentRisks && stats.recentRisks.length > 0 && (
+        <div className="space-y-1 overflow-auto flex-1">
+          {stats.recentRisks.map(risk => (
+            <div key={risk.id} className="bg-navy-700 rounded px-2 py-1">
+              <div className="flex items-center gap-1">
+                <span className="text-amber-400 font-mono text-[10px]">{risk.riskId}</span>
+                <span className="text-navy-500 text-[10px]">{risk.source}</span>
+              </div>
+              <div className="text-white/70 text-[10px] truncate">{risk.description}</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
+interface RecentLog {
+  id: string;
+  rawText: string;
+  category: string;
+  eventTime: string;
+  captureTime: string;
+  station?: string;
+  masterLogLine?: string;
+  internalLine?: string;
+  aiStatus?: string;
+}
+
 function RecentLogsWidget() {
-  const { data: recentLogs } = useQuery<Array<{id: string; rawText: string; category: string; eventTime: string; captureTime: string}>>({
+  const { data: recentLogs } = useQuery<RecentLog[]>({
     queryKey: ["dashboard-recent-logs"],
     queryFn: async () => {
       const res = await fetch("/api/dashboard/recent-logs", { credentials: "include" });
@@ -182,17 +257,40 @@ function RecentLogsWidget() {
     );
   }
 
+  const categoryColor: Record<string, string> = {
+    directive: "text-cyan-400",
+    safety: "text-red-400",
+    dive_op: "text-amber-400",
+    ops: "text-green-400",
+    general: "text-navy-300",
+  };
+
   return (
-    <div className="space-y-2 overflow-auto h-full">
+    <div className="space-y-1.5 overflow-auto h-full">
       {recentLogs.map(log => (
-        <div key={log.id} className="bg-navy-700 rounded p-2 text-xs">
-          <div className="flex justify-between items-center mb-1">
-            <span className="text-amber-400 font-mono">
-              {new Date(log.eventTime).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}
-            </span>
-            <span className="text-navy-400 uppercase">{log.category}</span>
+        <div key={log.id} className="bg-navy-700 rounded px-2 py-1.5 text-xs">
+          <div className="flex justify-between items-center mb-0.5">
+            <div className="flex items-center gap-1.5">
+              <span className="text-amber-400 font-mono text-[10px]">
+                {new Date(log.eventTime).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}
+              </span>
+              <span className={`uppercase text-[9px] font-semibold ${categoryColor[log.category] || "text-navy-400"}`}>
+                {log.category === "dive_op" ? "DIVE" : log.category}
+              </span>
+            </div>
+            {log.station && (
+              <span className="text-[9px] text-cyan-400/60">{log.station}</span>
+            )}
           </div>
-          <div className="text-white/80 truncate">{log.rawText}</div>
+          <div className="text-white/80 text-[11px] line-clamp-2">
+            {log.masterLogLine || log.rawText}
+          </div>
+          {log.masterLogLine && (
+            <div className="flex items-center gap-1 mt-0.5">
+              <div className={`w-1.5 h-1.5 rounded-full ${log.aiStatus === "ok" ? "bg-green-500" : log.aiStatus === "needs_review" ? "bg-yellow-500" : "bg-navy-500"}`} />
+              <span className="text-[9px] text-navy-500">AI processed</span>
+            </div>
+          )}
         </div>
       ))}
     </div>

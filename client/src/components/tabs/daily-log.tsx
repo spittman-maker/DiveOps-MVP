@@ -797,7 +797,22 @@ export function DailyLogTab() {
                     </div>
                   </div>
                 ) : (
-                  <p className="text-sm text-white font-mono">{event.rawText}</p>
+                  <div>
+                    <p className="text-sm text-white font-mono">{event.rawText}</p>
+                    {event.renders && event.renders.length > 0 && (() => {
+                      const masterRender = event.renders!.find(r => r.renderType === "master_log_line");
+                      if (!masterRender || masterRender.renderText === event.rawText) return null;
+                      return (
+                        <div className="mt-1.5 pl-3 border-l-2 border-amber-500/30">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <div className={`w-1.5 h-1.5 rounded-full ${masterRender.status === "ok" ? "bg-green-500" : masterRender.status === "needs_review" ? "bg-yellow-500" : "bg-red-500"}`} />
+                            <span className="text-[10px] text-navy-500 uppercase">{masterRender.section} — AI render</span>
+                          </div>
+                          <p className="text-xs text-navy-200 italic">{masterRender.renderText}</p>
+                        </div>
+                      );
+                    })()}
+                  </div>
                 )}
                 {event.aiAnnotations && event.aiAnnotations.length > 0 && (
                   <div className="mt-1.5 space-y-1" data-testid={`annotations-${event.id}`}>
