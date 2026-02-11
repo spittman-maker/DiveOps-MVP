@@ -69,6 +69,27 @@ const DIRECTIVE_PATTERNS = [
   /\bper\s+(client|PM|supervisor)/i,
 ];
 
+const CONFLICTING_DIRECTION_PATTERNS = [
+  /\bconflict/i,
+  /\bcontradicts?\b/i,
+  /\bopposite\b/i,
+  /\bconflicting\s*direction/i,
+];
+
+const REVERSED_DIRECTION_PATTERNS = [
+  /\brevers(e|ed|ing)\b/i,
+  /\bcancel(led|s|ing)?\b/i,
+  /\brescind/i,
+  /\boverride/i,
+  /\boverrul/i,
+  /\bsuperced/i,
+  /\bprevious(ly)?\s+(instructed|directed|ordered)/i,
+  /\bno\s+longer\b/i,
+  /\binstead\s+of\b/i,
+  /\bchange\s+from\b/i,
+  /\breversed\s*direction/i,
+];
+
 const SAFETY_PATTERNS = [
   /\bincident\b/i,
   /\binjury\b/i,
@@ -102,6 +123,20 @@ export function classifyEvent(rawText: string): EventCategory {
   }
   
   return "ops";
+}
+
+export type DirectiveTag = "CONFLICTING DIRECTION" | "REVERSED DIRECTION" | null;
+
+export function detectDirectiveTag(rawText: string, category: EventCategory): DirectiveTag {
+  if (category !== "directive") return null;
+  
+  for (const pattern of CONFLICTING_DIRECTION_PATTERNS) {
+    if (pattern.test(rawText)) return "CONFLICTING DIRECTION";
+  }
+  for (const pattern of REVERSED_DIRECTION_PATTERNS) {
+    if (pattern.test(rawText)) return "REVERSED DIRECTION";
+  }
+  return null;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -305,12 +340,13 @@ export function parseEventTime(rawText: string, dayDate: string): Date | null {
 // ────────────────────────────────────────────────────────────────────────────
 
 /**
- * Generate risk ID in format RR-###
- * Per compliance framework: Risk IDs use RR-001, RR-002, etc. — never reused
+ * Generate risk ID in format RISK-YYYYMMDD-###
+ * Per SOP Section 7 Phase 3: Risk IDs are locked, logged once, tracked by reference only
  */
 export function generateRiskId(date: string, sequence: number): string {
+  const dateStr = date.replace(/-/g, '');
   const seqStr = sequence.toString().padStart(3, '0');
-  return `RR-${seqStr}`;
+  return `RISK-${dateStr}-${seqStr}`;
 }
 
 // ────────────────────────────────────────────────────────────────────────────

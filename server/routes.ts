@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import express from "express";
 import { storage } from "./storage";
 import { passport, hashPassword, requireAuth, requireRole, canWriteLogEvents, isGod, isAdminOrHigher } from "./auth";
-import { classifyEvent, extractData, parseEventTime, generateRiskId, getMasterLogSection, renderInternalCanvasLine } from "./extraction";
+import { classifyEvent, extractData, parseEventTime, generateRiskId, getMasterLogSection, renderInternalCanvasLine, detectDirectiveTag } from "./extraction";
 import { processStructuredLog } from "./logging";
 import { generateAIRenders } from "./ai-drafting";
 import { generateShiftExport } from "./document-export";
@@ -597,7 +597,8 @@ export async function registerRoutes(
 
   app.post("/api/days/:id/close", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
     const user = getUser(req);
-    const day = await storage.closeDay(req.params.id, user.id);
+    const closeoutData = req.body?.closeoutData || undefined;
+    const day = await storage.closeDay(req.params.id, user.id, closeoutData);
     if (!day) return res.status(404).json({ message: "Day not found" });
     res.json(day);
   });
@@ -605,8 +606,9 @@ export async function registerRoutes(
   app.post("/api/days/:id/close-and-export", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
     const user = getUser(req);
     const dayId = req.params.id;
+    const closeoutData = req.body?.closeoutData || undefined;
     
-    const day = await storage.closeDay(dayId, user.id);
+    const day = await storage.closeDay(dayId, user.id, closeoutData);
     if (!day) return res.status(404).json({ message: "Day not found" });
 
     try {
@@ -807,6 +809,12 @@ export async function registerRoutes(
       const category = classifyEvent(data.rawText);
       const extracted = extractData(data.rawText);
       
+      // Detect conflicting/reversed direction tags for directives (SOP Phase 1)
+      const directiveTag = detectDirectiveTag(data.rawText, category);
+      const extractedWithTag = directiveTag 
+        ? { ...extracted, directiveTag } 
+        : extracted;
+
       // Create the log event IMMEDIATELY (event sourcing)
       const logEvent = await storage.createLogEvent({
         dayId: data.dayId,
@@ -817,7 +825,7 @@ export async function registerRoutes(
         eventTime,
         rawText: data.rawText,
         category,
-        extractedJson: extracted,
+        extractedJson: extractedWithTag,
       });
       
       // Activate day if it was draft
@@ -838,16 +846,21 @@ export async function registerRoutes(
             // Create risk items only from validated payload
             if (result.payload.risks && result.payload.risks.length > 0) {
               const existingRisks = await storage.getRiskItemsByProject(data.projectId);
+              const dateStr = day.date.replace(/-/g, '');
+              const riskPrefix = `RISK-${dateStr}-`;
               const maxRiskNum = existingRisks
                 .map(r => r.riskId)
-                .filter(id => id.startsWith("RR-"))
-                .map(id => Number(id.slice(3)))
+                .filter(id => id.startsWith("RISK-"))
+                .map(id => {
+                  const parts = id.split('-');
+                  return Number(parts[parts.length - 1]);
+                })
                 .filter(n => Number.isFinite(n))
                 .reduce((a, b) => Math.max(a, b), 0);
 
               for (let i = 0; i < result.payload.risks.length; i++) {
                 const risk = result.payload.risks[i];
-                const riskId = `RR-${String(maxRiskNum + i + 1).padStart(3, "0")}`;
+                const riskId = `${riskPrefix}${String(maxRiskNum + i + 1).padStart(3, "0")}`;
                 const isDirective = (risk as any).trigger?.toLowerCase().includes("client") ||
                   (risk as any).trigger?.toLowerCase().includes("directive");
                 await storage.createRiskItem({
@@ -1448,6 +1461,10 @@ export async function registerRoutes(
       
       if (event.category === "directive") {
         directiveEntries.push(entry);
+        const extracted = event.extractedJson as any;
+        if (extracted?.directiveTag) {
+          conflictEntries.push({ ...entry, directiveTag: extracted.directiveTag });
+        }
       } else if (event.category === "safety") {
         riskEntries.push(entry);
       } else {

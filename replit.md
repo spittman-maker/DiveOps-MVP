@@ -42,9 +42,12 @@ Preferred communication style: Simple, everyday language.
 ### Key Features and Domain Concepts
 - **Projects & Days**: Manages dive operation contracts and daily operational periods.
 - **Log Events & Dives**: Records timestamped operational entries and individual dive records, including detailed PSG-LOG-01 fields.
-- **Risk Register**: Tracks cumulative safety and operational risks with unique RR-### IDs.
-- **Client Directive Register**: Logs verbatim client instructions with CD-### IDs.
+- **Risk Register**: Tracks cumulative safety and operational risks with unique RISK-YYYYMMDD-### IDs (locked, tracked by reference only per SOP Phase 3).
+- **Client Directive Register**: Logs verbatim client instructions with CD-### IDs, with automatic CONFLICTING DIRECTION / REVERSED DIRECTION tagging per SOP Phase 1.
+- **QC Closeout (Phase 4)**: Mandatory closeout form before day close — captures scope/documentation status, SEI advisories, standing risks, deviations, outstanding issues, and planned next-shift work. Data persisted in `days.closeout_data` JSONB.
 - **Compliance Records**: Maintains distinct Risk Register, Daily Field/Supervisor Log, ADCI-Compliant Dive Log, and Client Directive Register, ensuring no data invention or unauthorized risk closure.
+- **24-Hour Rolling Log**: Operational day runs 0600–0600; night work after midnight logged under prior operational day.
+- **PSG-TPL-0001 Export**: Daily Shift Log export follows standardized template with Header, Team & Manning, Rolling Event Log, Deviations, End-of-Shift Closeout, SEI Advisories, Standing Risks, and Sign-off blocks.
 - **Cross-Tab Data Flow**: Utilizes TanStack React Query for real-time synchronization of data across different application tabs.
 - **Dive Extraction**: Automatically creates dive records from log entries, preserving raw text and handling diver identification.
 - **Library & Document Management**: Supports storage of reference documents and exporting daily logs, dive records, and compliance documents.

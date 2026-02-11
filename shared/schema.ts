@@ -248,11 +248,23 @@ export type InsertProjectDirectory = z.infer<typeof insertProjectDirectorySchema
 export type ProjectDirectory = typeof projectDirectory.$inferSelect;
 
 // ────────────────────────────────────────────────────────────────────────────
-// DAY (Calendar day 00:00–23:59 local)
+// DAY (Operational Day 0600–0600 rolling; night work after midnight logged under prior day)
 // ────────────────────────────────────────────────────────────────────────────
 
 export const dayStatusEnum = z.enum(["DRAFT", "ACTIVE", "CLOSED"]);
 export type DayStatus = z.infer<typeof dayStatusEnum>;
+
+export interface QCCloseoutData {
+  scopeStatus: "complete" | "incomplete";
+  documentationStatus: "complete" | "incomplete";
+  exceptions: string;
+  advisedFor: string;
+  advisedAgainst: string;
+  standingRisks: Array<{ riskId: string; status: string }>;
+  deviations: string;
+  outstandingIssues: string;
+  plannedNextShift: string;
+}
 
 export const days = pgTable("days", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -265,6 +277,7 @@ export const days = pgTable("days", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   closedBy: varchar("closed_by").references(() => users.id),
   closedAt: timestamp("closed_at"),
+  closeoutData: jsonb("closeout_data").$type<QCCloseoutData>(),
 }, (t) => ({
   projectDateIdx: index("days_project_date_idx").on(t.projectId, t.date),
 }));

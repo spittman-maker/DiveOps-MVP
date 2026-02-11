@@ -117,6 +117,18 @@ export function DailyLogTab() {
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
 
+  const [showCloseout, setShowCloseout] = useState(false);
+  const [closeoutForm, setCloseoutForm] = useState({
+    scopeStatus: "complete" as "complete" | "incomplete",
+    documentationStatus: "complete" as "complete" | "incomplete",
+    exceptions: "",
+    advisedFor: "",
+    advisedAgainst: "",
+    deviations: "",
+    outstandingIssues: "",
+    plannedNextShift: "",
+  });
+
   const [expandedStations, setExpandedStations] = useState<Record<string, boolean>>({});
 
   const toggleStation = (station: string) => {
@@ -214,23 +226,36 @@ export function DailyLogTab() {
     },
   });
 
+  const buildCloseoutPayload = () => {
+    const risks = masterLogData?.risks || [];
+    return {
+      closeoutData: {
+        ...closeoutForm,
+        standingRisks: risks.map((r: any) => ({ riskId: r.riskId, status: r.status })),
+      },
+    };
+  };
+
   const closeDayMutation = useMutation({
     mutationFn: async () => {
       if (!currentDay) throw new Error("No day");
       const res = await fetch(`/api/days/${currentDay.id}/close`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
+        body: JSON.stringify(buildCloseoutPayload()),
       });
       if (!res.ok) throw new Error("Failed to close day");
       return res.json();
     },
     onSuccess: () => {
+      setShowCloseout(false);
       refreshDay();
       queryClient.invalidateQueries({ queryKey: ["log-events"] });
       queryClient.invalidateQueries({ queryKey: ["master-log"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-recent-logs"] });
-      toast({ title: "Shift closed", description: "Master Log is now locked" });
+      toast({ title: "Shift closed", description: "QC Closeout recorded. Master Log is now locked." });
     },
   });
 
@@ -239,12 +264,15 @@ export function DailyLogTab() {
       if (!currentDay) throw new Error("No day");
       const res = await fetch(`/api/days/${currentDay.id}/close-and-export`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
+        body: JSON.stringify(buildCloseoutPayload()),
       });
       if (!res.ok) throw new Error("Failed to close and export");
       return res.json();
     },
     onSuccess: (data) => {
+      setShowCloseout(false);
       refreshDay();
       queryClient.invalidateQueries({ queryKey: ["log-events"] });
       queryClient.invalidateQueries({ queryKey: ["master-log"] });
@@ -602,42 +630,188 @@ export function DailyLogTab() {
           </div>
           <div className="flex gap-2">
             {isSupervisor && currentDay?.status !== "CLOSED" && currentDay && (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button
-                    data-testid="button-close-day"
-                    size="sm"
-                    variant="outline"
-                    className="text-xs border-red-500 text-red-400 hover:bg-red-500/20"
-                  >
-                    Close Shift
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent className="bg-navy-800 border-navy-600">
-                  <AlertDialogHeader>
-                    <AlertDialogTitle className="text-white">Confirm Close Shift</AlertDialogTitle>
-                    <AlertDialogDescription className="text-navy-300">
-                      Are you sure you want to close this shift? The Master Log will be locked and no new entries can be added. You can reopen if needed.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-                    <AlertDialogCancel className="bg-navy-700 text-white border-navy-600 hover:bg-navy-600">Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={() => closeDayMutation.mutate()}
-                      className="bg-amber-600 text-white hover:bg-amber-700"
-                    >
-                      Close Shift
-                    </AlertDialogAction>
-                    <AlertDialogAction
-                      onClick={() => closeAndExportMutation.mutate()}
-                      disabled={closeAndExportMutation.isPending}
-                      className="bg-green-600 text-white hover:bg-green-700"
-                    >
-                      {closeAndExportMutation.isPending ? "Exporting..." : "Close & Export to Library"}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              <>
+                <Button
+                  data-testid="button-close-day"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowCloseout(true)}
+                  className="text-xs border-red-500 text-red-400 hover:bg-red-500/20"
+                >
+                  Close Shift
+                </Button>
+                {showCloseout && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+                    <div className="bg-navy-800 border border-navy-600 rounded-lg w-full max-w-2xl max-h-[85vh] overflow-y-auto p-6 mx-4">
+                      <h2 className="text-lg font-bold text-amber-400 mb-1">QC Closeout — {currentDay.date}</h2>
+                      <p className="text-navy-400 text-xs mb-4">Complete the final QC closeout before locking the 24-hour operational record.</p>
+                      
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="text-xs text-navy-300 block mb-1">Scope</label>
+                            <div className="flex gap-2">
+                              {(["complete", "incomplete"] as const).map(v => (
+                                <button
+                                  key={v}
+                                  data-testid={`closeout-scope-${v}`}
+                                  onClick={() => setCloseoutForm(f => ({ ...f, scopeStatus: v }))}
+                                  className={`px-3 py-1.5 rounded text-xs font-medium border ${
+                                    closeoutForm.scopeStatus === v
+                                      ? v === "complete" ? "bg-green-600/30 border-green-500 text-green-300" : "bg-red-600/30 border-red-500 text-red-300"
+                                      : "bg-navy-700 border-navy-600 text-navy-400"
+                                  }`}
+                                >
+                                  {v.charAt(0).toUpperCase() + v.slice(1)}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-xs text-navy-300 block mb-1">Documentation</label>
+                            <div className="flex gap-2">
+                              {(["complete", "incomplete"] as const).map(v => (
+                                <button
+                                  key={v}
+                                  data-testid={`closeout-docs-${v}`}
+                                  onClick={() => setCloseoutForm(f => ({ ...f, documentationStatus: v }))}
+                                  className={`px-3 py-1.5 rounded text-xs font-medium border ${
+                                    closeoutForm.documentationStatus === v
+                                      ? v === "complete" ? "bg-green-600/30 border-green-500 text-green-300" : "bg-red-600/30 border-red-500 text-red-300"
+                                      : "bg-navy-700 border-navy-600 text-navy-400"
+                                  }`}
+                                >
+                                  {v.charAt(0).toUpperCase() + v.slice(1)}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-xs text-navy-300 block mb-1">Exceptions</label>
+                          <input
+                            data-testid="closeout-exceptions"
+                            value={closeoutForm.exceptions}
+                            onChange={e => setCloseoutForm(f => ({ ...f, exceptions: e.target.value }))}
+                            placeholder="None Noted"
+                            className="w-full bg-navy-900 border border-navy-600 rounded px-3 py-1.5 text-sm text-white placeholder:text-navy-500"
+                          />
+                        </div>
+
+                        <div className="border border-amber-700/40 rounded p-3 bg-amber-900/10">
+                          <p className="text-xs font-semibold text-amber-400 mb-2">SEI Advisories (Record Only)</p>
+                          <div className="space-y-2">
+                            <div>
+                              <label className="text-xs text-navy-300 block mb-1">Advised FOR</label>
+                              <input
+                                data-testid="closeout-advised-for"
+                                value={closeoutForm.advisedFor}
+                                onChange={e => setCloseoutForm(f => ({ ...f, advisedFor: e.target.value }))}
+                                placeholder="None"
+                                className="w-full bg-navy-900 border border-navy-600 rounded px-3 py-1.5 text-sm text-white placeholder:text-navy-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs text-navy-300 block mb-1">Advised AGAINST</label>
+                              <input
+                                data-testid="closeout-advised-against"
+                                value={closeoutForm.advisedAgainst}
+                                onChange={e => setCloseoutForm(f => ({ ...f, advisedAgainst: e.target.value }))}
+                                placeholder="None"
+                                className="w-full bg-navy-900 border border-navy-600 rounded px-3 py-1.5 text-sm text-white placeholder:text-navy-500"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {masterLogData?.risks && masterLogData.risks.length > 0 && (
+                          <div>
+                            <p className="text-xs text-navy-300 mb-1">Standing Risks Referenced</p>
+                            <div className="space-y-1">
+                              {masterLogData.risks.map((risk: any) => (
+                                <div key={risk.id} className="flex items-center gap-2 text-xs bg-navy-900/50 rounded px-2 py-1">
+                                  <span className="font-mono text-amber-400">{risk.riskId}</span>
+                                  <span className="text-navy-300 flex-1 truncate">{risk.description}</span>
+                                  <Badge className={`text-[10px] ${risk.status === "open" ? "bg-red-600" : risk.status === "mitigated" ? "bg-amber-600" : "bg-green-600"}`}>
+                                    {risk.status}
+                                  </Badge>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div>
+                          <label className="text-xs text-navy-300 block mb-1">Deviations / Stop-Work / Lessons Learned</label>
+                          <Textarea
+                            data-testid="closeout-deviations"
+                            value={closeoutForm.deviations}
+                            onChange={e => setCloseoutForm(f => ({ ...f, deviations: e.target.value }))}
+                            placeholder="None"
+                            rows={2}
+                            className="bg-navy-900 border-navy-600 text-white text-sm"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="text-xs text-navy-300 block mb-1">Outstanding Issues</label>
+                            <Textarea
+                              data-testid="closeout-outstanding"
+                              value={closeoutForm.outstandingIssues}
+                              onChange={e => setCloseoutForm(f => ({ ...f, outstandingIssues: e.target.value }))}
+                              placeholder="None"
+                              rows={2}
+                              className="bg-navy-900 border-navy-600 text-white text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs text-navy-300 block mb-1">Planned Work Next Shift</label>
+                            <Textarea
+                              data-testid="closeout-next-shift"
+                              value={closeoutForm.plannedNextShift}
+                              onChange={e => setCloseoutForm(f => ({ ...f, plannedNextShift: e.target.value }))}
+                              placeholder="Describe planned work..."
+                              rows={2}
+                              className="bg-navy-900 border-navy-600 text-white text-sm"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-navy-600">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowCloseout(false)}
+                          className="bg-navy-700 text-white border-navy-600 hover:bg-navy-600"
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          data-testid="button-confirm-close"
+                          size="sm"
+                          onClick={() => closeDayMutation.mutate()}
+                          disabled={closeDayMutation.isPending}
+                          className="bg-amber-600 text-white hover:bg-amber-700"
+                        >
+                          {closeDayMutation.isPending ? "Closing..." : "Close Shift"}
+                        </Button>
+                        <Button
+                          data-testid="button-close-export"
+                          size="sm"
+                          onClick={() => closeAndExportMutation.mutate()}
+                          disabled={closeAndExportMutation.isPending}
+                          className="bg-green-600 text-white hover:bg-green-700"
+                        >
+                          {closeAndExportMutation.isPending ? "Exporting..." : "Close & Export"}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
             {isSupervisor && currentDay?.status === "CLOSED" && (
               <>
@@ -1006,12 +1180,19 @@ export function DailyLogTab() {
                 </CardHeader>
                 <CardContent>
                   {conflictEntries.length > 0 ? (
-                    <ul className="space-y-1">
-                      {conflictEntries.map((entry) => (
-                        <li key={entry.id} className="flex gap-3 py-1">
-                          <span className="text-xs font-mono text-navy-400 w-12 shrink-0">
-                            {formatTime(entry.eventTime)}
-                          </span>
+                    <ul className="space-y-2">
+                      {conflictEntries.map((entry: any) => (
+                        <li key={entry.id} className="border-l-2 border-red-500/60 pl-2 py-1">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <Badge className={`text-[9px] px-1.5 py-0 font-mono ${
+                              entry.directiveTag === "REVERSED DIRECTION" ? "bg-orange-600" : "bg-red-600"
+                            }`}>
+                              {entry.directiveTag || "CONFLICT"}
+                            </Badge>
+                            <span className="text-xs font-mono text-navy-400">
+                              {formatTime(entry.eventTime)}
+                            </span>
+                          </div>
                           <p className="text-xs text-red-200">{entry.masterLogLine}</p>
                         </li>
                       ))}

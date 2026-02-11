@@ -272,37 +272,141 @@ async function generateDailyLogDoc(events: LogEvent[], day: Day, projectName: st
     })
   );
 
-  const doc = new Document({
-    sections: [
-      {
-        children: [
-          new Paragraph({
-            text: `Daily Operations Log - ${projectName}`,
-            heading: HeadingLevel.HEADING_1,
-          }),
-          new Paragraph({
-            text: `Date: ${day.date} | Shift: ${day.shift || "Day"}`,
-            spacing: { after: 400 },
-          }),
-          ...eventsWithRenders.map((event) => {
-            const internalRender = event.renders?.find((r: { renderType: string }) => r.renderType === "internal_canvas_line");
-            const displayText = internalRender?.renderText || event.rawText;
-            return new Paragraph({
-              children: [
-                new TextRun({
-                  text: `[${formatTime(event.eventTime)}] `,
-                  bold: true,
-                }),
-                new TextRun({ text: displayText }),
-              ],
-              spacing: { after: 200 },
-            });
-          }),
-        ],
-      },
-    ],
+  const project = await storage.getProject(day.projectId);
+  const risks = await storage.getRiskItemsByDay(day.id);
+  const dives = await storage.getDivesByDay(day.id);
+  const closeout = (day as any).closeoutData as import("@shared/schema").QCCloseoutData | null;
+
+  const children: Paragraph[] = [];
+
+  children.push(
+    new Paragraph({ text: "PSG-TPL-0001 — Daily Shift Log", heading: HeadingLevel.HEADING_1 }),
+    new Paragraph({ text: `PRECISION SUBSEA GROUP LLC`, spacing: { after: 200 }, alignment: AlignmentType.CENTER,
+      children: [new TextRun({ text: "PRECISION SUBSEA GROUP LLC", bold: true, size: 28 })] }),
+  );
+
+  const headerFields = [
+    ["Date (local)", day.date],
+    ["Project/Site", `${projectName}${project?.jobsiteName ? ` — ${project.jobsiteName}` : ""}`],
+    ["Client/Contract", project?.clientName || "—"],
+    ["Shift", day.shift || "Day"],
+  ];
+
+  headerFields.forEach(([label, value]) => {
+    children.push(new Paragraph({
+      children: [
+        new TextRun({ text: `${label}: `, bold: true }),
+        new TextRun({ text: value || "—" }),
+      ],
+      spacing: { after: 80 },
+    }));
   });
 
+  children.push(new Paragraph({ text: "", spacing: { after: 200 } }));
+
+  children.push(new Paragraph({ text: "Team & Manning", heading: HeadingLevel.HEADING_2, spacing: { before: 300 } }));
+  const diverNames = dives.map(d => d.diverDisplayName || "—").filter((v, i, a) => a.indexOf(v) === i);
+  const teamFields = [
+    ["Divers", diverNames.join(", ") || "—"],
+    ["Total Dives", String(dives.length)],
+  ];
+  teamFields.forEach(([label, value]) => {
+    children.push(new Paragraph({
+      children: [new TextRun({ text: `${label}: `, bold: true }), new TextRun({ text: value })],
+      spacing: { after: 80 },
+    }));
+  });
+
+  children.push(new Paragraph({ text: "", spacing: { after: 200 } }));
+  children.push(new Paragraph({ text: "Rolling Event Log", heading: HeadingLevel.HEADING_2, spacing: { before: 300 } }));
+
+  eventsWithRenders.forEach((event) => {
+    const internalRender = event.renders?.find((r: { renderType: string }) => r.renderType === "internal_canvas_line");
+    const displayText = internalRender?.renderText || event.rawText;
+    children.push(new Paragraph({
+      children: [
+        new TextRun({ text: `[${formatTime(event.eventTime)}] `, bold: true }),
+        new TextRun({ text: displayText }),
+      ],
+      spacing: { after: 120 },
+    }));
+  });
+
+  if (closeout) {
+    children.push(new Paragraph({ text: "", spacing: { after: 200 } }));
+    children.push(new Paragraph({ text: "Deviations / Stop-Work / Lessons Learned", heading: HeadingLevel.HEADING_2, spacing: { before: 300 } }));
+    children.push(new Paragraph({ text: closeout.deviations || "None noted.", spacing: { after: 200 } }));
+
+    children.push(new Paragraph({ text: "End-of-Shift Closeout", heading: HeadingLevel.HEADING_2, spacing: { before: 300 } }));
+
+    const closeoutFields = [
+      ["Scope", closeout.scopeStatus === "complete" ? "Complete" : "Incomplete"],
+      ["Documentation", closeout.documentationStatus === "complete" ? "Complete" : "Incomplete"],
+      ["Exceptions", closeout.exceptions || "None Noted"],
+      ["Outstanding Issues", closeout.outstandingIssues || "None"],
+      ["Planned Work Next Shift", closeout.plannedNextShift || "—"],
+    ];
+    closeoutFields.forEach(([label, value]) => {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: `${label}: `, bold: true }), new TextRun({ text: value })],
+        spacing: { after: 80 },
+      }));
+    });
+
+    children.push(new Paragraph({ text: "", spacing: { after: 100 } }));
+    children.push(new Paragraph({
+      children: [new TextRun({ text: "SEI Advisories", bold: true, underline: {} })],
+      spacing: { before: 200, after: 80 },
+    }));
+    children.push(new Paragraph({
+      children: [new TextRun({ text: "Advised FOR: ", bold: true }), new TextRun({ text: closeout.advisedFor || "None" })],
+      spacing: { after: 80 },
+    }));
+    children.push(new Paragraph({
+      children: [new TextRun({ text: "Advised AGAINST: ", bold: true }), new TextRun({ text: closeout.advisedAgainst || "None" })],
+      spacing: { after: 80 },
+    }));
+
+    if (closeout.standingRisks && closeout.standingRisks.length > 0) {
+      children.push(new Paragraph({ text: "", spacing: { after: 100 } }));
+      children.push(new Paragraph({
+        children: [new TextRun({ text: "Standing Risks Referenced", bold: true, underline: {} })],
+        spacing: { before: 200, after: 80 },
+      }));
+      closeout.standingRisks.forEach(r => {
+        children.push(new Paragraph({
+          children: [
+            new TextRun({ text: `${r.riskId}`, bold: true }),
+            new TextRun({ text: ` — Status: ${r.status}` }),
+          ],
+          spacing: { after: 60 },
+        }));
+      });
+    }
+
+    children.push(new Paragraph({ text: "", spacing: { after: 200 } }));
+    children.push(new Paragraph({
+      children: [new TextRun({ text: "Log Closed By: ", bold: true }), new TextRun({ text: day.closedBy || "—" })],
+      spacing: { after: 80 },
+    }));
+    children.push(new Paragraph({
+      children: [new TextRun({ text: "Date/Time Closed: ", bold: true }), new TextRun({ text: day.closedAt ? new Date(day.closedAt).toLocaleString() : "—" })],
+      spacing: { after: 80 },
+    }));
+  }
+
+  children.push(new Paragraph({ text: "", spacing: { after: 300 } }));
+  children.push(new Paragraph({ text: "Sign-offs", heading: HeadingLevel.HEADING_2, spacing: { before: 300 } }));
+  children.push(new Paragraph({
+    children: [new TextRun({ text: "Dive Supervisor: ", bold: true }), new TextRun({ text: "______________________" })],
+    spacing: { after: 200 },
+  }));
+  children.push(new Paragraph({
+    children: [new TextRun({ text: "Client Rep (if required): ", bold: true }), new TextRun({ text: "______________________" })],
+    spacing: { after: 200 },
+  }));
+
+  const doc = new Document({ sections: [{ children }] });
   return Buffer.from(await Packer.toBuffer(doc));
 }
 
