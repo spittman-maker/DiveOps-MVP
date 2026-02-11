@@ -52,38 +52,39 @@ export function detectAudioFormat(buffer: Buffer): AudioFormat {
  * require seeking to find the audio track.
  */
 export async function convertToWav(audioBuffer: Buffer): Promise<Buffer> {
-  const inputPath = join(tmpdir(), `input-${randomUUID()}`);
-  const outputPath = join(tmpdir(), `output-${randomUUID()}.wav`);
+  const id = randomUUID();
+  const inputPath = join(tmpdir(), `input-${id}.webm`);
+  const outputPath = join(tmpdir(), `output-${id}.wav`);
 
   try {
-    // Write input to temp file (required for video containers that need seeking)
     await writeFile(inputPath, audioBuffer);
 
-    // Run ffmpeg with file paths
     await new Promise<void>((resolve, reject) => {
+      const stderrChunks: string[] = [];
       const ffmpeg = spawn("ffmpeg", [
+        "-y",
         "-i", inputPath,
-        "-vn",              // Extract audio only (ignore video track)
+        "-vn",
         "-f", "wav",
-        "-ar", "16000",     // 16kHz sample rate (good for speech)
-        "-ac", "1",         // Mono
+        "-ar", "16000",
+        "-ac", "1",
         "-acodec", "pcm_s16le",
-        "-y",               // Overwrite output
         outputPath,
       ]);
 
-      ffmpeg.stderr.on("data", () => {}); // Suppress logs
+      ffmpeg.stderr.on("data", (d) => stderrChunks.push(d.toString()));
       ffmpeg.on("close", (code) => {
         if (code === 0) resolve();
-        else reject(new Error(`ffmpeg exited with code ${code}`));
+        else {
+          console.error("ffmpeg stderr:", stderrChunks.join(""));
+          reject(new Error(`ffmpeg exited with code ${code}`));
+        }
       });
       ffmpeg.on("error", reject);
     });
 
-    // Read converted audio
     return await readFile(outputPath);
   } finally {
-    // Clean up temp files
     await unlink(inputPath).catch(() => {});
     await unlink(outputPath).catch(() => {});
   }
@@ -96,13 +97,19 @@ export async function convertToWav(audioBuffer: Buffer): Promise<Buffer> {
  */
 export async function ensureCompatibleFormat(
   audioBuffer: Buffer
-): Promise<{ buffer: Buffer; format: "wav" | "mp3" }> {
+): Promise<{ buffer: Buffer; format: "wav" | "mp3" | "webm" }> {
   const detected = detectAudioFormat(audioBuffer);
   if (detected === "wav") return { buffer: audioBuffer, format: "wav" };
   if (detected === "mp3") return { buffer: audioBuffer, format: "mp3" };
-  // Convert WebM, MP4, OGG, or unknown to WAV
-  const wavBuffer = await convertToWav(audioBuffer);
-  return { buffer: wavBuffer, format: "wav" };
+  if (detected === "webm") return { buffer: audioBuffer, format: "webm" };
+  // Convert MP4, OGG, or unknown to WAV via ffmpeg
+  try {
+    const wavBuffer = await convertToWav(audioBuffer);
+    return { buffer: wavBuffer, format: "wav" };
+  } catch (err) {
+    console.error("ffmpeg conversion failed, trying raw webm:", err);
+    return { buffer: audioBuffer, format: "webm" };
+  }
 }
 
 /**
