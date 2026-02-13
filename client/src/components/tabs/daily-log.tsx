@@ -265,6 +265,8 @@ export function DailyLogTab() {
     refetchInterval: 5000,
   });
 
+  const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
   const createEventMutation = useMutation({
     mutationFn: async (rawText: string) => {
       if (!currentDay || !activeProject) throw new Error("No active day or project");
@@ -277,6 +279,7 @@ export function DailyLogTab() {
           dayId: currentDay.id,
           projectId: activeProject.id,
           station: selectedStation || undefined,
+          clientTimezone,
         }),
       });
       if (!res.ok) throw new Error("Failed to create event");

@@ -44,6 +44,7 @@ const logEventSchema = z.object({
   projectId: z.string(),
   station: z.string().optional(),
   eventTimeOverride: z.string().optional(),
+  clientTimezone: z.string().optional(),
 });
 
 const editEventTimeSchema = z.object({
@@ -836,9 +837,30 @@ export async function registerRoutes(
       if (data.eventTimeOverride) {
         eventTime = new Date(data.eventTimeOverride);
       } else {
-        // Try to parse HHMM from raw text
+        // Try to parse HHMM from raw text — supervisor's entered time is law
         const parsedTime = parseEventTime(data.rawText, day.date);
-        eventTime = parsedTime || captureTime;
+        if (parsedTime) {
+          eventTime = parsedTime;
+        } else if (data.clientTimezone) {
+          // No time entered — use client's local clock time
+          // We store times so getUTCHours() returns the operational clock time,
+          // so construct a UTC Date whose H:M matches the user's local wall clock
+          try {
+            const formatter = new Intl.DateTimeFormat("en-US", {
+              timeZone: data.clientTimezone,
+              year: "numeric", month: "2-digit", day: "2-digit",
+              hour: "2-digit", minute: "2-digit", second: "2-digit",
+              hour12: false,
+            });
+            const parts = formatter.formatToParts(captureTime);
+            const get = (type: string) => parseInt(parts.find(p => p.type === type)?.value || "0", 10);
+            eventTime = new Date(Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second")));
+          } catch {
+            eventTime = captureTime;
+          }
+        } else {
+          eventTime = captureTime;
+        }
       }
       
       // Classify and extract
