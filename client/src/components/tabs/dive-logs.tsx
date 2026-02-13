@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Edit2, Sparkles } from "lucide-react";
+import { Edit2, Sparkles, ChevronDown, ChevronRight, BookOpen } from "lucide-react";
+import { NO_DECOM_TABLE } from "@shared/navy-dive-tables";
 
 interface RelatedLog {
   id: string;
@@ -179,6 +180,7 @@ function FieldRow({
 export function DiveLogsTab() {
   const { activeDay } = useProject();
   const queryClient = useQueryClient();
+  const [showNoDecompTable, setShowNoDecompTable] = useState(false);
 
   const { data: dives = [], isLoading } = useQuery<Dive[]>({
     queryKey: ["/api/days", activeDay?.id, "dives"],
@@ -243,16 +245,89 @@ export function DiveLogsTab() {
 
   return (
     <div className="h-full p-4">
-      <div className="mb-4">
-        <h2 className="text-lg font-semibold text-white">
-          PSG-LOG-01 — Dive Logs
-        </h2>
-        <p className="text-sm text-navy-400">
-          {activeDay
-            ? `All dives for ${activeDay.date}`
-            : "Select an active day to view dive logs"}
-        </p>
+      <div className="mb-4 flex items-start justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-white">
+            PSG-LOG-01 — Dive Logs
+          </h2>
+          <p className="text-sm text-navy-400">
+            {activeDay
+              ? `All dives for ${activeDay.date}`
+              : "Select an active day to view dive logs"}
+          </p>
+        </div>
+        <Button
+          data-testid="btn-toggle-no-decomp-table"
+          size="sm"
+          variant="outline"
+          className="border-amber-500/40 text-amber-400 hover:bg-amber-500/10 text-xs shrink-0"
+          onClick={() => setShowNoDecompTable(!showNoDecompTable)}
+        >
+          <BookOpen className="w-3 h-3 mr-1" />
+          No-D Table
+          {showNoDecompTable ? <ChevronDown className="w-3 h-3 ml-1" /> : <ChevronRight className="w-3 h-3 ml-1" />}
+        </Button>
       </div>
+
+      {showNoDecompTable && (
+        <Card className="bg-navy-900/80 border-amber-500/30 mb-4" data-testid="no-decomp-reference-table">
+          <CardHeader className="pb-2 pt-3">
+            <CardTitle className="text-amber-400 text-sm flex items-center gap-2">
+              <BookOpen className="w-4 h-4" />
+              TABLE 9-7 — No-Decompression Limits & Repetitive Group Designators
+            </CardTitle>
+            <p className="text-[10px] text-navy-400 mt-0.5">
+              U.S. Navy Diving Manual, Rev 7 — Verbatim. Depth in fsw. Bottom time in minutes. Group letters A–O.
+            </p>
+          </CardHeader>
+          <CardContent className="p-0 overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-navy-600">
+                  <th className="text-left px-2 py-1.5 text-amber-400 font-semibold sticky left-0 bg-navy-900/95 z-10 min-w-[70px]">
+                    Depth
+                  </th>
+                  <th className="text-center px-2 py-1.5 text-cyan-400 font-semibold min-w-[50px]">
+                    No-D Limit
+                  </th>
+                  {["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"].map(g => (
+                    <th key={g} className="text-center px-1.5 py-1.5 text-navy-300 font-mono font-bold min-w-[32px]">
+                      {g}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {NO_DECOM_TABLE.map(row => {
+                  const groupMap: Record<string, number> = {};
+                  row.entries.forEach(e => { groupMap[e.group] = e.maxBottomTime; });
+                  return (
+                    <tr key={row.depth} className="border-b border-navy-700/40 hover:bg-navy-700/20">
+                      <td className="px-2 py-1.5 text-white font-mono font-bold sticky left-0 bg-navy-900/95 z-10">
+                        {row.depth} fsw
+                      </td>
+                      <td className="text-center px-2 py-1.5 text-cyan-300 font-mono font-bold">
+                        {row.noStopLimit}
+                      </td>
+                      {["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"].map(g => (
+                        <td key={g} className={`text-center px-1.5 py-1.5 font-mono ${
+                          groupMap[g] != null
+                            ? groupMap[g] === row.noStopLimit
+                              ? "text-cyan-300 font-bold"
+                              : "text-navy-200"
+                            : "text-navy-700"
+                        }`}>
+                          {groupMap[g] != null ? groupMap[g] : "—"}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
 
       <ScrollArea className="h-[calc(100vh-180px)]">
         <div className="grid gap-6">
