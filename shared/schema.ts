@@ -278,6 +278,8 @@ export const days = pgTable("days", {
   closedBy: varchar("closed_by").references(() => users.id),
   closedAt: timestamp("closed_at"),
   closeoutData: jsonb("closeout_data").$type<QCCloseoutData>(),
+  defaultBreathingGas: text("default_breathing_gas"),
+  defaultFo2Percent: integer("default_fo2_percent"),
 }, (t) => ({
   projectDateIdx: index("days_project_date_idx").on(t.projectId, t.date),
 }));
@@ -346,6 +348,7 @@ export const dives = pgTable("dives", {
   verifier: text("verifier"),
   breathingGas: text("breathing_gas"),
   fo2Percent: integer("fo2_percent"),
+  breathingGasOverride: boolean("breathing_gas_override").default(false),
   eadFsw: integer("ead_fsw"),
   tableUsed: text("table_used"),
   scheduleUsed: text("schedule_used"),

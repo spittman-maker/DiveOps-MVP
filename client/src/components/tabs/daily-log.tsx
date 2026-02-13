@@ -196,6 +196,43 @@ export function DailyLogTab() {
     plannedNextShift: "",
   });
 
+  const [showShiftConfig, setShowShiftConfig] = useState(false);
+  const [shiftGas, setShiftGas] = useState<string>("");
+  const [shiftFo2, setShiftFo2] = useState<string>("");
+  const [gasUpdating, setGasUpdating] = useState(false);
+
+  useEffect(() => {
+    if (activeDay) {
+      setShiftGas((activeDay as any).defaultBreathingGas || "");
+      setShiftFo2((activeDay as any).defaultFo2Percent ? String((activeDay as any).defaultFo2Percent) : "");
+    }
+  }, [activeDay?.id, (activeDay as any)?.defaultBreathingGas, (activeDay as any)?.defaultFo2Percent]);
+
+  const handleSaveShiftGas = async () => {
+    if (!activeDay) return;
+    setGasUpdating(true);
+    try {
+      const res = await fetch(`/api/days/${activeDay.id}/breathing-gas`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          breathingGas: shiftGas || null,
+          fo2Percent: shiftGas === "Nitrox" && shiftFo2 ? parseInt(shiftFo2, 10) : null,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json();
+      toast({ title: `Shift breathing gas set to ${shiftGas || "NOT SET"}`, description: data.propagatedTo > 0 ? `Updated ${data.propagatedTo} dive(s)` : undefined });
+      queryClient.invalidateQueries({ queryKey: ["/api/days"] });
+      refreshDay?.();
+    } catch {
+      toast({ title: "Failed to update breathing gas", variant: "destructive" });
+    } finally {
+      setGasUpdating(false);
+    }
+  };
+
   const [expandedStations, setExpandedStations] = useState<Record<string, boolean>>({});
 
   const toggleStation = (station: string) => {
@@ -916,6 +953,73 @@ export function DailyLogTab() {
             )}
           </div>
         </div>
+
+        {currentDay && isSupervisor && currentDay.status !== "CLOSED" && (
+          <div className="border-b border-navy-600 bg-navy-800/50">
+            <button
+              data-testid="toggle-shift-config"
+              className="w-full px-3 py-1.5 flex items-center gap-2 text-xs text-navy-300 hover:text-amber-400 transition-colors"
+              onClick={() => setShowShiftConfig(!showShiftConfig)}
+            >
+              {showShiftConfig ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+              <span className="font-medium">SHIFT BREATHING MIX</span>
+              {(currentDay as any).defaultBreathingGas && (
+                <Badge className="text-[10px] bg-cyan-700 text-cyan-100 ml-1">
+                  {(currentDay as any).defaultBreathingGas}
+                  {(currentDay as any).defaultBreathingGas === "Nitrox" && (currentDay as any).defaultFo2Percent
+                    ? ` (${(currentDay as any).defaultFo2Percent}% O₂)` : ""}
+                </Badge>
+              )}
+              {!(currentDay as any).defaultBreathingGas && (
+                <span className="text-orange-400 text-[10px]">NOT SET</span>
+              )}
+            </button>
+            {showShiftConfig && (
+              <div className="px-3 pb-2 flex items-center gap-2 flex-wrap">
+                <select
+                  data-testid="select-shift-gas"
+                  value={shiftGas}
+                  onChange={(e) => {
+                    setShiftGas(e.target.value);
+                    if (e.target.value !== "Nitrox") setShiftFo2("");
+                  }}
+                  className="bg-navy-900 border border-navy-600 text-white text-xs rounded px-2 py-1 focus:outline-none focus:border-amber-500"
+                >
+                  <option value="">Not Set</option>
+                  <option value="Air">Air (21% O₂)</option>
+                  <option value="Nitrox">Nitrox (Custom FO₂)</option>
+                  <option value="O2">Pure O₂</option>
+                  <option value="HeO2">HeO₂</option>
+                </select>
+                {shiftGas === "Nitrox" && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-navy-400">FO₂%:</span>
+                    <input
+                      data-testid="input-shift-fo2"
+                      type="number"
+                      min="22"
+                      max="100"
+                      value={shiftFo2}
+                      onChange={(e) => setShiftFo2(e.target.value)}
+                      className="bg-navy-900 border border-navy-600 text-white text-xs rounded w-14 px-1.5 py-1 focus:outline-none focus:border-amber-500"
+                      placeholder="32"
+                    />
+                  </div>
+                )}
+                <Button
+                  data-testid="btn-save-shift-gas"
+                  size="sm"
+                  className="h-6 px-2 text-xs btn-gold-metallic hover:btn-gold-metallic"
+                  onClick={handleSaveShiftGas}
+                  disabled={gasUpdating}
+                >
+                  {gasUpdating ? <Loader2 className="w-3 h-3 animate-spin" /> : "Apply to All Dives"}
+                </Button>
+                <span className="text-[10px] text-navy-500">Sets default for all dives (individually overridden dives won't change)</span>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex-1 min-h-0 overflow-auto">
           <div className="p-4 space-y-2">

@@ -249,9 +249,15 @@ export function DiveLogsTab() {
 
   const handleSave = useCallback(
     (diveId: string, field: string, value: string) => {
-      patchDive.mutate({ diveId, field, value });
+      if (field === "breathingGas" || field === "fo2Percent") {
+        apiRequest("PATCH", `/api/dives/${diveId}`, { [field]: value, breathingGasOverride: true }).then(() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/days", activeDay?.id, "dives"] });
+        });
+      } else {
+        patchDive.mutate({ diveId, field, value });
+      }
     },
-    [patchDive],
+    [patchDive, activeDay?.id, queryClient],
   );
 
   return (

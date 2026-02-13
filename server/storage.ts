@@ -432,6 +432,14 @@ export class DbStorage implements IStorage {
     return updated;
   }
 
+  private async getDayBreathingDefaults(dayId: string): Promise<{ breathingGas: string | null; fo2Percent: number | null }> {
+    const day = await this.getDay(dayId);
+    return {
+      breathingGas: day?.defaultBreathingGas || null,
+      fo2Percent: day?.defaultFo2Percent ?? null,
+    };
+  }
+
   async getOrCreateDiveForDiver(dayId: string, projectId: string, diverId: string, station?: string): Promise<Dive> {
     const existingDives = await db.select().from(schema.dives)
       .where(and(eq(schema.dives.dayId, dayId), eq(schema.dives.diverId, diverId)))
@@ -449,6 +457,7 @@ export class DbStorage implements IStorage {
       return incompleteDive;
     }
     
+    const defaults = await this.getDayBreathingDefaults(dayId);
     const nextNumber = existingDives.length > 0 ? existingDives[0].diveNumber + 1 : 1;
     const [created] = await db.insert(schema.dives).values({
       dayId,
@@ -456,6 +465,8 @@ export class DbStorage implements IStorage {
       diverId,
       station: station || null,
       diveNumber: nextNumber,
+      breathingGas: defaults.breathingGas,
+      fo2Percent: defaults.fo2Percent,
     }).returning();
     return created!;
   }
@@ -512,6 +523,7 @@ export class DbStorage implements IStorage {
     if (matchingDives.length > 0) {
       const latest = matchingDives.sort((a, b) => b.diveNumber - a.diveNumber)[0];
       if (latest.rsTime) {
+        const defaults = await this.getDayBreathingDefaults(dayId);
         const nextNumber = allDayDives.length > 0 ? allDayDives[0].diveNumber + 1 : 1;
         const useName = !isInitials && displayName.length > 3 ? displayName :
           (latest.diverDisplayName && latest.diverDisplayName.length > 3 ? latest.diverDisplayName : displayName);
@@ -521,11 +533,14 @@ export class DbStorage implements IStorage {
           diverDisplayName: useName,
           station: station || latest.station || null,
           diveNumber: nextNumber,
+          breathingGas: defaults.breathingGas,
+          fo2Percent: defaults.fo2Percent,
         } as any).returning();
         return created!;
       }
     }
 
+    const defaults = await this.getDayBreathingDefaults(dayId);
     const nextNumber = allDayDives.length > 0 ? allDayDives[0].diveNumber + 1 : 1;
     const [created] = await db.insert(schema.dives).values({
       dayId,
@@ -533,6 +548,8 @@ export class DbStorage implements IStorage {
       diverDisplayName: displayName,
       station: station || null,
       diveNumber: nextNumber,
+      breathingGas: defaults.breathingGas,
+      fo2Percent: defaults.fo2Percent,
     } as any).returning();
     return created!;
   }

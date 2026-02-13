@@ -599,6 +599,38 @@ export async function registerRoutes(
     res.json(updated);
   });
 
+  app.patch("/api/days/:id/breathing-gas", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    const day = await storage.getDay(req.params.id);
+    if (!day) return res.status(404).json({ message: "Day not found" });
+
+    if (day.status === "CLOSED") {
+      const user = getUser(req);
+      if (!isGod(user.role)) {
+        return res.status(403).json({ message: "Day is closed. Only GOD can edit." });
+      }
+    }
+
+    const { breathingGas, fo2Percent } = req.body;
+    const updated = await storage.updateDay(req.params.id, {
+      defaultBreathingGas: breathingGas || null,
+      defaultFo2Percent: fo2Percent != null ? fo2Percent : null,
+    } as any);
+
+    const dives = await storage.getDivesByDay(req.params.id);
+    const propagated: string[] = [];
+    for (const dive of dives) {
+      if (!dive.breathingGasOverride) {
+        await storage.updateDive(dive.id, {
+          breathingGas: breathingGas || null,
+          fo2Percent: fo2Percent != null ? fo2Percent : null,
+        });
+        propagated.push(dive.id);
+      }
+    }
+
+    res.json({ day: updated, propagatedTo: propagated.length });
+  });
+
   app.post("/api/days/:id/close", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
     const user = getUser(req);
     const closeoutData = req.body?.closeoutData || undefined;
