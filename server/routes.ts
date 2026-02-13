@@ -1034,6 +1034,88 @@ export async function registerRoutes(
     }
   });
 
+  // Re-extract dives from existing log events for a day (admin only)
+  app.post("/api/days/:dayId/re-extract-dives", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const dayId = req.params.dayId;
+      const day = await storage.getDay(dayId);
+      if (!day) return res.status(404).json({ message: "Day not found" });
+
+      const events = await storage.getLogEventsByDay(dayId);
+      const diveEvents = events.filter(e => e.category === "dive_op");
+      let created = 0;
+      let updated = 0;
+
+      for (const event of diveEvents) {
+        const extracted = extractData(event.rawText);
+        if (!extracted.diveOperation) continue;
+
+        const diverIdentifiers = extracted.diverNames || extracted.diverInitials || [];
+        const station = event.station || null;
+
+        for (const identifier of diverIdentifiers) {
+          const isInit = identifier.length <= 3;
+          let dive;
+
+          if (isInit) {
+            const diver = await storage.getUserByInitials(identifier, day.projectId);
+            if (diver) {
+              dive = await storage.getOrCreateDiveForDiver(dayId, day.projectId, diver.id, station || undefined);
+              const bestName = diver.fullName || diver.username;
+              if (!dive.diverDisplayName || dive.diverDisplayName.trim().length <= 3) {
+                await storage.updateDive(dive.id, { diverDisplayName: bestName });
+              }
+            } else {
+              dive = await storage.getOrCreateDiveByDisplayName(dayId, day.projectId, identifier, station || undefined);
+            }
+          } else {
+            const nameParts = identifier.split(/[.\s]/);
+            const firstInitial = nameParts[0]?.charAt(0)?.toUpperCase() || "";
+            const lastName = nameParts[nameParts.length - 1] || "";
+            const searchInitials = `${firstInitial}${lastName.charAt(0).toUpperCase()}`;
+
+            const diver = await storage.getUserByInitials(searchInitials, day.projectId);
+            if (diver) {
+              dive = await storage.getOrCreateDiveForDiver(dayId, day.projectId, diver.id, station || undefined);
+              const bestName = diver.fullName || identifier;
+              if (!dive.diverDisplayName || dive.diverDisplayName.trim().length <= 3 || dive.diverDisplayName.trim().toLowerCase() !== bestName.toLowerCase()) {
+                await storage.updateDive(dive.id, { diverDisplayName: bestName });
+              }
+            } else {
+              dive = await storage.getOrCreateDiveByDisplayName(dayId, day.projectId, identifier, station || undefined);
+            }
+          }
+
+          if (dive) {
+            const eventTime = event.eventTime || event.captureTime;
+            const timeField = `${extracted.diveOperation}Time` as 'lsTime' | 'rbTime' | 'lbTime' | 'rsTime';
+            await storage.updateDiveTimes(dive.id, timeField, eventTime, extracted.depthFsw);
+
+            const rawStripped = event.rawText.replace(/^\d{3,4}\s*/, '').trim();
+            if (rawStripped) {
+              const currentDive = await storage.getDive(dive.id);
+              const existing = currentDive?.taskSummary;
+              if (existing) {
+                if (!existing.includes(rawStripped)) {
+                  await storage.updateDive(dive.id, { taskSummary: `${existing} | ${rawStripped}` });
+                }
+              } else {
+                await storage.updateDive(dive.id, { taskSummary: rawStripped });
+              }
+            }
+            created++;
+          }
+        }
+      }
+
+      const finalDives = await storage.getDivesByDay(dayId);
+      res.json({ message: `Re-extracted ${created} dive operations, ${finalDives.length} total dives`, totalDives: finalDives.length });
+    } catch (error) {
+      console.error("Re-extraction error:", error);
+      res.status(500).json({ message: "Re-extraction failed" });
+    }
+  });
+
   // Get all log events for a day (ordered by eventTime then captureTime)
   app.get("/api/days/:dayId/log-events", requireAuth, async (req: Request, res: Response) => {
     const events = await storage.getLogEventsByDay(req.params.dayId);

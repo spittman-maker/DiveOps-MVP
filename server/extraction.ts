@@ -211,6 +211,21 @@ function extractDiverNames(rawText: string): { names: string[]; initials: string
     }
   }
   
+  // Extract standalone initials (2-3 uppercase letters) that appear near dive operation keywords
+  // Supervisors often write "JM L/S" or "L/S BW" or "R/S CN" with just initials
+  const isDiveText = /\b(?:L\/?S|R\/?S|R\/?B|L\/?B|leave\s*surface|left\s*surface|reached?\s*surface|surfaced?|on\s*bottom|leaving\s*bottom|diver\s*(?:up|down))\b/i.test(rawText);
+  if (isDiveText) {
+    const standaloneInitials = rawText.match(INITIALS_PATTERN);
+    if (standaloneInitials) {
+      for (const m of standaloneInitials) {
+        const upper = m.toUpperCase();
+        if (!NON_INITIALS.has(upper) && !initials.includes(upper)) {
+          initials.push(upper);
+        }
+      }
+    }
+  }
+  
   return { names, initials };
 }
 
