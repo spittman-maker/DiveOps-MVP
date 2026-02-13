@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Edit2, Sparkles, ChevronDown, ChevronRight, BookOpen } from "lucide-react";
-import { NO_DECOM_TABLE } from "@shared/navy-dive-tables";
+import { NO_DECOM_TABLE, AIR_DECOM_TABLE } from "@shared/navy-dive-tables";
 
 interface RelatedLog {
   id: string;
@@ -181,6 +181,7 @@ export function DiveLogsTab() {
   const { activeDay } = useProject();
   const queryClient = useQueryClient();
   const [showNoDecompTable, setShowNoDecompTable] = useState(false);
+  const [showDecompTable, setShowDecompTable] = useState(false);
 
   const { data: dives = [], isLoading } = useQuery<Dive[]>({
     queryKey: ["/api/days", activeDay?.id, "dives"],
@@ -256,17 +257,30 @@ export function DiveLogsTab() {
               : "Select an active day to view dive logs"}
           </p>
         </div>
-        <Button
-          data-testid="btn-toggle-no-decomp-table"
-          size="sm"
-          variant="outline"
-          className="border-amber-500/40 text-amber-400 hover:bg-amber-500/10 text-xs shrink-0"
-          onClick={() => setShowNoDecompTable(!showNoDecompTable)}
-        >
-          <BookOpen className="w-3 h-3 mr-1" />
-          No-D Table
-          {showNoDecompTable ? <ChevronDown className="w-3 h-3 ml-1" /> : <ChevronRight className="w-3 h-3 ml-1" />}
-        </Button>
+        <div className="flex gap-2 shrink-0">
+          <Button
+            data-testid="btn-toggle-no-decomp-table"
+            size="sm"
+            variant="outline"
+            className={`text-xs ${showNoDecompTable ? "border-amber-400 text-amber-300 bg-amber-500/10" : "border-amber-500/40 text-amber-400 hover:bg-amber-500/10"}`}
+            onClick={() => setShowNoDecompTable(!showNoDecompTable)}
+          >
+            <BookOpen className="w-3 h-3 mr-1" />
+            No-D Table (9-7)
+            {showNoDecompTable ? <ChevronDown className="w-3 h-3 ml-1" /> : <ChevronRight className="w-3 h-3 ml-1" />}
+          </Button>
+          <Button
+            data-testid="btn-toggle-decomp-table"
+            size="sm"
+            variant="outline"
+            className={`text-xs ${showDecompTable ? "border-red-400 text-red-300 bg-red-500/10" : "border-red-500/40 text-red-400 hover:bg-red-500/10"}`}
+            onClick={() => setShowDecompTable(!showDecompTable)}
+          >
+            <BookOpen className="w-3 h-3 mr-1" />
+            Decomp Table (9-8)
+            {showDecompTable ? <ChevronDown className="w-3 h-3 ml-1" /> : <ChevronRight className="w-3 h-3 ml-1" />}
+          </Button>
+        </div>
       </div>
 
       {showNoDecompTable && (
@@ -323,6 +337,79 @@ export function DiveLogsTab() {
                     </tr>
                   );
                 })}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
+
+      {showDecompTable && (
+        <Card className="bg-navy-900/80 border-red-500/30 mb-4" data-testid="decomp-reference-table">
+          <CardHeader className="pb-2 pt-3">
+            <CardTitle className="text-red-400 text-sm flex items-center gap-2">
+              <BookOpen className="w-4 h-4" />
+              TABLE 9-8 — U.S. Navy Standard Air Decompression Table
+            </CardTitle>
+            <p className="text-[10px] text-navy-400 mt-0.5">
+              U.S. Navy Diving Manual, Rev 7 — Verbatim. Depth in fsw. Bottom time & stop times in minutes. Group letters A–O.
+            </p>
+          </CardHeader>
+          <CardContent className="p-0 overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-navy-600">
+                  <th className="text-left px-2 py-1.5 text-red-400 font-semibold sticky left-0 bg-navy-900/95 z-10 min-w-[70px]">
+                    Depth
+                  </th>
+                  <th className="text-center px-2 py-1.5 text-navy-300 font-semibold min-w-[55px]">
+                    BT (min)
+                  </th>
+                  <th className="text-center px-2 py-1.5 text-navy-300 font-semibold min-w-[110px]">
+                    Decompression Stops
+                  </th>
+                  <th className="text-center px-2 py-1.5 text-cyan-400 font-semibold min-w-[65px]">
+                    Total Decomp
+                  </th>
+                  <th className="text-center px-2 py-1.5 text-amber-400 font-semibold min-w-[50px]">
+                    Group
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {AIR_DECOM_TABLE.map(depthRow => (
+                  depthRow.entries.map((entry, idx) => (
+                    <tr key={`${depthRow.depth}-${entry.bottomTime}`} className="border-b border-navy-700/40 hover:bg-navy-700/20">
+                      {idx === 0 ? (
+                        <td
+                          className="px-2 py-1.5 text-white font-mono font-bold sticky left-0 bg-navy-900/95 z-10 align-top"
+                          rowSpan={depthRow.entries.length}
+                        >
+                          {depthRow.depth} fsw
+                        </td>
+                      ) : null}
+                      <td className="text-center px-2 py-1.5 text-white font-mono">
+                        {entry.bottomTime}
+                      </td>
+                      <td className="text-center px-2 py-1.5 font-mono">
+                        {entry.decompStops.length > 0 ? (
+                          <span className="text-red-300">
+                            {entry.decompStops.map(s => `${s.depth}ft/${s.time}min`).join(", ")}
+                          </span>
+                        ) : (
+                          <span className="text-green-400">No stops</span>
+                        )}
+                      </td>
+                      <td className={`text-center px-2 py-1.5 font-mono font-bold ${
+                        entry.totalDecompTime > 0 ? "text-red-300" : "text-green-400"
+                      }`}>
+                        {entry.totalDecompTime > 0 ? `${entry.totalDecompTime} min` : "0"}
+                      </td>
+                      <td className="text-center px-2 py-1.5 text-amber-300 font-mono font-bold">
+                        {entry.group}
+                      </td>
+                    </tr>
+                  ))
+                ))}
               </tbody>
             </table>
           </CardContent>
