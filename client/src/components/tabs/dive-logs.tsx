@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Edit2, Sparkles, ChevronDown, ChevronRight, BookOpen } from "lucide-react";
-import { NO_DECOM_TABLE, AIR_DECOM_TABLE } from "@shared/navy-dive-tables";
+import { NO_DECOM_TABLE, AIR_DECOM_TABLE, TABLE_DEPTHS, calculateEAD } from "@shared/navy-dive-tables";
 
 interface RelatedLog {
   id: string;
@@ -182,6 +182,8 @@ export function DiveLogsTab() {
   const queryClient = useQueryClient();
   const [showNoDecompTable, setShowNoDecompTable] = useState(false);
   const [showDecompTable, setShowDecompTable] = useState(false);
+  const [showEadTable, setShowEadTable] = useState(false);
+  const [showNitroxNoDTable, setShowNitroxNoDTable] = useState(false);
 
   const { data: dives = [], isLoading } = useQuery<Dive[]>({
     queryKey: ["/api/days", activeDay?.id, "dives"],
@@ -257,7 +259,7 @@ export function DiveLogsTab() {
               : "Select an active day to view dive logs"}
           </p>
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex gap-2 shrink-0 flex-wrap justify-end">
           <Button
             data-testid="btn-toggle-no-decomp-table"
             size="sm"
@@ -279,6 +281,28 @@ export function DiveLogsTab() {
             <BookOpen className="w-3 h-3 mr-1" />
             Decomp Table (9-8)
             {showDecompTable ? <ChevronDown className="w-3 h-3 ml-1" /> : <ChevronRight className="w-3 h-3 ml-1" />}
+          </Button>
+          <Button
+            data-testid="btn-toggle-ead-table"
+            size="sm"
+            variant="outline"
+            className={`text-xs ${showEadTable ? "border-cyan-400 text-cyan-300 bg-cyan-500/10" : "border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/10"}`}
+            onClick={() => setShowEadTable(!showEadTable)}
+          >
+            <BookOpen className="w-3 h-3 mr-1" />
+            EAD Table
+            {showEadTable ? <ChevronDown className="w-3 h-3 ml-1" /> : <ChevronRight className="w-3 h-3 ml-1" />}
+          </Button>
+          <Button
+            data-testid="btn-toggle-nitrox-nod-table"
+            size="sm"
+            variant="outline"
+            className={`text-xs ${showNitroxNoDTable ? "border-green-400 text-green-300 bg-green-500/10" : "border-green-500/40 text-green-400 hover:bg-green-500/10"}`}
+            onClick={() => setShowNitroxNoDTable(!showNitroxNoDTable)}
+          >
+            <BookOpen className="w-3 h-3 mr-1" />
+            Nitrox No-D
+            {showNitroxNoDTable ? <ChevronDown className="w-3 h-3 ml-1" /> : <ChevronRight className="w-3 h-3 ml-1" />}
           </Button>
         </div>
       </div>
@@ -415,6 +439,141 @@ export function DiveLogsTab() {
           </CardContent>
         </Card>
       )}
+
+      {showEadTable && (() => {
+        const nitroxMixes = [
+          { label: "EAN28", fo2: 0.28 },
+          { label: "EAN30", fo2: 0.30 },
+          { label: "EAN32", fo2: 0.32 },
+          { label: "EAN34", fo2: 0.34 },
+          { label: "EAN36", fo2: 0.36 },
+          { label: "EAN40", fo2: 0.40 },
+        ];
+        const depths = [40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190];
+        return (
+          <Card className="bg-navy-900/80 border-cyan-500/30 mb-4" data-testid="ead-reference-table">
+            <CardHeader className="pb-2 pt-3">
+              <CardTitle className="text-cyan-400 text-sm flex items-center gap-2">
+                <BookOpen className="w-4 h-4" />
+                Equivalent Air Depth (EAD) Reference Table
+              </CardTitle>
+              <p className="text-[10px] text-navy-400 mt-0.5">
+                EAD = (D + 33) x (1 - FO₂) / 0.79 - 33. Actual depth → EAD (fsw) → table depth used for lookup. Values rounded up (conservative).
+              </p>
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-navy-600">
+                    <th className="text-left px-2 py-1.5 text-cyan-400 font-semibold sticky left-0 bg-navy-900/95 z-10 min-w-[80px]">
+                      Actual Depth
+                    </th>
+                    {nitroxMixes.map(mix => (
+                      <th key={mix.label} className="text-center px-3 py-1.5 min-w-[80px]">
+                        <div className="text-green-400 font-bold">{mix.label}</div>
+                        <div className="text-navy-400 text-[9px]">{(mix.fo2 * 100).toFixed(0)}% O₂</div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {depths.map(depth => (
+                    <tr key={depth} className="border-b border-navy-700/40 hover:bg-navy-700/20">
+                      <td className="px-2 py-1.5 text-white font-mono font-bold sticky left-0 bg-navy-900/95 z-10">
+                        {depth} fsw
+                      </td>
+                      {nitroxMixes.map(mix => {
+                        const ead = calculateEAD(depth, mix.fo2);
+                        const tableDepth = TABLE_DEPTHS.find(d => d >= ead) || TABLE_DEPTHS[TABLE_DEPTHS.length - 1];
+                        const benefit = depth - ead;
+                        return (
+                          <td key={mix.label} className="text-center px-3 py-1.5 font-mono">
+                            <span className="text-cyan-300">{ead}</span>
+                            <span className="text-navy-500 mx-1">→</span>
+                            <span className="text-white font-bold">{tableDepth}</span>
+                            {benefit > 0 && (
+                              <span className="text-green-400 text-[9px] ml-1">-{benefit}</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+        );
+      })()}
+
+      {showNitroxNoDTable && (() => {
+        const nitroxMixes = [
+          { label: "Air", fo2: 0.21 },
+          { label: "EAN28", fo2: 0.28 },
+          { label: "EAN32", fo2: 0.32 },
+          { label: "EAN36", fo2: 0.36 },
+          { label: "EAN40", fo2: 0.40 },
+        ];
+        const depths = [40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150];
+        return (
+          <Card className="bg-navy-900/80 border-green-500/30 mb-4" data-testid="nitrox-nod-reference-table">
+            <CardHeader className="pb-2 pt-3">
+              <CardTitle className="text-green-400 text-sm flex items-center gap-2">
+                <BookOpen className="w-4 h-4" />
+                Nitrox No-Decompression Limits (via EAD)
+              </CardTitle>
+              <p className="text-[10px] text-navy-400 mt-0.5">
+                No-D limits derived from EAD applied to USN Table 9-7. Actual depth → EAD → air table no-stop limit at that EAD. Compare nitrox advantage vs. air.
+              </p>
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-navy-600">
+                    <th className="text-left px-2 py-1.5 text-green-400 font-semibold sticky left-0 bg-navy-900/95 z-10 min-w-[80px]">
+                      Actual Depth
+                    </th>
+                    {nitroxMixes.map(mix => (
+                      <th key={mix.label} className="text-center px-3 py-1.5 min-w-[80px]">
+                        <div className={mix.label === "Air" ? "text-navy-300 font-bold" : "text-green-400 font-bold"}>{mix.label}</div>
+                        <div className="text-navy-400 text-[9px]">{(mix.fo2 * 100).toFixed(0)}% O₂</div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {depths.map(depth => (
+                    <tr key={depth} className="border-b border-navy-700/40 hover:bg-navy-700/20">
+                      <td className="px-2 py-1.5 text-white font-mono font-bold sticky left-0 bg-navy-900/95 z-10">
+                        {depth} fsw
+                      </td>
+                      {nitroxMixes.map(mix => {
+                        const ead = mix.fo2 === 0.21 ? depth : calculateEAD(depth, mix.fo2);
+                        const tableDepth = TABLE_DEPTHS.find(d => d >= ead) || TABLE_DEPTHS[TABLE_DEPTHS.length - 1];
+                        const noDecompRow = NO_DECOM_TABLE.find(r => r.depth === tableDepth);
+                        const noStopLimit = noDecompRow ? noDecompRow.noStopLimit : 0;
+                        const airRow = NO_DECOM_TABLE.find(r => r.depth === depth);
+                        const airLimit = airRow ? airRow.noStopLimit : 0;
+                        const bonus = noStopLimit - airLimit;
+                        return (
+                          <td key={mix.label} className="text-center px-3 py-1.5 font-mono">
+                            <span className={`font-bold ${mix.label === "Air" ? "text-navy-200" : "text-green-300"}`}>
+                              {noStopLimit}
+                            </span>
+                            {mix.label !== "Air" && bonus > 0 && (
+                              <span className="text-green-500 text-[9px] ml-1">+{bonus}</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       <ScrollArea className="h-[calc(100vh-180px)]">
         <div className="grid gap-6">
