@@ -642,11 +642,10 @@ export function DailyLogTab() {
 
   const formatTime = (dateStr?: string) => {
     if (!dateStr) return "--:--";
-    return new Date(dateStr).toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
+    const d = new Date(dateStr);
+    const h = String(d.getUTCHours()).padStart(2, "0");
+    const m = String(d.getUTCMinutes()).padStart(2, "0");
+    return `${h}:${m}`;
   };
 
   const formatDate = (dateStr?: string) => {

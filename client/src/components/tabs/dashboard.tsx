@@ -272,7 +272,7 @@ function RecentLogsWidget() {
           <div className="flex justify-between items-center mb-0.5">
             <div className="flex items-center gap-1.5">
               <span className="text-amber-400 font-mono text-[10px]">
-                {new Date(log.eventTime).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}
+                {(() => { const d = new Date(log.eventTime); return `${String(d.getUTCHours()).padStart(2,"0")}:${String(d.getUTCMinutes()).padStart(2,"0")}`; })()}
               </span>
               <span className={`uppercase text-[9px] font-semibold ${categoryColor[log.category] || "text-navy-400"}`}>
                 {log.category === "dive_op" ? "DIVE" : log.category}

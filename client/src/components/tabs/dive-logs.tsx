@@ -64,11 +64,10 @@ function calculateDiveMinutes(lsTime?: string, lbTime?: string, rsTime?: string)
 
 function formatTime24(timeStr?: string): string {
   if (!timeStr) return "UNKNOWN";
-  return new Date(timeStr).toLocaleTimeString("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  const d = new Date(timeStr);
+  const h = String(d.getUTCHours()).padStart(2, "0");
+  const m = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${h}:${m}`;
 }
 
 function deriveInitials(name?: string): string {
@@ -492,7 +491,7 @@ export function DiveLogsTab() {
                           <div key={log.id} className="bg-navy-900/50 rounded px-3 py-2 border border-navy-700/50">
                             <div className="flex items-center gap-2 mb-0.5">
                               <span className="text-amber-400 font-mono text-[10px]">
-                                {new Date(log.eventTime).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}
+                                {formatTime24(log.eventTime)}
                               </span>
                               <Badge className="text-[9px] px-1 py-0 bg-navy-600">{log.category === "dive_op" ? "DIVE" : log.category}</Badge>
                               {log.station && <span className="text-[9px] text-cyan-400/60">{log.station}</span>}

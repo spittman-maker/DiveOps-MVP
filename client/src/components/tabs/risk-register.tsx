@@ -187,7 +187,7 @@ export function RiskRegisterTab() {
                   <span className="text-[10px] text-navy-500 uppercase">Trigger Event</span>
                   {risk.triggerEventTime && (
                     <span className="text-[10px] text-amber-400/60 font-mono">
-                      {new Date(risk.triggerEventTime).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}
+                      {(() => { const d = new Date(risk.triggerEventTime); return `${String(d.getUTCHours()).padStart(2,"0")}:${String(d.getUTCMinutes()).padStart(2,"0")}`; })()}
                     </span>
                   )}
                 </div>
