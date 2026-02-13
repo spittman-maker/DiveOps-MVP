@@ -262,15 +262,6 @@ export function DiveLogsTab() {
                       onSave={saveFn}
                     />
                   </FieldRow>
-                  <FieldRow label="Diver ID / Badge #">
-                    <EditableField
-                      diveId={dive.id}
-                      fieldName="diverBadgeId"
-                      value={dive.diverBadgeId}
-                      displayValue={dive.diverBadgeId || "UNKNOWN"}
-                      onSave={saveFn}
-                    />
-                  </FieldRow>
 
                   {/* 2. Dive Parameters */}
                   <SectionHeader title="Dive Parameters" />
