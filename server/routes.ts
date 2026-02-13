@@ -2338,5 +2338,196 @@ Respond with ONLY the updated JSON object. No other text.`;
     }
   });
 
+  // ────────────────────────────────────────────────────────────────────────────
+  // ML DATA EXPORT ENDPOINTS
+  // ────────────────────────────────────────────────────────────────────────────
+
+  app.get("/api/ml-export/stats", requireRole("ADMIN", "GOD"), async (_req: Request, res: Response) => {
+    try {
+      const { db } = await import("./db");
+      const { conversations, messages, logEvents } = await import("@shared/schema");
+      const { count } = await import("drizzle-orm");
+
+      const [convCount] = await db.select({ value: count() }).from(conversations);
+      const [msgCount] = await db.select({ value: count() }).from(messages);
+      const [eventCount] = await db.select({ value: count() }).from(logEvents);
+
+      res.json({
+        conversations: convCount?.value || 0,
+        messages: msgCount?.value || 0,
+        logEvents: eventCount?.value || 0,
+      });
+    } catch (error) {
+      console.error("ML export stats error:", error);
+      res.status(500).json({ message: "Failed to fetch ML export stats" });
+    }
+  });
+
+  app.get("/api/ml-export/conversations", requireRole("ADMIN", "GOD"), async (_req: Request, res: Response) => {
+    try {
+      const { db } = await import("./db");
+      const { conversations, messages } = await import("@shared/schema");
+      const { eq, asc } = await import("drizzle-orm");
+
+      const allConversations = await db.select().from(conversations);
+      const lines: string[] = [];
+
+      for (const conv of allConversations) {
+        const msgs = await db.select().from(messages)
+          .where(eq(messages.conversationId, conv.id))
+          .orderBy(asc(messages.createdAt));
+
+        if (msgs.length === 0) continue;
+
+        const chatMessages = msgs.map(m => ({
+          role: m.role,
+          content: m.content,
+          timestamp: m.createdAt?.toISOString() || null,
+        }));
+
+        lines.push(JSON.stringify({
+          conversation_id: conv.id,
+          title: conv.title,
+          created_at: conv.createdAt?.toISOString() || null,
+          message_count: chatMessages.length,
+          messages: chatMessages,
+        }));
+      }
+
+      res.setHeader("Content-Type", "application/x-ndjson");
+      res.setHeader("Content-Disposition", `attachment; filename="diveops_conversations_${new Date().toISOString().split('T')[0]}.jsonl"`);
+      res.send(lines.join("\n"));
+    } catch (error) {
+      console.error("ML conversation export error:", error);
+      res.status(500).json({ message: "Failed to export conversations" });
+    }
+  });
+
+  app.get("/api/ml-export/log-training", requireRole("ADMIN", "GOD"), async (_req: Request, res: Response) => {
+    try {
+      const { db } = await import("./db");
+      const { logEvents, days, projects } = await import("@shared/schema");
+      const { eq, asc } = await import("drizzle-orm");
+
+      const allEvents = await db.select({
+        event: logEvents,
+        dayDate: days.date,
+        projectName: projects.name,
+      })
+        .from(logEvents)
+        .leftJoin(days, eq(logEvents.dayId, days.id))
+        .leftJoin(projects, eq(logEvents.projectId, projects.id))
+        .orderBy(asc(logEvents.eventTime));
+
+      const lines: string[] = [];
+
+      for (const row of allEvents) {
+        const e = row.event;
+        lines.push(JSON.stringify({
+          id: e.id,
+          project: row.projectName || null,
+          day_date: row.dayDate || null,
+          station: e.station || null,
+          event_time: e.eventTime?.toISOString() || null,
+          raw_text: e.rawText,
+          category: e.category || null,
+          extracted_json: e.extractedJson || null,
+          structured_payload: e.structuredPayload || null,
+          ai_annotations: e.aiAnnotations || null,
+          validation_passed: e.validationPassed,
+        }));
+      }
+
+      res.setHeader("Content-Type", "application/x-ndjson");
+      res.setHeader("Content-Disposition", `attachment; filename="diveops_log_training_${new Date().toISOString().split('T')[0]}.jsonl"`);
+      res.send(lines.join("\n"));
+    } catch (error) {
+      console.error("ML log training export error:", error);
+      res.status(500).json({ message: "Failed to export log training data" });
+    }
+  });
+
+  app.get("/api/ml-export/full-bundle", requireRole("ADMIN", "GOD"), async (_req: Request, res: Response) => {
+    try {
+      const { db } = await import("./db");
+      const { conversations, messages, logEvents, days, projects, dives, riskItems } = await import("@shared/schema");
+      const { eq, asc } = await import("drizzle-orm");
+
+      const bundle: Record<string, any> = {
+        exported_at: new Date().toISOString(),
+        format_version: "1.0",
+        datasets: {},
+      };
+
+      const allConversations = await db.select().from(conversations);
+      const convData = [];
+      for (const conv of allConversations) {
+        const msgs = await db.select().from(messages)
+          .where(eq(messages.conversationId, conv.id))
+          .orderBy(asc(messages.createdAt));
+        convData.push({
+          id: conv.id,
+          title: conv.title,
+          created_at: conv.createdAt?.toISOString(),
+          messages: msgs.map(m => ({
+            role: m.role,
+            content: m.content,
+            timestamp: m.createdAt?.toISOString(),
+          })),
+        });
+      }
+      bundle.datasets.conversations = convData;
+
+      const allEvents = await db.select().from(logEvents).orderBy(asc(logEvents.eventTime));
+      bundle.datasets.log_events = allEvents.map(e => ({
+        id: e.id,
+        day_id: e.dayId,
+        station: e.station,
+        event_time: e.eventTime?.toISOString(),
+        raw_text: e.rawText,
+        category: e.category,
+        extracted_json: e.extractedJson,
+        structured_payload: e.structuredPayload,
+        ai_annotations: e.aiAnnotations,
+        validation_passed: e.validationPassed,
+      }));
+
+      const allDives = await db.select().from(dives).orderBy(asc(dives.lsTime));
+      bundle.datasets.dives = allDives.map(d => ({
+        id: d.id,
+        day_id: d.dayId,
+        diver: d.diverDisplayName,
+        dive_number: d.diveNumber,
+        station: d.station,
+        ls_time: d.lsTime?.toISOString(),
+        rb_time: d.rbTime?.toISOString(),
+        lb_time: d.lbTime?.toISOString(),
+        rs_time: d.rsTime?.toISOString(),
+        max_depth_fsw: d.maxDepthFsw,
+        task_summary: d.taskSummary,
+      }));
+
+      const allRisks = await db.select().from(riskItems);
+      bundle.datasets.risks = allRisks.map(r => ({
+        id: r.id,
+        risk_id: r.riskId,
+        description: r.description,
+        source: r.source,
+        category: r.category,
+        initial_risk_level: r.initialRiskLevel,
+        residual_risk: r.residualRisk,
+        mitigation: r.mitigation,
+        status: r.status,
+      }));
+
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Content-Disposition", `attachment; filename="diveops_ml_bundle_${new Date().toISOString().split('T')[0]}.json"`);
+      res.json(bundle);
+    } catch (error) {
+      console.error("ML full bundle export error:", error);
+      res.status(500).json({ message: "Failed to export full ML bundle" });
+    }
+  });
+
   return httpServer;
 }

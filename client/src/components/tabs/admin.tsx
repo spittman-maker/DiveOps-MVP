@@ -8,6 +8,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
+import { Download, Database, MessageSquare, FileText, Package } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
   DialogContent,
@@ -68,6 +70,166 @@ interface DirectoryFacility {
 
 const ROLES = ["GOD", "ADMIN", "SUPERVISOR", "DIVER"] as const;
 const FACILITY_TYPES = ["chamber", "hospital", "coastguard"] as const;
+
+function MLDataExportSection() {
+  const { toast } = useToast();
+  const [downloading, setDownloading] = useState<string | null>(null);
+
+  const { data: stats } = useQuery<{ conversations: number; messages: number; logEvents: number }>({
+    queryKey: ["ml-export-stats"],
+    queryFn: async () => {
+      const res = await fetch("/api/ml-export/stats", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch stats");
+      return res.json();
+    },
+  });
+
+  const handleDownload = async (endpoint: string, filename: string, label: string) => {
+    setDownloading(label);
+    try {
+      const res = await fetch(`/api/ml-export/${endpoint}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: `${label} exported successfully` });
+    } catch (error) {
+      toast({ title: `Failed to export ${label}`, variant: "destructive" });
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  const today = new Date().toISOString().split("T")[0];
+
+  return (
+    <ScrollArea className="h-[calc(100vh-240px)]">
+      <div className="grid gap-4">
+        <Card className="bg-navy-800/50 border-navy-600">
+          <CardHeader>
+            <CardTitle className="text-white text-base flex items-center gap-2">
+              <Database className="w-5 h-5 text-amber-400" />
+              ML Training Data Overview
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-navy-900/50 rounded-lg p-4 border border-navy-700">
+                <div className="flex items-center gap-2 mb-1">
+                  <MessageSquare className="w-4 h-4 text-amber-400" />
+                  <span className="text-navy-400 text-sm">Conversations</span>
+                </div>
+                <p data-testid="stat-conversations" className="text-2xl font-bold text-white">{stats?.conversations ?? "—"}</p>
+                <p className="text-navy-500 text-xs">{stats?.messages ?? 0} total messages</p>
+              </div>
+              <div className="bg-navy-900/50 rounded-lg p-4 border border-navy-700">
+                <div className="flex items-center gap-2 mb-1">
+                  <FileText className="w-4 h-4 text-amber-400" />
+                  <span className="text-navy-400 text-sm">Log Events</span>
+                </div>
+                <p data-testid="stat-log-events" className="text-2xl font-bold text-white">{stats?.logEvents ?? "—"}</p>
+                <p className="text-navy-500 text-xs">raw text + structured output pairs</p>
+              </div>
+              <div className="bg-navy-900/50 rounded-lg p-4 border border-navy-700">
+                <div className="flex items-center gap-2 mb-1">
+                  <Package className="w-4 h-4 text-amber-400" />
+                  <span className="text-navy-400 text-sm">Format</span>
+                </div>
+                <p className="text-lg font-bold text-white">JSONL</p>
+                <p className="text-navy-500 text-xs">ready for fine-tuning</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-navy-800/50 border-navy-600">
+          <CardHeader>
+            <CardTitle className="text-white text-base flex items-center gap-2">
+              <Download className="w-5 h-5 text-amber-400" />
+              Export Datasets
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-3 bg-navy-900/50 rounded-lg border border-navy-700">
+                <div>
+                  <p className="text-white font-medium">AI Conversations</p>
+                  <p className="text-navy-400 text-sm">All chat threads with system prompts, user inputs, and AI responses — JSONL format for fine-tuning</p>
+                </div>
+                <Button
+                  data-testid="button-export-conversations"
+                  className="btn-gold-metallic hover:btn-gold-metallic"
+                  disabled={downloading !== null}
+                  onClick={() => handleDownload("conversations", `diveops_conversations_${today}.jsonl`, "Conversations")}
+                >
+                  {downloading === "Conversations" ? "Exporting..." : "Download JSONL"}
+                </Button>
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-navy-900/50 rounded-lg border border-navy-700">
+                <div>
+                  <p className="text-white font-medium">Log Processing Training Data</p>
+                  <p className="text-navy-400 text-sm">Raw supervisor notes paired with AI-extracted structured output — ideal for training classification models</p>
+                </div>
+                <Button
+                  data-testid="button-export-log-training"
+                  className="btn-gold-metallic hover:btn-gold-metallic"
+                  disabled={downloading !== null}
+                  onClick={() => handleDownload("log-training", `diveops_log_training_${today}.jsonl`, "Log Training")}
+                >
+                  {downloading === "Log Training" ? "Exporting..." : "Download JSONL"}
+                </Button>
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-navy-900/50 rounded-lg border border-navy-700">
+                <div>
+                  <p className="text-white font-medium">Full ML Bundle</p>
+                  <p className="text-navy-400 text-sm">Complete dataset including conversations, log events, dives, and risks — single JSON file</p>
+                </div>
+                <Button
+                  data-testid="button-export-full-bundle"
+                  className="btn-gold-metallic hover:btn-gold-metallic"
+                  disabled={downloading !== null}
+                  onClick={() => handleDownload("full-bundle", `diveops_ml_bundle_${today}.json`, "Full Bundle")}
+                >
+                  {downloading === "Full Bundle" ? "Exporting..." : "Download JSON"}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-navy-800/50 border-navy-600">
+          <CardHeader>
+            <CardTitle className="text-white text-base">Data Format Reference</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3 text-sm">
+              <div>
+                <p className="text-amber-400 font-medium">Conversations (JSONL)</p>
+                <p className="text-navy-400">Each line = one conversation with full message history. Compatible with OpenAI fine-tuning format. Fields: conversation_id, title, messages[role, content, timestamp]</p>
+              </div>
+              <div>
+                <p className="text-amber-400 font-medium">Log Training Data (JSONL)</p>
+                <p className="text-navy-400">Each line = one log event. Input/output pairs: raw_text (supervisor input) mapped to category, extracted_json, structured_payload (AI-structured output). Ideal for training extraction/classification models.</p>
+              </div>
+              <div>
+                <p className="text-amber-400 font-medium">Full Bundle (JSON)</p>
+                <p className="text-navy-400">Single file with all datasets (conversations, log_events, dives, risks) plus metadata. Best for comprehensive analysis or building custom training pipelines.</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </ScrollArea>
+  );
+}
 
 export function AdminTab() {
   const { isAdmin, isGod } = useAuth();
@@ -444,6 +606,15 @@ export function AdminTab() {
           </TabsTrigger>
           {isGod && (
             <TabsTrigger
+              data-testid="admin-tab-ml-export"
+              value="ml-export"
+              className="data-[state=active]:bg-navy-700"
+            >
+              ML Data
+            </TabsTrigger>
+          )}
+          {isGod && (
+            <TabsTrigger
               data-testid="admin-tab-system"
               value="system"
               className="data-[state=active]:bg-navy-700"
@@ -657,6 +828,13 @@ export function AdminTab() {
             </div>
           </ScrollArea>
         </TabsContent>
+
+        {/* ───── ML DATA EXPORT TAB ───── */}
+        {isGod && (
+          <TabsContent value="ml-export" className="h-full mt-0">
+            <MLDataExportSection />
+          </TabsContent>
+        )}
 
         {/* ───── SYSTEM TAB ───── */}
         {isGod && (
