@@ -1065,6 +1065,51 @@ export async function registerRoutes(
   });
 
   // Edit log event raw text
+  app.patch("/api/log-events/:id/depth", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const { depthFsw } = req.body;
+      const depth = parseInt(depthFsw, 10);
+      if (isNaN(depth) || depth <= 0) {
+        return res.status(400).json({ message: "Valid depth (FSW) is required" });
+      }
+
+      const event = await storage.getLogEvent(req.params.id);
+      if (!event) return res.status(404).json({ message: "Log event not found" });
+
+      const extracted = (event.extractedJson || {}) as Record<string, any>;
+      extracted.depthFsw = depth;
+
+      const annotations = (event.aiAnnotations || []) as Array<{ type: string; message: string }>;
+      const filteredAnnotations = annotations.filter(
+        a => !a.message.includes("no depth (FSW) specified")
+      );
+
+      await storage.updateLogEvent(req.params.id, {
+        extractedJson: extracted,
+        aiAnnotations: filteredAnnotations,
+      });
+
+      const dives = await storage.getDivesByDay(event.dayId);
+      const rawDiverName = extracted.diverName || extracted.diverInitials || "";
+      const diverName = typeof rawDiverName === "string" ? rawDiverName : String(rawDiverName || "");
+      if (diverName) {
+        const matchedDive = dives.find(d =>
+          d.diverDisplayName?.toLowerCase().includes(diverName.toLowerCase()) ||
+          d.diverBadgeId?.toLowerCase() === diverName.toLowerCase()
+        );
+        if (matchedDive) {
+          await storage.updateDive(matchedDive.id, { maxDepthFsw: depth });
+        }
+      }
+
+      const updated = await storage.getLogEvent(req.params.id);
+      res.json(updated);
+    } catch (error) {
+      console.error("Depth update error:", error);
+      res.status(500).json({ message: "Failed to update depth" });
+    }
+  });
+
   app.patch("/api/log-events/:id", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
       const { rawText, editReason } = req.body;

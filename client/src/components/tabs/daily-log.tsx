@@ -20,7 +20,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Mic, Square, CheckCircle, Edit2, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Mic, Square, CheckCircle, Edit2, ChevronDown, ChevronRight, Loader2, ArrowRight } from "lucide-react";
 
 const COMMON_STATIONS = ["Dive Team 1", "Dive Team 2", "Dive Team 3", "Subcontractor Dive Team 1", "Subcontractor Dive Team 2", "Night Shift"];
 
@@ -99,6 +100,72 @@ interface MasterLogData {
     directivesCount: number;
     extractedDiverInitials?: string[];
   };
+}
+
+function DepthPrompt({ eventId }: { eventId: string }) {
+  const [depth, setDepth] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const handleSubmit = async () => {
+    const val = parseInt(depth, 10);
+    if (isNaN(val) || val <= 0) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/log-events/${eventId}/depth`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ depthFsw: val }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setSaved(true);
+      queryClient.invalidateQueries({ queryKey: ["/api/days"] });
+      toast({ title: `Depth set to ${val} FSW` });
+    } catch {
+      toast({ title: "Failed to save depth", variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (saved) {
+    return (
+      <div className="flex items-center gap-1.5 text-xs rounded px-2 py-1 bg-green-900/30 text-green-300">
+        <CheckCircle className="w-3 h-3" />
+        <span>Depth recorded: {depth} FSW</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 text-xs rounded px-2 py-1.5 bg-amber-900/30 border border-amber-500/30" data-testid={`depth-prompt-${eventId}`}>
+      <span className="text-amber-300 font-semibold shrink-0">DEPTH?</span>
+      <span className="text-amber-200/80 shrink-0">Dive start detected — enter depth:</span>
+      <Input
+        data-testid={`depth-input-${eventId}`}
+        type="number"
+        min="1"
+        placeholder="FSW"
+        className="h-6 w-20 text-xs bg-navy-800 border-amber-500/40 text-white px-2"
+        value={depth}
+        onChange={(e) => setDepth(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
+        disabled={submitting}
+      />
+      <Button
+        data-testid={`depth-submit-${eventId}`}
+        size="sm"
+        className="h-6 px-2 text-xs btn-gold-metallic hover:btn-gold-metallic"
+        onClick={handleSubmit}
+        disabled={submitting || !depth}
+      >
+        {submitting ? <Loader2 className="w-3 h-3 animate-spin" /> : <ArrowRight className="w-3 h-3" />}
+      </Button>
+    </div>
+  );
 }
 
 export function DailyLogTab() {
@@ -941,23 +1008,31 @@ export function DailyLogTab() {
                 )}
                 {event.aiAnnotations && event.aiAnnotations.length > 0 && (
                   <div className="mt-1.5 space-y-1" data-testid={`annotations-${event.id}`}>
-                    {event.aiAnnotations.map((ann, i) => (
-                      <div key={i} className={`flex items-start gap-1.5 text-xs rounded px-2 py-1 ${
-                        ann.type === "typo" ? "bg-blue-900/30 text-blue-300" :
-                        ann.type === "missing_info" ? "bg-yellow-900/30 text-yellow-300" :
-                        ann.type === "safety_flag" ? "bg-red-900/30 text-red-300" :
-                        ann.type === "ambiguous" ? "bg-orange-900/30 text-orange-300" :
-                        "bg-navy-700/50 text-navy-300"
-                      }`}>
-                        <span className="font-semibold shrink-0">
-                          {ann.type === "typo" ? "TYPO" :
-                           ann.type === "missing_info" ? "MISSING" :
-                           ann.type === "safety_flag" ? "SAFETY" :
-                           ann.type === "ambiguous" ? "CHECK" : "NOTE"}:
-                        </span>
-                        <span>{ann.message}</span>
-                      </div>
-                    ))}
+                    {event.aiAnnotations.map((ann, i) => {
+                      const isDepthMissing = ann.type === "missing_info" && ann.message.includes("no depth (FSW)");
+                      if (isDepthMissing) {
+                        return (
+                          <DepthPrompt key={i} eventId={event.id} />
+                        );
+                      }
+                      return (
+                        <div key={i} className={`flex items-start gap-1.5 text-xs rounded px-2 py-1 ${
+                          ann.type === "typo" ? "bg-blue-900/30 text-blue-300" :
+                          ann.type === "missing_info" ? "bg-yellow-900/30 text-yellow-300" :
+                          ann.type === "safety_flag" ? "bg-red-900/30 text-red-300" :
+                          ann.type === "ambiguous" ? "bg-orange-900/30 text-orange-300" :
+                          "bg-navy-700/50 text-navy-300"
+                        }`}>
+                          <span className="font-semibold shrink-0">
+                            {ann.type === "typo" ? "TYPO" :
+                             ann.type === "missing_info" ? "MISSING" :
+                             ann.type === "safety_flag" ? "SAFETY" :
+                             ann.type === "ambiguous" ? "CHECK" : "NOTE"}:
+                          </span>
+                          <span>{ann.message}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
