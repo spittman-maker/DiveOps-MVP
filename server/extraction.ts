@@ -165,6 +165,19 @@ const DIVER_NAME_PATTERNS = [
   /(?:Diver\s+)?([A-Z][a-z]+)\s+([A-Z][a-z]+)/g,
 ];
 
+const NON_NAME_WORDS = new Set([
+  "Of", "The", "And", "For", "Per", "Via", "With", "From", "Into", "Onto", "Upon",
+  "About", "Above", "After", "Before", "Below", "Between", "During", "Under",
+  "North", "South", "East", "West", "Bravo", "Alpha", "Charlie", "Delta",
+  "Start", "Stop", "Continue", "Complete", "Secure", "Break", "Set", "Run",
+  "Hard", "Soft", "New", "Old", "Good", "Bad", "All", "Not", "Out", "Off",
+  "Down", "Left", "Right", "Back", "Over", "Side", "Line", "Area",
+  "Dive", "Diver", "Work", "Pier", "Cell", "Pump", "Hose", "Port",
+  "Shift", "Then", "Also", "Still", "Near", "Here", "There", "Some",
+  "Each", "Both", "Well", "Done", "Hold", "Move", "Pull", "Push",
+  "Open", "Close", "Clear", "Clean", "Check", "Mark", "Note",
+]);
+
 function extractDiverNames(rawText: string): { names: string[]; initials: string[] } {
   const names: string[] = [];
   const initials: string[] = [];
@@ -177,6 +190,7 @@ function extractDiverNames(rawText: string): { names: string[]; initials: string
       if (/^(Diver\s+)?[A-Z]\.\s*[A-Z][a-z]+/.test(fullMatch)) {
         const first = match[1];
         const last = match[2];
+        if (NON_NAME_WORDS.has(last)) continue;
         const name = `${first}.${last}`;
         if (!names.includes(name)) {
           names.push(name);
@@ -186,22 +200,13 @@ function extractDiverNames(rawText: string): { names: string[]; initials: string
       } else if (/^(Diver\s+)?[A-Z][a-z]+\s+[A-Z][a-z]+/.test(fullMatch)) {
         const first = match[1];
         const last = match[2];
+        if (NON_NAME_WORDS.has(first) || NON_NAME_WORDS.has(last)) continue;
         const name = `${first} ${last}`;
         if (!names.includes(name) && !["Diver RS", "Diver LS", "Diver LB", "Diver RB"].some(s => fullMatch.includes(s))) {
           names.push(name);
           const init = `${first[0]}${last[0]}`.toUpperCase();
           if (!initials.includes(init)) initials.push(init);
         }
-      }
-    }
-  }
-  
-  const standaloneInitials = rawText.match(INITIALS_PATTERN);
-  if (standaloneInitials) {
-    for (const m of standaloneInitials) {
-      const upper = m.toUpperCase();
-      if (!NON_INITIALS.has(upper) && !initials.includes(upper)) {
-        initials.push(upper);
       }
     }
   }
