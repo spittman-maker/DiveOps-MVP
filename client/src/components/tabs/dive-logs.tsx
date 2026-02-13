@@ -1,12 +1,11 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useProject } from "@/hooks/use-project";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Edit2, Sparkles, ChevronDown, ChevronRight, BookOpen } from "lucide-react";
+import { Edit2, Sparkles, ChevronDown, ChevronRight, BookOpen, ArrowDown, X } from "lucide-react";
 import { NO_DECOM_TABLE, AIR_DECOM_TABLE, TABLE_DEPTHS, calculateEAD } from "@shared/navy-dive-tables";
 
 interface RelatedLog {
@@ -184,6 +183,15 @@ export function DiveLogsTab() {
   const [showDecompTable, setShowDecompTable] = useState(false);
   const [showEadTable, setShowEadTable] = useState(false);
   const [showNitroxNoDTable, setShowNitroxNoDTable] = useState(false);
+  const diveLogsRef = useRef<HTMLDivElement>(null);
+
+  const anyTableOpen = showNoDecompTable || showDecompTable || showEadTable || showNitroxNoDTable;
+  const closeAllTables = () => {
+    setShowNoDecompTable(false);
+    setShowDecompTable(false);
+    setShowEadTable(false);
+    setShowNitroxNoDTable(false);
+  };
 
   const { data: dives = [], isLoading } = useQuery<Dive[]>({
     queryKey: ["/api/days", activeDay?.id, "dives"],
@@ -247,7 +255,7 @@ export function DiveLogsTab() {
   );
 
   return (
-    <div className="h-full p-4">
+    <div className="h-full p-4 overflow-y-auto">
       <div className="mb-4 flex items-start justify-between">
         <div>
           <h2 className="text-lg font-semibold text-white">
@@ -575,8 +583,36 @@ export function DiveLogsTab() {
         );
       })()}
 
-      <ScrollArea className="h-[calc(100vh-180px)]">
-        <div className="grid gap-6">
+      {anyTableOpen && (
+        <div className="flex justify-center mb-4 gap-3">
+          <Button
+            data-testid="btn-back-to-logs"
+            size="sm"
+            variant="outline"
+            className="border-navy-500 text-navy-300 hover:bg-navy-700/30 text-xs"
+            onClick={() => {
+              closeAllTables();
+            }}
+          >
+            <X className="w-3 h-3 mr-1" />
+            Close Tables
+          </Button>
+          <Button
+            data-testid="btn-scroll-to-logs"
+            size="sm"
+            variant="outline"
+            className="border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10 text-xs"
+            onClick={() => {
+              diveLogsRef.current?.scrollIntoView({ behavior: "smooth" });
+            }}
+          >
+            <ArrowDown className="w-3 h-3 mr-1" />
+            Jump to Dive Logs
+          </Button>
+        </div>
+      )}
+
+        <div ref={diveLogsRef} className="grid gap-6">
           {dives.map((dive) => {
             const diveMin = calculateDiveMinutes(dive.lsTime, dive.lbTime, dive.rsTime);
             const saveFn = (field: string, value: string) =>
@@ -728,7 +764,7 @@ export function DiveLogsTab() {
                       diveId={dive.id}
                       fieldName="breathingGas"
                       value={dive.breathingGas}
-                      displayValue={dive.breathingGas || "Air"}
+                      displayValue={dive.breathingGas || "NOT SET — click to specify"}
                       onSave={saveFn}
                     />
                   </FieldRow>
@@ -737,7 +773,7 @@ export function DiveLogsTab() {
                       diveId={dive.id}
                       fieldName="fo2Percent"
                       value={dive.fo2Percent}
-                      displayValue={dive.fo2Percent != null ? `${dive.fo2Percent}%` : "21% (Air)"}
+                      displayValue={dive.fo2Percent != null ? `${dive.fo2Percent}%` : "NOT SET"}
                       onSave={saveFn}
                     />
                   </FieldRow>
@@ -781,15 +817,15 @@ export function DiveLogsTab() {
                       size="sm"
                       variant="outline"
                       className="border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10 text-xs"
-                      disabled={computeTable.isPending || (!dive.maxDepthFsw)}
+                      disabled={computeTable.isPending || (!dive.maxDepthFsw) || (!dive.breathingGas)}
                       onClick={() => computeTable.mutate({
                         diveId: dive.id,
-                        breathingGas: dive.breathingGas || "Air",
+                        breathingGas: dive.breathingGas!,
                         fo2Percent: dive.fo2Percent ?? undefined,
                       })}
                     >
                       <Sparkles className="w-3 h-3 mr-1" />
-                      {!dive.maxDepthFsw ? "Set Depth First" : "Compute Table & Schedule"}
+                      {!dive.maxDepthFsw ? "Set Depth First" : !dive.breathingGas ? "Set Breathing Gas First" : "Compute Table & Schedule"}
                     </Button>
                   </div>
 
@@ -916,7 +952,6 @@ export function DiveLogsTab() {
             </div>
           )}
         </div>
-      </ScrollArea>
     </div>
   );
 }

@@ -344,7 +344,7 @@ export const dives = pgTable("dives", {
   installMaterialIds: text("install_material_ids"),
   qcDisposition: text("qc_disposition").$type<"Pass" | "Rework" | "Hold" | "Not Stated">(),
   verifier: text("verifier"),
-  breathingGas: text("breathing_gas").default("Air"),
+  breathingGas: text("breathing_gas"),
   fo2Percent: integer("fo2_percent"),
   eadFsw: integer("ead_fsw"),
   tableUsed: text("table_used"),
