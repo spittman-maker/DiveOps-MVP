@@ -32,6 +32,12 @@ interface Dive {
   lbTime?: string;
   rsTime?: string;
   maxDepthFsw?: number;
+  breathingGas?: string;
+  fo2Percent?: number;
+  eadFsw?: number;
+  tableUsed?: string;
+  scheduleUsed?: string;
+  repetitiveGroup?: string;
   taskSummary?: string;
   toolsEquipment?: string;
   installMaterialIds?: string;
@@ -39,6 +45,7 @@ interface Dive {
   verifier?: string;
   decompRequired?: string;
   decompMethod?: string;
+  decompStops?: string;
   postDiveStatus?: string;
   photoVideoRefs?: string;
   supervisorInitials?: string;
@@ -216,6 +223,17 @@ export function DiveLogsTab() {
     },
   });
 
+  const computeTable = useMutation({
+    mutationFn: async ({ diveId, breathingGas, fo2Percent }: { diveId: string; breathingGas?: string; fo2Percent?: number }) => {
+      await apiRequest("POST", `/api/dives/${diveId}/compute-table`, { breathingGas, fo2Percent });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/days", activeDay?.id, "dives"],
+      });
+    },
+  });
+
   const handleSave = useCallback(
     (diveId: string, field: string, value: string) => {
       patchDive.mutate({ diveId, field, value });
@@ -382,26 +400,77 @@ export function DiveLogsTab() {
                     </span>
                   </FieldRow>
 
-                  {/* 5. Decompression */}
-                  <SectionHeader title="Decompression" />
-                  <FieldRow label="Decompression Required? (Y/N)">
+                  {/* 5. Dive Table & Decompression */}
+                  <SectionHeader title="Dive Table & Decompression" />
+                  <FieldRow label="Breathing Gas">
                     <EditableField
                       diveId={dive.id}
-                      fieldName="decompRequired"
-                      value={dive.decompRequired}
-                      displayValue={dive.decompRequired || "UNKNOWN"}
+                      fieldName="breathingGas"
+                      value={dive.breathingGas}
+                      displayValue={dive.breathingGas || "Air"}
                       onSave={saveFn}
                     />
                   </FieldRow>
-                  <FieldRow label="Method / Table">
+                  <FieldRow label="FO₂ %">
                     <EditableField
                       diveId={dive.id}
-                      fieldName="decompMethod"
-                      value={dive.decompMethod}
-                      displayValue={dive.decompMethod || "UNKNOWN"}
+                      fieldName="fo2Percent"
+                      value={dive.fo2Percent}
+                      displayValue={dive.fo2Percent != null ? `${dive.fo2Percent}%` : "21% (Air)"}
                       onSave={saveFn}
                     />
                   </FieldRow>
+                  {dive.eadFsw != null && (
+                    <FieldRow label="EAD (fsw)">
+                      <span className="text-cyan-400 font-mono">{dive.eadFsw}</span>
+                    </FieldRow>
+                  )}
+                  <FieldRow label="Table Used">
+                    <span className={dive.tableUsed ? "text-white" : "text-yellow-400 italic"}>
+                      {dive.tableUsed || "Not Computed"}
+                    </span>
+                  </FieldRow>
+                  <FieldRow label="Schedule">
+                    <span className={dive.scheduleUsed ? "text-white font-mono" : "text-yellow-400 italic"}>
+                      {dive.scheduleUsed || "Not Computed"}
+                    </span>
+                  </FieldRow>
+                  <FieldRow label="Repetitive Group">
+                    <span className={dive.repetitiveGroup ? "text-amber-300 font-bold font-mono text-base" : "text-yellow-400 italic"}>
+                      {dive.repetitiveGroup || "Not Computed"}
+                    </span>
+                  </FieldRow>
+                  <FieldRow label="Decompression Required?">
+                    <span className={
+                      dive.decompRequired === "Y" ? "text-red-400 font-bold" :
+                      dive.decompRequired === "N" ? "text-green-400" :
+                      "text-yellow-400 italic"
+                    }>
+                      {dive.decompRequired === "Y" ? "YES" : dive.decompRequired === "N" ? "NO" : "UNKNOWN"}
+                    </span>
+                  </FieldRow>
+                  {dive.decompStops && (
+                    <FieldRow label="Decompression Stops">
+                      <span className="text-red-300 font-mono text-xs">{dive.decompStops}</span>
+                    </FieldRow>
+                  )}
+                  <div className="mt-2">
+                    <Button
+                      data-testid={`btn-compute-table-${dive.id}`}
+                      size="sm"
+                      variant="outline"
+                      className="border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10 text-xs"
+                      disabled={computeTable.isPending || (!dive.maxDepthFsw)}
+                      onClick={() => computeTable.mutate({
+                        diveId: dive.id,
+                        breathingGas: dive.breathingGas || "Air",
+                        fo2Percent: dive.fo2Percent ?? undefined,
+                      })}
+                    >
+                      <Sparkles className="w-3 h-3 mr-1" />
+                      {!dive.maxDepthFsw ? "Set Depth First" : "Compute Table & Schedule"}
+                    </Button>
+                  </div>
 
                   {/* 6. Post-Dive Status */}
                   <SectionHeader title="Post-Dive Status" />

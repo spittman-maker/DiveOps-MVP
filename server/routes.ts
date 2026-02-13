@@ -9,6 +9,7 @@ import { generateAIRenders } from "./ai-drafting";
 import { generateShiftExport } from "./document-export";
 import { speechToTextStream, ensureCompatibleFormat } from "./replit_integrations/audio/client";
 import type { User, UserRole, DayStatus } from "@shared/schema";
+import { lookupDiveTable } from "@shared/navy-dive-tables";
 import { z } from "zod";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -1347,13 +1348,15 @@ export async function registerRoutes(
       const allowedFields = [
         "diverDisplayName", "diverBadgeId", "station", "workLocation",
         "maxDepthFsw", "taskSummary", "toolsEquipment", "installMaterialIds",
-        "qcDisposition", "verifier", "decompRequired", "decompMethod",
+        "qcDisposition", "verifier", "breathingGas", "fo2Percent", "eadFsw",
+        "tableUsed", "scheduleUsed", "repetitiveGroup",
+        "decompRequired", "decompMethod", "decompStops",
         "postDiveStatus", "photoVideoRefs", "supervisorInitials", "notes",
         "lsTime", "rbTime", "lbTime", "rsTime",
       ];
       
       const timeFields = ["lsTime", "rbTime", "lbTime", "rsTime"];
-      const numericFields = ["maxDepthFsw"];
+      const numericFields = ["maxDepthFsw", "fo2Percent", "eadFsw"];
 
       const updates: Record<string, any> = {};
       for (const field of allowedFields) {
@@ -1405,6 +1408,70 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Dive update error:", error);
       res.status(500).json({ message: "Failed to update dive" });
+    }
+  });
+
+  // Compute dive table/schedule for a dive based on depth & bottom time
+  app.post("/api/dives/:id/compute-table", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const dive = await storage.getDive(req.params.id);
+      if (!dive) return res.status(404).json({ message: "Dive not found" });
+
+      const depthFsw = req.body.maxDepthFsw ?? dive.maxDepthFsw;
+      const breathingGas = req.body.breathingGas ?? dive.breathingGas ?? "Air";
+      const fo2Percent = req.body.fo2Percent ?? dive.fo2Percent ?? (breathingGas === "Air" ? 21 : null);
+
+      let bottomTimeMinutes: number | null = null;
+      if (req.body.bottomTimeMinutes != null) {
+        bottomTimeMinutes = Number(req.body.bottomTimeMinutes);
+      } else if (dive.lsTime && dive.lbTime) {
+        const ls = new Date(dive.lsTime).getTime();
+        const lb = new Date(dive.lbTime).getTime();
+        let diff = lb - ls;
+        if (diff < 0) diff += 24 * 60 * 60 * 1000;
+        bottomTimeMinutes = Math.ceil(diff / 60000);
+      }
+
+      if (depthFsw == null) {
+        return res.status(400).json({ message: "Max depth (fsw) is required to compute the table" });
+      }
+      if (bottomTimeMinutes == null) {
+        return res.status(400).json({ message: "Bottom time is required. Either provide bottomTimeMinutes or ensure LS and LB times are set." });
+      }
+
+      const result = lookupDiveTable(depthFsw, bottomTimeMinutes, breathingGas, fo2Percent ?? undefined);
+
+      const updates: Record<string, any> = {
+        breathingGas,
+        fo2Percent: fo2Percent ?? null,
+        eadFsw: result.eadFsw ?? null,
+        tableUsed: result.tableUsed,
+        scheduleUsed: result.scheduleUsed,
+        repetitiveGroup: result.repetitiveGroup,
+        decompRequired: result.decompRequired,
+        decompStops: result.decompStops,
+      };
+
+      const updated = await storage.updateDive(req.params.id, updates);
+      res.json({ ...updated, _tableResult: result });
+    } catch (error) {
+      console.error("Compute table error:", error);
+      res.status(500).json({ message: "Failed to compute dive table" });
+    }
+  });
+
+  // Preview dive table lookup without saving (for real-time display)
+  app.post("/api/dive-table-lookup", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { depthFsw, bottomTimeMinutes, breathingGas, fo2Percent } = req.body;
+      if (depthFsw == null || bottomTimeMinutes == null) {
+        return res.status(400).json({ message: "depthFsw and bottomTimeMinutes are required" });
+      }
+      const result = lookupDiveTable(depthFsw, bottomTimeMinutes, breathingGas || "Air", fo2Percent || undefined);
+      res.json(result);
+    } catch (error) {
+      console.error("Dive table lookup error:", error);
+      res.status(500).json({ message: "Failed to look up dive table" });
     }
   });
 
