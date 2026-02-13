@@ -80,6 +80,14 @@ function deriveInitials(name?: string): string {
     .toUpperCase();
 }
 
+function getEditableValue(fieldName: string, value: string | number | undefined | null): string {
+  const timeFields = ["lsTime", "rbTime", "lbTime", "rsTime"];
+  if (timeFields.includes(fieldName) && value) {
+    return formatTime24(String(value)).replace(":", "");
+  }
+  return String(value ?? "");
+}
+
 function EditableField({
   diveId,
   fieldName,
@@ -94,12 +102,14 @@ function EditableField({
   onSave: (fieldName: string, value: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(String(value ?? ""));
+  const [draft, setDraft] = useState("");
   const isUnknown = displayValue === "UNKNOWN" || displayValue === "Not Stated";
+  const isTimeField = ["lsTime", "rbTime", "lbTime", "rsTime"].includes(fieldName);
 
   const commit = useCallback(() => {
     setEditing(false);
-    if (draft !== String(value ?? "")) {
+    const editVal = getEditableValue(fieldName, value);
+    if (draft !== editVal) {
       onSave(fieldName, draft);
     }
   }, [draft, value, fieldName, onSave]);
@@ -111,6 +121,7 @@ function EditableField({
         autoFocus
         className="bg-navy-900 border border-amber-400/50 text-white px-2 py-0.5 rounded text-sm w-full outline-none focus:border-amber-400"
         value={draft}
+        placeholder={isTimeField ? "HHMM (e.g. 0705)" : ""}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
@@ -126,7 +137,7 @@ function EditableField({
       data-testid={`field-${fieldName}-${diveId}`}
       className={`cursor-pointer inline-flex items-center gap-1 group ${isUnknown ? "text-yellow-400 italic" : "text-white"}`}
       onClick={() => {
-        setDraft(String(value ?? ""));
+        setDraft(getEditableValue(fieldName, value));
         setEditing(true);
       }}
     >

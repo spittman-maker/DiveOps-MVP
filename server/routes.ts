@@ -1349,10 +1349,47 @@ export async function registerRoutes(
         "lsTime", "rbTime", "lbTime", "rsTime",
       ];
       
+      const timeFields = ["lsTime", "rbTime", "lbTime", "rsTime"];
+      const numericFields = ["maxDepthFsw"];
+
       const updates: Record<string, any> = {};
       for (const field of allowedFields) {
         if (req.body[field] !== undefined) {
-          updates[field] = req.body[field];
+          let val = req.body[field];
+          if (timeFields.includes(field)) {
+            if (val === "" || val === null) {
+              updates[field] = null;
+            } else {
+              const timeMatch = String(val).match(/^(\d{1,2}):?(\d{2})$/);
+              if (timeMatch) {
+                const hours = parseInt(timeMatch[1], 10);
+                const minutes = parseInt(timeMatch[2], 10);
+                const day = await storage.getDay(dive.dayId);
+                const base = day?.date ? new Date(day.date + "T00:00:00Z") : new Date();
+                base.setUTCHours(hours, minutes, 0, 0);
+                updates[field] = base;
+              } else {
+                const parsed = new Date(val);
+                if (!isNaN(parsed.getTime())) {
+                  updates[field] = parsed;
+                } else {
+                  return res.status(400).json({ message: `Invalid time format for ${field}. Use HH:MM or HHMM.` });
+                }
+              }
+            }
+          } else if (numericFields.includes(field)) {
+            if (val === "" || val === null) {
+              updates[field] = null;
+            } else {
+              const num = Number(val);
+              if (isNaN(num)) {
+                return res.status(400).json({ message: `Invalid number for ${field}` });
+              }
+              updates[field] = num;
+            }
+          } else {
+            updates[field] = val;
+          }
         }
       }
       
