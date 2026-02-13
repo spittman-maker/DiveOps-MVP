@@ -942,6 +942,23 @@ export async function registerRoutes(
         });
       }
       
+      // Client directives also create a risk item — any directive changes operational scope and introduces risk
+      if (category === "directive") {
+        const existingRisks = await storage.getRiskItemsByDay(day.id);
+        const riskId = generateRiskId(day.date, existingRisks.length + 1);
+        
+        await storage.createRiskItem({
+          dayId: day.id,
+          projectId: data.projectId,
+          riskId,
+          triggerEventId: logEvent.id,
+          category: "operational",
+          source: "client_directive",
+          description: data.rawText,
+          status: "open",
+        });
+      }
+      
       // If dive operation, create/update dive record for the diver synchronously
       if (extracted.diveOperation) {
         const diverIdentifiers = extracted.diverNames || extracted.diverInitials || [];
