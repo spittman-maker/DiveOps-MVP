@@ -955,8 +955,9 @@ export async function registerRoutes(
             const diver = await storage.getUserByInitials(initials, data.projectId);
             if (diver) {
               dive = await storage.getOrCreateDiveForDiver(day.id, data.projectId, diver.id, station || undefined);
-              if (!dive.diverDisplayName) {
-                await storage.updateDive(dive.id, { diverDisplayName: diver.fullName || diver.username });
+              const bestName = diver.fullName || diver.username;
+              if (!dive.diverDisplayName || dive.diverDisplayName.trim().length <= 3) {
+                await storage.updateDive(dive.id, { diverDisplayName: bestName });
               }
             } else {
               dive = await storage.getOrCreateDiveByDisplayName(day.id, data.projectId, initials, station || undefined);
@@ -970,8 +971,9 @@ export async function registerRoutes(
             const diver = await storage.getUserByInitials(searchInitials, data.projectId);
             if (diver) {
               dive = await storage.getOrCreateDiveForDiver(day.id, data.projectId, diver.id, station || undefined);
-              if (!dive.diverDisplayName) {
-                await storage.updateDive(dive.id, { diverDisplayName: diver.fullName || identifier });
+              const bestName = diver.fullName || identifier;
+              if (!dive.diverDisplayName || dive.diverDisplayName.trim().length <= 3 || dive.diverDisplayName.trim().toLowerCase() !== bestName.toLowerCase()) {
+                await storage.updateDive(dive.id, { diverDisplayName: bestName });
               }
             } else {
               dive = await storage.getOrCreateDiveByDisplayName(day.id, data.projectId, identifier, station || undefined);

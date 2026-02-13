@@ -10,7 +10,7 @@
  */
 
 import OpenAI from "openai";
-import { classifyEvent, extractData, renderInternalCanvasLine, getMasterLogSection, type EventCategory, type MasterLogSection } from "./extraction";
+import { classifyEvent, extractData, renderInternalCanvasLine, getMasterLogSection, fixTypos, type EventCategory, type MasterLogSection } from "./extraction";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -132,20 +132,6 @@ function generateDeterministicAnnotations(rawText: string, category: EventCatego
     annotations.push({ type: "safety_flag", message: "Decompression reference detected - verify against U.S. Navy Dive Manual" });
   }
   
-  const commonTypos: Record<string, string> = {
-    "presure": "pressure", "recieved": "received", "occured": "occurred",
-    "equiptment": "equipment", "maintanence": "maintenance", "visability": "visibility",
-    "saftey": "safety", "seperately": "separately", "completly": "completely",
-    "deisel": "diesel", "gague": "gauge", "annode": "anode",
-  };
-  
-  const lowerText = rawText.toLowerCase();
-  for (const [typo, correction] of Object.entries(commonTypos)) {
-    if (lowerText.includes(typo)) {
-      annotations.push({ type: "typo", message: `"${typo}" → "${correction}"` });
-    }
-  }
-  
   return annotations;
 }
 
@@ -154,11 +140,12 @@ export async function generateAIRenders(
   eventTime: Date,
   category: EventCategory
 ): Promise<AIRenderResult> {
-  const extracted = extractData(rawText);
+  const correctedText = fixTypos(rawText);
+  const extracted = extractData(correctedText);
   const section = getMasterLogSection(category);
   
-  const deterministicInternal = renderInternalCanvasLine(rawText, eventTime, category, extracted);
-  const deterministicAnnotations = generateDeterministicAnnotations(rawText, category);
+  const deterministicInternal = renderInternalCanvasLine(correctedText, eventTime, category, extracted);
+  const deterministicAnnotations = generateDeterministicAnnotations(correctedText, category);
   
   try {
     const [internalResponse, masterResponse] = await Promise.all([
@@ -169,7 +156,7 @@ export async function generateAIRenders(
           { role: "system", content: INTERNAL_SYSTEM_PROMPT },
           { 
             role: "user", 
-            content: `Raw log entry (${eventTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}): ${rawText}\n\nCategory: ${category}\n\nCreate a clean internal log line.`
+            content: `Raw log entry (${eventTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}): ${correctedText}\n\nCategory: ${category}\n\nCreate a clean internal log line.`
           }
         ],
       }),
@@ -180,7 +167,7 @@ export async function generateAIRenders(
           { role: "system", content: MASTER_LOG_SYSTEM_PROMPT },
           { 
             role: "user", 
-            content: `Raw log entry (${eventTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}): ${rawText}\n\nCategory: ${category}\nSection: ${section}\n\nCreate a professional client-facing log line.`
+            content: `Raw log entry (${eventTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}): ${correctedText}\n\nCategory: ${category}\nSection: ${section}\n\nCreate a professional client-facing log line.`
           }
         ],
       }),

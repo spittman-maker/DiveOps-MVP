@@ -465,7 +465,7 @@ export class DbStorage implements IStorage {
       .where(eq(schema.dives.dayId, dayId))
       .orderBy(desc(schema.dives.diveNumber));
 
-    const isInitials = displayName.length <= 3 && /^[A-Z]{2,3}$/.test(displayName);
+    const isInitials = displayName.length <= 3 && /^[A-Z]{2,3}$/i.test(displayName);
 
     function deriveInitials(name: string): string {
       const parts = name.split(/[\s.]+/).filter(Boolean);
@@ -476,22 +476,32 @@ export class DbStorage implements IStorage {
     }
 
     const matchingDives = allDayDives.filter(d => {
-      const dn = d.diverDisplayName || "";
-      if (dn === displayName) return true;
+      const dn = (d.diverDisplayName || "").trim();
+      const input = displayName.trim();
+      if (dn.toLowerCase() === input.toLowerCase()) return true;
       if (isInitials && dn.length > 3) {
-        return deriveInitials(dn) === displayName;
+        return deriveInitials(dn) === input.toUpperCase();
       }
-      if (!isInitials && displayName.length > 3 && dn.length <= 3) {
-        return deriveInitials(displayName) === dn;
+      if (!isInitials && input.length > 3 && dn.length <= 3) {
+        return deriveInitials(input) === dn.toUpperCase();
+      }
+      if (!isInitials && input.length > 3 && dn.length > 3) {
+        return deriveInitials(dn) === deriveInitials(input);
       }
       return false;
     });
 
     const incompleteDive = matchingDives.find(d => !d.rsTime);
     if (incompleteDive) {
-      if (station && !incompleteDive.station) {
+      const updates: any = {};
+      if (station && !incompleteDive.station) updates.station = station;
+      if (!isInitials && displayName.length > 3 && (!incompleteDive.diverDisplayName || incompleteDive.diverDisplayName.trim().length <= 3 || incompleteDive.diverDisplayName.trim().toLowerCase() !== displayName.trim().toLowerCase())) {
+        updates.diverDisplayName = displayName;
+      }
+      if (Object.keys(updates).length > 0) {
+        updates.updatedAt = new Date();
         const [updated] = await db.update(schema.dives)
-          .set({ station, updatedAt: new Date() })
+          .set(updates)
           .where(eq(schema.dives.id, incompleteDive.id))
           .returning();
         return updated!;
@@ -503,8 +513,8 @@ export class DbStorage implements IStorage {
       const latest = matchingDives.sort((a, b) => b.diveNumber - a.diveNumber)[0];
       if (latest.rsTime) {
         const nextNumber = allDayDives.length > 0 ? allDayDives[0].diveNumber + 1 : 1;
-        const useName = latest.diverDisplayName && latest.diverDisplayName.length > 3
-          ? latest.diverDisplayName : displayName;
+        const useName = !isInitials && displayName.length > 3 ? displayName :
+          (latest.diverDisplayName && latest.diverDisplayName.length > 3 ? latest.diverDisplayName : displayName);
         const [created] = await db.insert(schema.dives).values({
           dayId,
           projectId,

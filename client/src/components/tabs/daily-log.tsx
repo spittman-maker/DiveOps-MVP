@@ -1008,7 +1008,7 @@ export function DailyLogTab() {
                 )}
                 {event.aiAnnotations && event.aiAnnotations.length > 0 && (
                   <div className="mt-1.5 space-y-1" data-testid={`annotations-${event.id}`}>
-                    {event.aiAnnotations.map((ann, i) => {
+                    {event.aiAnnotations.filter((ann: AIAnnotation) => ann.type !== "typo").map((ann, i) => {
                       const isDepthMissing = ann.type === "missing_info" && ann.message.includes("no depth (FSW)");
                       if (isDepthMissing) {
                         return (

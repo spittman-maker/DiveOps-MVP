@@ -308,6 +308,43 @@ export function extractData(rawText: string): ExtractedData {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Auto-fix common typos in raw text
+// ────────────────────────────────────────────────────────────────────────────
+
+const COMMON_TYPOS: Record<string, string> = {
+  "presure": "pressure", "recieved": "received", "occured": "occurred",
+  "equiptment": "equipment", "maintanence": "maintenance", "visability": "visibility",
+  "saftey": "safety", "seperately": "separately", "completly": "completely",
+  "deisel": "diesel", "gague": "gauge", "annode": "anode",
+  "equippment": "equipment", "maintainence": "maintenance", "occassion": "occasion",
+  "accomodate": "accommodate", "apparantly": "apparently", "commited": "committed",
+  "definately": "definitely", "enviroment": "environment", "grindng": "grinding",
+  "immediatly": "immediately", "neccessary": "necessary", "occassionally": "occasionally",
+  "peice": "piece", "recomend": "recommend", "refered": "referred",
+  "succesful": "successful", "untill": "until", "wierd": "weird",
+  "calender": "calendar", "concious": "conscious", "dissapear": "disappear",
+  "foriegn": "foreign", "gaurd": "guard", "independant": "independent",
+  "postion": "position", "strenght": "strength", "wether": "whether",
+  "breif": "brief", "cheif": "chief", "cieling": "ceiling",
+  "complience": "compliance", "damamge": "damage", "opperations": "operations",
+  "opertions": "operations", "safty": "safety", "suspention": "suspension",
+};
+
+export function fixTypos(text: string): string {
+  let result = text;
+  for (const [typo, correction] of Object.entries(COMMON_TYPOS)) {
+    const regex = new RegExp(`\\b${typo}\\b`, "gi");
+    result = result.replace(regex, (match) => {
+      if (match[0] === match[0].toUpperCase()) {
+        return correction.charAt(0).toUpperCase() + correction.slice(1);
+      }
+      return correction;
+    });
+  }
+  return result;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Parse HHMM from raw text for eventTime derivation
 // ────────────────────────────────────────────────────────────────────────────
 
