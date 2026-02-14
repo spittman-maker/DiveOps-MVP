@@ -44,8 +44,14 @@ export function RiskRegisterTab() {
   const [editReason, setEditReason] = useState("");
   const [editClosureAuthority, setEditClosureAuthority] = useState("");
   const [editResidualRisk, setEditResidualRisk] = useState("");
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newDescription, setNewDescription] = useState("");
+  const [newCategory, setNewCategory] = useState("operational");
+  const [newRiskLevel, setNewRiskLevel] = useState("");
+  const [newAffectedTask, setNewAffectedTask] = useState("");
 
   const { activeProject } = useProject();
+  const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const { data: risks = [], isLoading } = useQuery<RiskItem[]>({
     queryKey: ["risks", activeProject?.id],
@@ -74,6 +80,47 @@ export function RiskRegisterTab() {
       setSelectedRisk(null);
     },
   });
+
+  const createRiskMutation = useMutation({
+    mutationFn: async (data: { description: string; category: string; initialRiskLevel: string; affectedTask: string }) => {
+      if (!activeDay || !activeProject) throw new Error("No active day or project");
+      const res = await fetch("/api/risks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          dayId: activeDay.id,
+          projectId: activeProject.id,
+          description: data.description,
+          category: data.category,
+          initialRiskLevel: data.initialRiskLevel || undefined,
+          affectedTask: data.affectedTask || undefined,
+          clientTimezone,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to create risk");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["risks"] });
+      queryClient.invalidateQueries({ queryKey: ["logEvents"] });
+      setShowAddForm(false);
+      setNewDescription("");
+      setNewCategory("operational");
+      setNewRiskLevel("");
+      setNewAffectedTask("");
+    },
+  });
+
+  const handleAddRisk = () => {
+    if (!newDescription.trim()) return;
+    createRiskMutation.mutate({
+      description: newDescription.trim(),
+      category: newCategory,
+      initialRiskLevel: newRiskLevel,
+      affectedTask: newAffectedTask,
+    });
+  };
 
   const selectRisk = (risk: RiskItem) => {
     setSelectedRisk(risk);
@@ -124,6 +171,8 @@ export function RiskRegisterTab() {
       case "field_observation": return "Field Observation";
       case "client_directive": return "Client Directive";
       case "equipment_issue": return "Equipment Issue";
+      case "supervisor_entry": return "Supervisor Entry";
+      case "manual": return "Manual Entry";
       default: return source || "—";
     }
   };
@@ -213,12 +262,99 @@ export function RiskRegisterTab() {
               Rolling cumulative register — risks persist across days
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <Badge className="bg-red-600" data-testid="badge-open-risks">{openRisks.length} Open</Badge>
             <Badge className="bg-yellow-600" data-testid="badge-mitigated-risks">{mitigatedRisks.length} Mitigated</Badge>
             <Badge className="bg-green-600" data-testid="badge-closed-risks">{closedRisks.length} Closed</Badge>
+            {isSupervisor && activeDay && (
+              <Button
+                size="sm"
+                onClick={() => setShowAddForm(!showAddForm)}
+                className="ml-2 bg-amber-600 hover:bg-amber-700 text-white"
+                data-testid="button-add-risk"
+              >
+                + Add Risk
+              </Button>
+            )}
           </div>
         </div>
+
+        {showAddForm && (
+          <Card className="mb-4 bg-navy-800/60 border-amber-500/30">
+            <CardContent className="py-3 space-y-3">
+              <div>
+                <Label className="text-navy-400 text-xs">Risk Description *</Label>
+                <Textarea
+                  value={newDescription}
+                  onChange={(e) => setNewDescription(e.target.value)}
+                  placeholder="Describe the risk..."
+                  className="mt-1 bg-navy-900 border-navy-600 text-white placeholder:text-navy-500 text-sm"
+                  data-testid="input-risk-description"
+                />
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-navy-400 text-xs">Category</Label>
+                  <Select value={newCategory} onValueChange={setNewCategory}>
+                    <SelectTrigger className="mt-1 bg-navy-900 border-navy-600 text-white text-sm" data-testid="select-risk-category">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="operational">Operational</SelectItem>
+                      <SelectItem value="safety">Safety</SelectItem>
+                      <SelectItem value="environmental">Environmental</SelectItem>
+                      <SelectItem value="schedule">Schedule</SelectItem>
+                      <SelectItem value="equipment">Equipment</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-navy-400 text-xs">Risk Level</Label>
+                  <Select value={newRiskLevel} onValueChange={setNewRiskLevel}>
+                    <SelectTrigger className="mt-1 bg-navy-900 border-navy-600 text-white text-sm" data-testid="select-risk-level">
+                      <SelectValue placeholder="—" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="med">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-navy-400 text-xs">Affected Task</Label>
+                  <Input
+                    value={newAffectedTask}
+                    onChange={(e) => setNewAffectedTask(e.target.value)}
+                    placeholder="e.g., PFU#2 riser work"
+                    className="mt-1 bg-navy-900 border-navy-600 text-white placeholder:text-navy-500 text-sm"
+                    data-testid="input-risk-affected-task"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { setShowAddForm(false); setNewDescription(""); }}
+                  className="text-navy-400"
+                  data-testid="button-cancel-risk"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleAddRisk}
+                  disabled={!newDescription.trim() || createRiskMutation.isPending}
+                  className="bg-amber-600 hover:bg-amber-700 text-white"
+                  data-testid="button-submit-risk"
+                >
+                  {createRiskMutation.isPending ? "Logging..." : "Log Risk"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <ScrollArea className="h-[calc(100vh-200px)]">
           <div className="space-y-6">

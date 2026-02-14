@@ -125,6 +125,21 @@ export function classifyEvent(rawText: string): EventCategory {
   return "ops";
 }
 
+const RISK_PATTERNS = [
+  /\brisk\s+of\b/i,
+  /\brisk\b.*\b(drift|delay|schedule|scope|cost|safety|operational)\b/i,
+  /\b(schedule|scope|cost|safety|operational)\b.*\brisk\b/i,
+  /\bconcern\b.*\b(about|regarding|with)\b/i,
+  /\bpotential\s+(issue|problem|failure|delay)\b/i,
+  /\bthreat\b/i,
+  /\bexposure\b/i,
+  /\bvulnerabilit/i,
+];
+
+export function hasRiskKeywords(rawText: string): boolean {
+  return RISK_PATTERNS.some(p => p.test(rawText));
+}
+
 export type DirectiveTag = "CONFLICTING DIRECTION" | "REVERSED DIRECTION" | null;
 
 export function detectDirectiveTag(rawText: string, category: EventCategory): DirectiveTag {

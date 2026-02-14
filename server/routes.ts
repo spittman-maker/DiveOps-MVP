@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import express from "express";
 import { storage } from "./storage";
 import { passport, hashPassword, requireAuth, requireRole, canWriteLogEvents, isGod, isAdminOrHigher } from "./auth";
-import { classifyEvent, extractData, parseEventTime, generateRiskId, getMasterLogSection, renderInternalCanvasLine, detectDirectiveTag } from "./extraction";
+import { classifyEvent, extractData, parseEventTime, generateRiskId, getMasterLogSection, renderInternalCanvasLine, detectDirectiveTag, hasRiskKeywords } from "./extraction";
 import { processStructuredLog } from "./logging";
 import { generateAIRenders } from "./ai-drafting";
 import { generateShiftExport } from "./document-export";
@@ -1017,6 +1017,23 @@ export async function registerRoutes(
         });
       }
       
+      // If text contains risk keywords (and wasn't already captured as safety/directive), create risk item
+      if (category !== "safety" && category !== "directive" && hasRiskKeywords(data.rawText)) {
+        const existingRisks = await storage.getRiskItemsByDay(day.id);
+        const riskId = generateRiskId(day.date, existingRisks.length + 1);
+        
+        await storage.createRiskItem({
+          dayId: day.id,
+          projectId: data.projectId,
+          riskId,
+          triggerEventId: logEvent.id,
+          category: "operational",
+          source: "supervisor_entry",
+          description: data.rawText,
+          status: "open",
+        });
+      }
+      
       // If dive operation, create/update dive record for the diver synchronously
       if (extracted.diveOperation) {
         const diverIdentifiers = extracted.diverNames || extracted.diverInitials || [];
@@ -1672,6 +1689,77 @@ export async function registerRoutes(
     }
     
     res.json({ ...risk, triggerEvent });
+  });
+
+  app.post("/api/risks", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id) return res.status(401).json({ message: "Not authenticated" });
+      
+      const { dayId, projectId, description, category, initialRiskLevel, affectedTask, owner } = req.body;
+      if (!dayId || !projectId || !description) {
+        return res.status(400).json({ message: "dayId, projectId, and description are required" });
+      }
+      
+      const day = await storage.getDay(dayId);
+      if (!day) return res.status(404).json({ message: "Day not found" });
+      
+      const existingRisks = await storage.getRiskItemsByDay(dayId);
+      const riskId = generateRiskId(day.date, existingRisks.length + 1);
+      
+      const risk = await storage.createRiskItem({
+        dayId,
+        projectId,
+        riskId,
+        triggerEventId: null,
+        category: category || "operational",
+        source: "manual",
+        description,
+        affectedTask: affectedTask || null,
+        initialRiskLevel: initialRiskLevel || null,
+        owner: owner || null,
+        status: "open",
+      });
+      
+      // Also create a log event to record the risk creation in the master log
+      const captureTime = new Date();
+      const clientTimezone = req.body.clientTimezone;
+      let eventTime: Date;
+      if (clientTimezone) {
+        try {
+          const formatter = new Intl.DateTimeFormat("en-US", {
+            timeZone: clientTimezone,
+            year: "numeric", month: "2-digit", day: "2-digit",
+            hour: "2-digit", minute: "2-digit", second: "2-digit",
+            hour12: false,
+          });
+          const parts = formatter.formatToParts(captureTime);
+          const get = (type: string) => parseInt(parts.find(p => p.type === type)?.value || "0", 10);
+          eventTime = new Date(Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second")));
+        } catch {
+          eventTime = captureTime;
+        }
+      } else {
+        eventTime = captureTime;
+      }
+      
+      const logRawText = `${riskId} LOGGED: ${description}`;
+      await storage.createLogEvent({
+        dayId,
+        projectId,
+        authorId: user?.id,
+        rawText: logRawText,
+        category: "ops",
+        eventTime,
+        captureTime,
+        station: null,
+      });
+      
+      res.status(201).json(risk);
+    } catch (error) {
+      console.error("Failed to create risk:", error);
+      res.status(500).json({ message: "Failed to create risk" });
+    }
   });
 
   app.patch("/api/risks/:id", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {

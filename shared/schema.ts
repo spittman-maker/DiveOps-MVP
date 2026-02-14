@@ -394,7 +394,7 @@ export const riskItems = pgTable("risk_items", {
   riskId: text("risk_id").notNull().unique(),
   triggerEventId: varchar("trigger_event_id").references(() => logEvents.id),
   category: text("category"),
-  source: text("source").$type<"jha" | "field_observation" | "client_directive" | "equipment_issue">(),
+  source: text("source").$type<"jha" | "field_observation" | "client_directive" | "equipment_issue" | "supervisor_entry" | "manual">(),
   description: text("description").notNull(),
   affectedTask: text("affected_task"),
   initialRiskLevel: text("initial_risk_level").$type<"low" | "med" | "high">(),
