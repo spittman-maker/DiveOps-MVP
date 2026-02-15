@@ -1037,7 +1037,7 @@ export function DailyLogTab() {
                       value={shiftFo2}
                       onChange={(e) => setShiftFo2(e.target.value)}
                       className="bg-navy-900 border border-navy-600 text-white text-xs rounded w-14 px-1.5 py-1 focus:outline-none focus:border-amber-500"
-                      placeholder="32"
+                      placeholder="38"
                     />
                   </div>
                 )}
