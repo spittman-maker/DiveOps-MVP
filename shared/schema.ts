@@ -260,6 +260,7 @@ export interface QCCloseoutData {
   exceptions: string;
   advisedFor: string;
   advisedAgainst: string;
+  advisoryOutcome: string;
   standingRisks: Array<{ riskId: string; status: string }>;
   deviations: string;
   outstandingIssues: string;

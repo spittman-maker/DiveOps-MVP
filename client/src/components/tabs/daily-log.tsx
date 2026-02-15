@@ -233,6 +233,38 @@ export function DailyLogTab() {
     }
   };
 
+  const [localCloseout, setLocalCloseout] = useState<Record<string, any>>({});
+  const closeoutSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (activeDay) {
+      setLocalCloseout((activeDay as any).closeoutData || {});
+    }
+  }, [activeDay?.id, (activeDay as any)?.closeoutData]);
+
+  const handleCloseoutFieldChange = useCallback((field: string, value: string) => {
+    if (!activeDay) return;
+    setLocalCloseout(prev => {
+      const updated = { ...prev, [field]: value };
+
+      if (closeoutSaveTimer.current) clearTimeout(closeoutSaveTimer.current);
+      closeoutSaveTimer.current = setTimeout(async () => {
+        try {
+          await fetch(`/api/days/${activeDay.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ closeoutData: updated }),
+          });
+        } catch {
+          // silent
+        }
+      }, field === "scopeStatus" || field === "documentationStatus" ? 0 : 800);
+
+      return updated;
+    });
+  }, [activeDay?.id]);
+
   const [expandedStations, setExpandedStations] = useState<Record<string, boolean>>({});
 
   const toggleStation = (station: string) => {
@@ -1614,18 +1646,39 @@ export function DailyLogTab() {
                   <CardTitle className="text-amber-400 text-sm">Advisory Block</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex gap-2">
-                      <span className="text-xs font-semibold text-navy-300 w-24 shrink-0">Advised For:</span>
-                      <span className="text-xs text-navy-500 italic">Not provided</span>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs font-semibold text-navy-300 block mb-1">Advised For:</label>
+                      <textarea
+                        data-testid="input-advised-for"
+                        className="w-full bg-navy-900 border border-navy-600 rounded px-2 py-1 text-xs text-white placeholder:text-navy-500 resize-none focus:border-amber-500/50 focus:outline-none"
+                        rows={2}
+                        placeholder="Items PSG advised the client FOR..."
+                        value={localCloseout.advisedFor || ""}
+                        onChange={e => handleCloseoutFieldChange("advisedFor", e.target.value)}
+                      />
                     </div>
-                    <div className="flex gap-2">
-                      <span className="text-xs font-semibold text-navy-300 w-24 shrink-0">Advised Against:</span>
-                      <span className="text-xs text-navy-500 italic">Not provided</span>
+                    <div>
+                      <label className="text-xs font-semibold text-navy-300 block mb-1">Advised Against:</label>
+                      <textarea
+                        data-testid="input-advised-against"
+                        className="w-full bg-navy-900 border border-navy-600 rounded px-2 py-1 text-xs text-white placeholder:text-navy-500 resize-none focus:border-amber-500/50 focus:outline-none"
+                        rows={2}
+                        placeholder="Items PSG advised the client AGAINST..."
+                        value={localCloseout.advisedAgainst || ""}
+                        onChange={e => handleCloseoutFieldChange("advisedAgainst", e.target.value)}
+                      />
                     </div>
-                    <div className="flex gap-2">
-                      <span className="text-xs font-semibold text-navy-300 w-24 shrink-0">Outcome:</span>
-                      <span className="text-xs text-navy-500 italic">Not provided</span>
+                    <div>
+                      <label className="text-xs font-semibold text-navy-300 block mb-1">Outcome:</label>
+                      <textarea
+                        data-testid="input-advisory-outcome"
+                        className="w-full bg-navy-900 border border-navy-600 rounded px-2 py-1 text-xs text-white placeholder:text-navy-500 resize-none focus:border-amber-500/50 focus:outline-none"
+                        rows={2}
+                        placeholder="Client response / outcome of advisory..."
+                        value={localCloseout.advisoryOutcome || ""}
+                        onChange={e => handleCloseoutFieldChange("advisoryOutcome", e.target.value)}
+                      />
                     </div>
                   </div>
                 </CardContent>
@@ -1639,18 +1692,90 @@ export function DailyLogTab() {
                   <CardTitle className="text-amber-400 text-sm">Closeout</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex gap-2">
-                      <span className="text-xs font-semibold text-navy-300 w-36 shrink-0">Scope Complete:</span>
-                      <span className="text-xs text-navy-500 italic">Not provided</span>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-navy-300 block mb-1">Scope Status:</label>
+                        <div className="flex gap-2">
+                          {(["complete", "incomplete"] as const).map(v => (
+                            <button
+                              key={v}
+                              data-testid={`closeout-scope-inline-${v}`}
+                              onClick={() => handleCloseoutFieldChange("scopeStatus", v)}
+                              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                                localCloseout.scopeStatus === v
+                                  ? v === "complete" ? "bg-green-600 text-white" : "bg-red-600 text-white"
+                                  : "bg-navy-700 text-navy-400 hover:bg-navy-600"
+                              }`}
+                            >
+                              {v === "complete" ? "Complete" : "Incomplete"}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-navy-300 block mb-1">Documentation Status:</label>
+                        <div className="flex gap-2">
+                          {(["complete", "incomplete"] as const).map(v => (
+                            <button
+                              key={v}
+                              data-testid={`closeout-docs-inline-${v}`}
+                              onClick={() => handleCloseoutFieldChange("documentationStatus", v)}
+                              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                                localCloseout.documentationStatus === v
+                                  ? v === "complete" ? "bg-green-600 text-white" : "bg-red-600 text-white"
+                                  : "bg-navy-700 text-navy-400 hover:bg-navy-600"
+                              }`}
+                            >
+                              {v === "complete" ? "Complete" : "Incomplete"}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex gap-2">
-                      <span className="text-xs font-semibold text-navy-300 w-36 shrink-0">Documentation Complete:</span>
-                      <span className="text-xs text-navy-500 italic">Not provided</span>
+                    <div>
+                      <label className="text-xs font-semibold text-navy-300 block mb-1">Exceptions / Notes:</label>
+                      <textarea
+                        data-testid="input-closeout-exceptions"
+                        className="w-full bg-navy-900 border border-navy-600 rounded px-2 py-1 text-xs text-white placeholder:text-navy-500 resize-none focus:border-amber-500/50 focus:outline-none"
+                        rows={2}
+                        placeholder="Any exceptions or deviations from planned scope..."
+                        value={localCloseout.exceptions || ""}
+                        onChange={e => handleCloseoutFieldChange("exceptions", e.target.value)}
+                      />
                     </div>
-                    <div className="flex gap-2">
-                      <span className="text-xs font-semibold text-navy-300 w-36 shrink-0">Exceptions:</span>
-                      <span className="text-xs text-navy-500 italic">Not provided</span>
+                    <div>
+                      <label className="text-xs font-semibold text-navy-300 block mb-1">Deviations:</label>
+                      <textarea
+                        data-testid="input-closeout-deviations"
+                        className="w-full bg-navy-900 border border-navy-600 rounded px-2 py-1 text-xs text-white placeholder:text-navy-500 resize-none focus:border-amber-500/50 focus:outline-none"
+                        rows={2}
+                        placeholder="Deviations from planned operations..."
+                        value={localCloseout.deviations || ""}
+                        onChange={e => handleCloseoutFieldChange("deviations", e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-navy-300 block mb-1">Outstanding Issues:</label>
+                      <textarea
+                        data-testid="input-closeout-outstanding"
+                        className="w-full bg-navy-900 border border-navy-600 rounded px-2 py-1 text-xs text-white placeholder:text-navy-500 resize-none focus:border-amber-500/50 focus:outline-none"
+                        rows={2}
+                        placeholder="Open items requiring follow-up..."
+                        value={localCloseout.outstandingIssues || ""}
+                        onChange={e => handleCloseoutFieldChange("outstandingIssues", e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-navy-300 block mb-1">Planned Next Shift:</label>
+                      <textarea
+                        data-testid="input-closeout-next-shift"
+                        className="w-full bg-navy-900 border border-navy-600 rounded px-2 py-1 text-xs text-white placeholder:text-navy-500 resize-none focus:border-amber-500/50 focus:outline-none"
+                        rows={2}
+                        placeholder="Work planned for next shift..."
+                        value={localCloseout.plannedNextShift || ""}
+                        onChange={e => handleCloseoutFieldChange("plannedNextShift", e.target.value)}
+                      />
                     </div>
                   </div>
                 </CardContent>
