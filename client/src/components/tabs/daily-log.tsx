@@ -1016,6 +1016,7 @@ export function DailyLogTab() {
                   value={shiftGas}
                   onChange={(e) => {
                     setShiftGas(e.target.value);
+                    if (e.target.value === "Nitrox" && !shiftFo2) setShiftFo2("38");
                     if (e.target.value !== "Nitrox") setShiftFo2("");
                   }}
                   className="bg-navy-900 border border-navy-600 text-white text-xs rounded px-2 py-1 focus:outline-none focus:border-amber-500"
