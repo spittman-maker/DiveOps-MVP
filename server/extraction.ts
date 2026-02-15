@@ -330,9 +330,18 @@ export function extractData(rawText: string): ExtractedData {
     }
   }
   
-  const depthMatch = rawText.match(DEPTH_PATTERN);
-  if (depthMatch) {
-    extracted.depthFsw = parseInt(depthMatch[1], 10);
+  const depthMatches = Array.from(rawText.matchAll(new RegExp(DEPTH_PATTERN, 'gi')));
+  for (const m of depthMatches) {
+    const val = parseInt(m[1], 10);
+    if (val < 5) continue;
+    const idx = m.index ?? 0;
+    const before = rawText.slice(Math.max(0, idx - 40), idx).toLowerCase();
+    const after = rawText.slice(idx + m[0].length, idx + m[0].length + 20).toLowerCase();
+    const isWorkMeasure = /(?:completed|installed|placed|laid|welded|cut|removed|pulled|ran|set)\s+$/i.test(before)
+      || /\s*(?:of\s+(?:riser|pipe|pile|cable|hose|line|chain|weld|grout|concrete|material)|on\s+(?:riser|pile|pfu))/i.test(after);
+    if (isWorkMeasure) continue;
+    extracted.depthFsw = val;
+    break;
   }
   
   if (extracted.diveOperation) {
