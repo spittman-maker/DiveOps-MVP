@@ -288,7 +288,7 @@ export async function registerRoutes(
           const logs = await storage.getLogEventsByDay(day.id);
           const isDayActive = day.status === "ACTIVE";
           const activeDiveRecords = isDayActive
-            ? dives.filter(d => d.lsTime && !d.rsTime && !d.lbTime)
+            ? dives.filter(d => d.lsTime && !d.rsTime)
             : [];
           const completedDiveRecords = dives.filter(d => d.lsTime && (d.rsTime || d.lbTime));
           
