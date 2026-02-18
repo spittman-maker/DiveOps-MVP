@@ -1,0 +1,465 @@
+/**
+ * decoManualService.ts
+ * Replit-friendly TypeScript module: manual browser + supervisor schedule selection + evidence hashing.
+ *
+ * No decompression calculation. No schedule inference.
+ * Supervisor must select a schedule ID from a manual index.
+ */
+
+import crypto from "crypto";
+import path from "path";
+import fs from "fs";
+
+export type DecompressionMethod = "NO_DECO" | "TABLE_SELECTED" | "COMPUTER" | "OTHER";
+
+/** Bounding box in PDF page coordinates (normalized 0..1) for client-side cropping/rendering. */
+export interface NormalizedBBox {
+  x: number; // left 0..1
+  y: number; // top 0..1
+  w: number; // width 0..1
+  h: number; // height 0..1
+}
+
+/** Manual Registry */
+export interface ManualRegistryItem {
+  manualId: string;           // e.g. "USN_DIVE_MANUAL_REV7_VOL2"
+  title: string;              // Human-readable
+  edition: string;            // e.g. "Rev 7, Vol 2"
+  governingScope: string;     // e.g. "Decompression tables"
+  pdfAssetPath: string;       // local path OR public URL path your server can serve
+  sha256Pdf?: string;         // optional: hash of the full PDF file for provenance
+  enabled: boolean;
+}
+
+/** Manual Index: tables and schedules mapped to pages and optional bounding boxes. */
+export interface ManualIndex {
+  manualId: string;
+  tables: ManualTableIndex[];
+}
+
+export interface ManualTableIndex {
+  tableId: string;          // e.g. "AIR_DECO_TABLE_3-9"
+  title: string;            // e.g. "Air Decompression Table"
+  description?: string;
+  schedules: ManualScheduleIndex[];
+}
+
+export interface ManualScheduleIndex {
+  scheduleId: string;       // stable ID you define, e.g. "60fsw_50min"
+  label: string;            // what user sees
+  pageNumber: number;       // 1-based
+  bbox?: NormalizedBBox;    // optional region for excerpt (client can crop)
+  notes?: string;
+}
+
+/** Supervisor selection record attached to a dive. */
+export interface DecoScheduleReference {
+  method: DecompressionMethod; // must be TABLE_SELECTED
+  governingManualId: string;
+  tableId: string;
+  scheduleId: string;
+  source: {
+    pdfAssetPath: string;  // resolved from registry
+    pageNumber: number;    // 1-based
+    bbox?: NormalizedBBox;
+    excerptHash?: string;  // sha256 of excerpt image bytes OR excerpt text bytes
+    excerptMime?: string;  // e.g. "image/png" or "application/json"
+  };
+  selectedBy: {
+    name: string;
+    role: "DIVE_SUPERVISOR";
+    timestampISO: string;
+  };
+  notes?: string;
+}
+
+/** Simple in-memory store for excerpt hashes (swap with DB later). */
+export interface ExcerptEvidenceRecord {
+  evidenceId: string;
+  manualId: string;
+  tableId: string;
+  scheduleId: string;
+  pageNumber: number;
+  bbox?: NormalizedBBox;
+  sha256: string;
+  mime: string;
+  createdAtISO: string;
+  createdBy: string;
+}
+
+export class DecoManualService {
+  private registry: ManualRegistryItem[];
+  private indexes: Map<string, ManualIndex>;
+  private evidenceStore: Map<string, ExcerptEvidenceRecord>;
+
+  constructor(opts: {
+    registry: ManualRegistryItem[];
+    indexes: ManualIndex[];
+  }) {
+    this.registry = opts.registry;
+    this.indexes = new Map(opts.indexes.map((i) => [i.manualId, i]));
+    this.evidenceStore = new Map();
+  }
+
+  listManuals(): ManualRegistryItem[] {
+    return this.registry.filter((m) => m.enabled);
+  }
+
+  getManual(manualId: string): ManualRegistryItem | undefined {
+    return this.registry.find((m) => m.manualId === manualId && m.enabled);
+  }
+
+  listTables(manualId: string): ManualTableIndex[] {
+    const idx = this.indexes.get(manualId);
+    if (!idx) return [];
+    return idx.tables;
+  }
+
+  listSchedules(manualId: string, tableId: string): ManualScheduleIndex[] {
+    const idx = this.indexes.get(manualId);
+    const table = idx?.tables.find((t) => t.tableId === tableId);
+    return table?.schedules ?? [];
+  }
+
+  getSchedule(manualId: string, tableId: string, scheduleId: string): ManualScheduleIndex | undefined {
+    return this.listSchedules(manualId, tableId).find((s) => s.scheduleId === scheduleId);
+  }
+
+  /**
+   * Create the supervisor selection reference (no excerpt hash yet).
+   * You attach this to a dive row in your DB.
+   */
+  createSelectionRef(input: {
+    manualId: string;
+    tableId: string;
+    scheduleId: string;
+    supervisorName: string;
+    timestampISO?: string;
+    notes?: string;
+  }): DecoScheduleReference {
+    const manual = this.getManual(input.manualId);
+    if (!manual) throw new Error(`Manual not found or disabled: ${input.manualId}`);
+
+    const schedule = this.getSchedule(input.manualId, input.tableId, input.scheduleId);
+    if (!schedule) throw new Error(`Schedule not found: ${input.tableId}/${input.scheduleId}`);
+
+    return {
+      method: "TABLE_SELECTED",
+      governingManualId: input.manualId,
+      tableId: input.tableId,
+      scheduleId: input.scheduleId,
+      source: {
+        pdfAssetPath: manual.pdfAssetPath,
+        pageNumber: schedule.pageNumber,
+        bbox: schedule.bbox
+      },
+      selectedBy: {
+        name: input.supervisorName,
+        role: "DIVE_SUPERVISOR",
+        timestampISO: input.timestampISO ?? new Date().toISOString()
+      },
+      notes: input.notes
+    };
+  }
+
+  /**
+   * Register evidence hash for a specific schedule excerpt.
+   * The excerpt bytes should come from the client (pdf.js render/crop) or your own renderer.
+   */
+  registerExcerptEvidence(input: {
+    manualId: string;
+    tableId: string;
+    scheduleId: string;
+    pageNumber: number;
+    bbox?: NormalizedBBox;
+    bytesBase64: string; // excerpt bytes, base64 encoded
+    mime: string;        // e.g. image/png
+    createdBy: string;   // supervisor name
+  }): ExcerptEvidenceRecord {
+    const sha256 = sha256OfBase64(input.bytesBase64);
+    const evidenceId = crypto.randomUUID();
+
+    const rec: ExcerptEvidenceRecord = {
+      evidenceId,
+      manualId: input.manualId,
+      tableId: input.tableId,
+      scheduleId: input.scheduleId,
+      pageNumber: input.pageNumber,
+      bbox: input.bbox,
+      sha256,
+      mime: input.mime,
+      createdAtISO: new Date().toISOString(),
+      createdBy: input.createdBy
+    };
+
+    this.evidenceStore.set(evidenceId, rec);
+    return rec;
+  }
+
+  getEvidence(evidenceId: string): ExcerptEvidenceRecord | undefined {
+    return this.evidenceStore.get(evidenceId);
+  }
+
+  /**
+   * Apply an evidence record to an existing selection reference.
+   */
+  attachEvidenceToSelectionRef(ref: DecoScheduleReference, ev: ExcerptEvidenceRecord): DecoScheduleReference {
+    if (
+      ref.governingManualId !== ev.manualId ||
+      ref.tableId !== ev.tableId ||
+      ref.scheduleId !== ev.scheduleId ||
+      ref.source.pageNumber !== ev.pageNumber
+    ) {
+      throw new Error("Evidence does not match the selected schedule.");
+    }
+
+    return {
+      ...ref,
+      source: {
+        ...ref.source,
+        excerptHash: ev.sha256,
+        excerptMime: ev.mime,
+        bbox: ev.bbox ?? ref.source.bbox
+      }
+    };
+  }
+}
+
+export function sha256OfBase64(base64: string): string {
+  const buf = Buffer.from(base64, "base64");
+  return crypto.createHash("sha256").update(buf).digest("hex");
+}
+
+/** Optional helper: compute sha256 of PDF file for provenance. */
+export function sha256OfFile(filePath: string): string {
+  const buf = fs.readFileSync(filePath);
+  return crypto.createHash("sha256").update(buf).digest("hex");
+}
+2) Express routes: decoManualRoutes.ts
+ts
+Copy code
+/**
+ * decoManualRoutes.ts
+ * Express router exposing manual browsing + supervisor schedule selection + evidence hashing.
+ */
+
+import { Router } from "express";
+import { DecoManualService } from "./decoManualService";
+
+export function createDecoManualRouter(service: DecoManualService) {
+  const r = Router();
+
+  // List manuals
+  r.get("/manuals", (req, res) => {
+    res.json({ manuals: service.listManuals() });
+  });
+
+  // Tables in a manual
+  r.get("/manuals/:manualId/tables", (req, res) => {
+    const { manualId } = req.params;
+    const manual = service.getManual(manualId);
+    if (!manual) return res.status(404).json({ error: "Manual not found" });
+
+    res.json({ manual, tables: service.listTables(manualId) });
+  });
+
+  // Schedules in a table
+  r.get("/manuals/:manualId/tables/:tableId/schedules", (req, res) => {
+    const { manualId, tableId } = req.params;
+    const manual = service.getManual(manualId);
+    if (!manual) return res.status(404).json({ error: "Manual not found" });
+
+    res.json({
+      manual,
+      tableId,
+      schedules: service.listSchedules(manualId, tableId)
+    });
+  });
+
+  /**
+   * Create supervisor selection record (no evidence hash yet).
+   * POST body:
+   * { manualId, tableId, scheduleId, supervisorName, notes? }
+   */
+  r.post("/deco/select", (req, res) => {
+    try {
+      const { manualId, tableId, scheduleId, supervisorName, notes } = req.body ?? {};
+      if (!manualId || !tableId || !scheduleId || !supervisorName) {
+        return res.status(400).json({ error: "manualId, tableId, scheduleId, supervisorName required" });
+      }
+      const ref = service.createSelectionRef({ manualId, tableId, scheduleId, supervisorName, notes });
+      res.json({ selection: ref });
+    } catch (e: any) {
+      res.status(400).json({ error: e?.message ?? "Failed to create selection" });
+    }
+  });
+
+  /**
+   * Register excerpt evidence hash (client renders/crops a PDF excerpt and uploads bytes).
+   * POST body:
+   * {
+   *   manualId, tableId, scheduleId, pageNumber, bbox?, bytesBase64, mime, createdBy
+   * }
+   */
+  r.post("/deco/evidence", (req, res) => {
+    try {
+      const { manualId, tableId, scheduleId, pageNumber, bbox, bytesBase64, mime, createdBy } = req.body ?? {};
+      if (!manualId || !tableId || !scheduleId || !pageNumber || !bytesBase64 || !mime || !createdBy) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+      const ev = service.registerExcerptEvidence({
+        manualId,
+        tableId,
+        scheduleId,
+        pageNumber,
+        bbox,
+        bytesBase64,
+        mime,
+        createdBy
+      });
+      res.json({ evidence: ev });
+    } catch (e: any) {
+      res.status(400).json({ error: e?.message ?? "Failed to register evidence" });
+    }
+  });
+
+  return r;
+}
+3) Example manual registry + index (manuals.usn.example.ts)
+You’ll need to provide the USN manual PDF yourself and build the index. Start small: index the few tables/schedules you actually use, then expand.
+
+ts
+Copy code
+import { ManualRegistryItem, ManualIndex } from "./decoManualService";
+import { sha256OfFile } from "./decoManualService";
+
+/**
+ * Example assumes you serve PDFs from /public/manuals/...
+ * In Replit, you can store PDFs under "public/manuals" and serve statics.
+ */
+
+export function buildRegistryAndIndex() {
+  const usnPdfPath = "public/manuals/USN_Diving_Manual_RevX_Vol2.pdf"; // <-- you provide this file
+
+  const registry: ManualRegistryItem[] = [
+    {
+      manualId: "USN_DIVE_MANUAL_VOL2_REVX",
+      title: "U.S. Navy Diving Manual",
+      edition: "Vol 2 Rev X (as provided)",
+      governingScope: "Decompression / treatment tables",
+      pdfAssetPath: "/manuals/USN_Diving_Manual_RevX_Vol2.pdf",
+      sha256Pdf: safeHash(usnPdfPath),
+      enabled: true
+    }
+  ];
+
+  // Example table/schedule entries (YOU fill in real page numbers + bbox once you have the PDF)
+  const index: ManualIndex = {
+    manualId: "USN_DIVE_MANUAL_VOL2_REVX",
+    tables: [
+      {
+        tableId: "AIR_DECO_TABLE_EXAMPLE",
+        title: "Air Decompression Table (Example Index)",
+        description: "Example rows; replace with real table IDs/page mappings",
+        schedules: [
+          {
+            scheduleId: "60fsw_50min",
+            label: "60 fsw / 50 min",
+            pageNumber: 123,
+            bbox: { x: 0.08, y: 0.20, w: 0.84, h: 0.55 } // optional crop region
+          }
+        ]
+      }
+    ]
+  };
+
+  return { registry, indexes: [index] };
+}
+
+function safeHash(filePath: string): string | undefined {
+  try {
+    return sha256OfFile(filePath);
+  } catch {
+    return undefined;
+  }
+}
+4) Wire it into your Replit server (server.ts)
+ts
+Copy code
+import express from "express";
+import path from "path";
+import { DecoManualService } from "./decoManualService";
+import { createDecoManualRouter } from "./decoManualRoutes";
+import { buildRegistryAndIndex } from "./manuals.usn.example";
+
+const app = express();
+app.use(express.json({ limit: "10mb" })); // allow excerpt images
+
+// Serve PDFs from /public
+app.use(express.static(path.join(process.cwd(), "public")));
+
+const { registry, indexes } = buildRegistryAndIndex();
+const decoService = new DecoManualService({ registry, indexes });
+
+app.use("/api", createDecoManualRouter(decoService));
+
+app.listen(3000, () => console.log("Server running on :3000"));
+5) How the UI “pulls the exact schedule” (verbatim) without server rendering
+Client-side (recommended):
+
+Call GET /api/manuals → show list
+
+Call GET /api/manuals/:manualId/tables
+
+Call GET /api/manuals/:manualId/tables/:tableId/schedules
+
+Supervisor clicks a schedule → call POST /api/deco/select to create the selection reference
+
+Client loads the PDF in-browser via pdf.js, renders pageNumber, crops bbox, produces image/png bytes
+
+Upload base64 bytes to POST /api/deco/evidence
+
+Store returned evidence.sha256 into the dive’s decoRef.source.excerptHash
+
+That’s your “exact schedule pulled” + evidence hash.
+
+If you want, I’ll also paste a small pdf.js snippet that does render+crop to base64 in the browser.
+
+6) Closeout gate (required) — drop-in rule
+Add this to your compliance gate: if decoPlanned === true, require a TABLE_SELECTED ref with excerpt hash.
+
+ts
+Copy code
+import type { DecoScheduleReference } from "./decoManualService";
+
+export function gateDecompressionSelection(args: {
+  decoPlanned: boolean;
+  diveDecoRef?: DecoScheduleReference;
+}) {
+  if (!args.decoPlanned) return null;
+
+  const ref = args.diveDecoRef;
+  if (!ref || ref.method !== "TABLE_SELECTED") {
+    return {
+      severity: "HIGH" as const,
+      code: "MISSING_DECO_SCHEDULE_REFERENCE",
+      message:
+        "Decompression planned/required but no Supervisor-selected table schedule is attached.",
+      requiredToClose: true,
+      requiresSignoff: "DIVE_SUPERVISOR" as const
+    };
+  }
+
+  if (!ref.source.excerptHash) {
+    return {
+      severity: "HIGH" as const,
+      code: "MISSING_DECO_EVIDENCE_HASH",
+      message:
+        "Supervisor selected a schedule but no verbatim excerpt evidence hash is attached (render/crop + upload required).",
+      requiredToClose: true,
+      requiresSignoff: "DIVE_SUPERVISOR" as const
+    };
+  }
+
+  return null;
+}
