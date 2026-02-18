@@ -165,6 +165,7 @@ function InlineEdit({
 
 function getDiveStatus(dive: Dive): { label: string; color: string; bgColor: string } {
   if (!dive.lsTime) return { label: "PENDING", color: "text-navy-400", bgColor: "bg-navy-600/30" };
+  if (dive.lsTime && !dive.rsTime && dive.lbTime) return { label: "ASCENDING", color: "text-cyan-400", bgColor: "bg-cyan-500/20" };
   if (dive.lsTime && !dive.rsTime) return { label: "IN WATER", color: "text-blue-400", bgColor: "bg-blue-500/20" };
   if (dive.rsTime && !dive.tableUsed) return { label: "NEEDS TABLE", color: "text-amber-400", bgColor: "bg-amber-500/20" };
   if (dive.decompRequired === "Y") return { label: "DECOMP REQ", color: "text-red-400", bgColor: "bg-red-500/20" };
