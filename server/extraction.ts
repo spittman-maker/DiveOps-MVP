@@ -265,7 +265,7 @@ const RS_SYNONYMS = [/\bRS\b/i, /\bR\/S\b/i, /\bsurfaced?\b/i, /\bon\s*surface/i
 // Depth patterns: 40 fsw, 40 ft, 40 feet, 40'
 const DEPTH_PATTERN = /(\d+)\s*(?:fsw|ft|feet|'|foot)/i;
 
-const NON_INITIALS = new Set(["LS", "LB", "RS", "RB", "AM", "PM", "FSW", "PSI", "DCS", "AIS", "DRA", "LWT", "PFU", "QC", "QA", "ID", "OK", "TBD", "GDS", "ATC"]);
+const NON_INITIALS = new Set(["LS", "LB", "RS", "RB", "AM", "PM", "FSW", "PSI", "DCS", "AIS", "DRA", "LWT", "PFU", "QC", "QA", "ID", "OK", "TBD", "GDS", "ATC", "DHO", "DSO", "DMT", "ROV", "OPS", "HSE", "PPE", "JHA", "SOP", "MOM", "POB", "BOP", "THA", "SIT"]);
 
 const DIVER_NAME_PATTERNS = [
   /(?:Diver\s+)?([A-Z])\.\s*([A-Z][a-z]+)/g,

@@ -1135,6 +1135,16 @@ export async function registerRoutes(
           description: `STOP WORK: ${data.rawText}`,
           status: "open",
         });
+        
+        // Auto-set RS time for all active dives (dives with LS but no RS) on this station
+        const allDives = await storage.getDivesByDay(day.id);
+        const activeDives = allDives.filter(d => 
+          d.lsTime && !d.rsTime && 
+          (!data.station || !d.station || d.station === data.station)
+        );
+        for (const activeDive of activeDives) {
+          await storage.updateDiveTimes(activeDive.id, 'rsTime', eventTime);
+        }
       }
       
       // If text contains risk keywords (and wasn't already captured as safety/directive/stop-work), create risk item
@@ -1154,6 +1164,44 @@ export async function registerRoutes(
         });
       }
       
+      // Auto-compute dive table when sufficient data is available
+      async function autoComputeDiveTable(diveId: string) {
+        try {
+          const d = await storage.getDive(diveId);
+          if (!d || !d.maxDepthFsw || !d.breathingGas || !d.lsTime) return;
+          if (d.tableUsed) return; // already computed
+          
+          let bottomTimeMinutes: number | null = null;
+          if (d.lbTime) {
+            const ls = new Date(d.lsTime).getTime();
+            const lb = new Date(d.lbTime).getTime();
+            let diff = lb - ls;
+            if (diff < 0) diff += 24 * 60 * 60 * 1000;
+            bottomTimeMinutes = Math.ceil(diff / 60000);
+          } else if (d.rsTime) {
+            const ls = new Date(d.lsTime).getTime();
+            const rs = new Date(d.rsTime).getTime();
+            let diff = rs - ls;
+            if (diff < 0) diff += 24 * 60 * 60 * 1000;
+            bottomTimeMinutes = Math.ceil(diff / 60000);
+          }
+          if (!bottomTimeMinutes || bottomTimeMinutes <= 0) return;
+          
+          const fo2 = d.fo2Percent ?? (d.breathingGas === "Air" ? 21 : null);
+          const result = lookupDiveTable(d.maxDepthFsw, bottomTimeMinutes, d.breathingGas, fo2 ?? undefined);
+          await storage.updateDive(diveId, {
+            eadFsw: result.eadFsw ?? null,
+            tableUsed: result.tableUsed,
+            scheduleUsed: result.scheduleUsed,
+            repetitiveGroup: result.repetitiveGroup,
+            decompRequired: result.decompRequired,
+            decompStops: result.decompStops,
+          });
+        } catch (err) {
+          console.error("Auto-compute table failed:", err);
+        }
+      }
+
       // If dive operation, create/update dive record for the diver synchronously
       if (extracted.diveOperation) {
         const diverIdentifiers = extracted.diverNames || extracted.diverInitials || [];
@@ -1196,6 +1244,20 @@ export async function registerRoutes(
             const timeField = `${extracted.diveOperation}Time` as 'lsTime' | 'rbTime' | 'lbTime' | 'rsTime';
             await storage.updateDiveTimes(dive.id, timeField, eventTime, extracted.depthFsw);
             
+            // Propagate station from log entry to dive if not set
+            if (data.station && !dive.station) {
+              await storage.updateDive(dive.id, { station: data.station });
+            }
+            
+            // Set breathing gas from day defaults if not already set
+            if (!dive.breathingGas && day.defaultBreathingGas) {
+              const gasUpdates: any = { breathingGas: day.defaultBreathingGas };
+              if (day.defaultBreathingGas === "Nitrox" && (day as any).defaultFo2Percent) {
+                gasUpdates.fo2Percent = (day as any).defaultFo2Percent;
+              }
+              await storage.updateDive(dive.id, gasUpdates);
+            }
+            
             const rawStripped = data.rawText.replace(/^\d{3,4}\s*/, '').trim();
             if (rawStripped) {
               const currentDive = await storage.getDive(dive.id);
@@ -1209,6 +1271,9 @@ export async function registerRoutes(
                 await storage.updateDive(dive.id, { taskSummary: rawStripped });
               }
             }
+            
+            // Auto-compute dive table if we have sufficient data
+            await autoComputeDiveTable(dive.id);
           }
         }
       }
@@ -1285,6 +1350,17 @@ export async function registerRoutes(
             const eventTime = event.eventTime || event.captureTime;
             const timeField = `${extracted.diveOperation}Time` as 'lsTime' | 'rbTime' | 'lbTime' | 'rsTime';
             await storage.updateDiveTimes(dive.id, timeField, eventTime, extracted.depthFsw);
+            
+            if (station && !dive.station) {
+              await storage.updateDive(dive.id, { station });
+            }
+            if (!dive.breathingGas && day.defaultBreathingGas) {
+              const gasUpd: any = { breathingGas: day.defaultBreathingGas };
+              if (day.defaultBreathingGas === "Nitrox" && (day as any).defaultFo2Percent) {
+                gasUpd.fo2Percent = (day as any).defaultFo2Percent;
+              }
+              await storage.updateDive(dive.id, gasUpd);
+            }
 
             const rawStripped = event.rawText.replace(/^\d{3,4}\s*/, '').trim();
             if (rawStripped) {
@@ -1299,6 +1375,54 @@ export async function registerRoutes(
               }
             }
             created++;
+          }
+        }
+      }
+      
+      // Handle stop-work events: set RS for active dives
+      const stopWorkEvents = events.filter(e => {
+        const ej = e.extractedJson as any;
+        return ej?.stopWork === true;
+      });
+      for (const swe of stopWorkEvents) {
+        const allDives = await storage.getDivesByDay(dayId);
+        const eventTime = swe.eventTime || swe.captureTime;
+        const activeDives = allDives.filter(d => 
+          d.lsTime && !d.rsTime && 
+          (!swe.station || !d.station || d.station === swe.station)
+        );
+        for (const ad of activeDives) {
+          await storage.updateDiveTimes(ad.id, 'rsTime', eventTime);
+        }
+      }
+      
+      // Auto-compute tables for all dives
+      const allDivesForCompute = await storage.getDivesByDay(dayId);
+      for (const d of allDivesForCompute) {
+        if (d.maxDepthFsw && d.breathingGas && d.lsTime && !d.tableUsed) {
+          let btMin: number | null = null;
+          if (d.lbTime) {
+            let diff = new Date(d.lbTime).getTime() - new Date(d.lsTime).getTime();
+            if (diff < 0) diff += 24 * 60 * 60 * 1000;
+            btMin = Math.ceil(diff / 60000);
+          } else if (d.rsTime) {
+            let diff = new Date(d.rsTime).getTime() - new Date(d.lsTime).getTime();
+            if (diff < 0) diff += 24 * 60 * 60 * 1000;
+            btMin = Math.ceil(diff / 60000);
+          }
+          if (btMin && btMin > 0) {
+            try {
+              const fo2 = d.fo2Percent ?? (d.breathingGas === "Air" ? 21 : null);
+              const result = lookupDiveTable(d.maxDepthFsw, btMin, d.breathingGas, fo2 ?? undefined);
+              await storage.updateDive(d.id, {
+                eadFsw: result.eadFsw ?? null,
+                tableUsed: result.tableUsed,
+                scheduleUsed: result.scheduleUsed,
+                repetitiveGroup: result.repetitiveGroup,
+                decompRequired: result.decompRequired,
+                decompStops: result.decompStops,
+              });
+            } catch {}
           }
         }
       }
