@@ -140,6 +140,98 @@ export function hasRiskKeywords(rawText: string): boolean {
   return RISK_PATTERNS.some(p => p.test(rawText));
 }
 
+const STOP_WORK_PATTERNS = [
+  /\ball\s*stop\b/i,
+  /\bpull\s*divers?\b/i,
+  /\bsecure\s*(?:dive\s*)?(?:ops|operations|station)?\b/i,
+  /\bstop\s*(?:all\s*)?(?:dive\s*)?(?:ops|operations)\b/i,
+  /\bcease\s*(?:dive\s*)?(?:ops|operations)\b/i,
+  /\bbreak\s*down\s*station\b/i,
+];
+
+export function isStopWork(rawText: string): boolean {
+  return STOP_WORK_PATTERNS.some(p => p.test(rawText));
+}
+
+export const HAZARD_MAP: Record<string, { hazard: string; controls: string; stopWorkTrigger: string }> = {
+  "barge": {
+    hazard: "Vessel movement / crush hazards",
+    controls: "Establish exclusion zones, confirm vessel movements with DHO, maintain diver awareness",
+    stopWorkTrigger: "Uncontrolled vessel movement near dive site",
+  },
+  "dredg": {
+    hazard: "Suction / Delta-P risk",
+    controls: "Confirm dredge isolation, establish Delta-P barriers, continuous comms with operator",
+    stopWorkTrigger: "Loss of Delta-P barrier or uncontrolled suction",
+  },
+  "touch": {
+    hazard: "Tool entanglement / pinch hazards",
+    controls: "Pre-dive tool inspection, tether tools, maintain awareness of umbilical routing",
+    stopWorkTrigger: "Diver entanglement or tool malfunction",
+  },
+  "chipping": {
+    hazard: "Flying debris / hand-arm vibration",
+    controls: "PPE enforcement, limit continuous exposure time, debris containment",
+    stopWorkTrigger: "PPE failure or excessive vibration exposure",
+  },
+  "weld": {
+    hazard: "Arc flash / electrical hazard / burn risk",
+    controls: "Welding permit, ground isolation check, fire watch, gas testing",
+    stopWorkTrigger: "Electrical fault, gas presence, or burn injury",
+  },
+  "grind": {
+    hazard: "Sparks / debris / entanglement with rotating tool",
+    controls: "Guard in place, PPE, fire watch, clear umbilical routing",
+    stopWorkTrigger: "Guard failure, fire, or diver contact with disc",
+  },
+  "rigg": {
+    hazard: "Dropped objects / rigging failure / crush hazard",
+    controls: "Rigging inspection, tag lines, exclusion zone below lift, rated hardware",
+    stopWorkTrigger: "Rigging hardware failure or dropped object",
+  },
+  "lift": {
+    hazard: "Crane / lift operations — suspended load hazard",
+    controls: "Lift plan, exclusion zone, signal person, rated slings/shackles",
+    stopWorkTrigger: "Load shift, rigging failure, or personnel under load",
+  },
+  "install": {
+    hazard: "Pinch points / alignment hazards / dropped materials",
+    controls: "Pre-fit check, tag lines, diver standoff during initial placement",
+    stopWorkTrigger: "Uncontrolled material movement or diver trapped",
+  },
+  "riser": {
+    hazard: "Heavy component handling / alignment / crush",
+    controls: "Rigging plan, guide wires, diver clear during placement, comms confirmation",
+    stopWorkTrigger: "Component shift or diver caught between structures",
+  },
+  "break down": {
+    hazard: "Rigging strain / dropped objects / fatigue",
+    controls: "Controlled demobilization sequence, tool accountability, buddy system",
+    stopWorkTrigger: "Dropped equipment or personnel injury from fatigue",
+  },
+  "pressure wash": {
+    hazard: "High-pressure water jet / visibility loss",
+    controls: "Maintain safe standoff distance, confirm water pressure settings, umbilical management",
+    stopWorkTrigger: "Loss of diver visibility or jet contact with personnel",
+  },
+  "cut": {
+    hazard: "Cutting tool hazard / debris / structural failure",
+    controls: "Cut plan, structural assessment, debris containment, PPE",
+    stopWorkTrigger: "Uncontrolled structural collapse or diver contact with blade",
+  },
+};
+
+export function detectHazards(rawText: string): Array<{ keyword: string; hazard: string; controls: string; stopWorkTrigger: string }> {
+  const detected: Array<{ keyword: string; hazard: string; controls: string; stopWorkTrigger: string }> = [];
+  const lower = rawText.toLowerCase();
+  for (const [keyword, entry] of Object.entries(HAZARD_MAP)) {
+    if (lower.includes(keyword)) {
+      detected.push({ keyword, ...entry });
+    }
+  }
+  return detected;
+}
+
 export type DirectiveTag = "CONFLICTING DIRECTION" | "REVERSED DIRECTION" | null;
 
 export function detectDirectiveTag(rawText: string, category: EventCategory): DirectiveTag {

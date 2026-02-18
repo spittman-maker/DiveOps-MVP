@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import express from "express";
 import { storage } from "./storage";
 import { passport, hashPassword, requireAuth, requireRole, canWriteLogEvents, isGod, isAdminOrHigher } from "./auth";
-import { classifyEvent, extractData, parseEventTime, generateRiskId, getMasterLogSection, renderInternalCanvasLine, detectDirectiveTag, hasRiskKeywords } from "./extraction";
+import { classifyEvent, extractData, parseEventTime, generateRiskId, getMasterLogSection, renderInternalCanvasLine, detectDirectiveTag, hasRiskKeywords, isStopWork, detectHazards } from "./extraction";
 import { processStructuredLog } from "./logging";
 import { generateAIRenders } from "./ai-drafting";
 import { generateShiftExport } from "./document-export";
@@ -632,9 +632,110 @@ export async function registerRoutes(
     res.json({ day: updated, propagatedTo: propagated.length });
   });
 
+  app.get("/api/days/:id/compliance", requireAuth, async (req: Request, res: Response) => {
+    const day = await storage.getDay(req.params.id);
+    if (!day) return res.status(404).json({ message: "Day not found" });
+    
+    const dives = await storage.getDivesByDay(req.params.id);
+    const events = await storage.getLogEventsByDay(req.params.id);
+    
+    const gaps: Array<{ scope: string; field: string; message: string }> = [];
+    
+    if (!day.defaultBreathingGas) {
+      gaps.push({ scope: "day", field: "breathingGas", message: "Shift breathing gas not set" });
+    }
+    
+    const hasStopWork = events.some(e => {
+      const ej = e.extractedJson as any;
+      return ej?.stopWork === true;
+    });
+    
+    for (const dive of dives) {
+      const label = `Dive #${dive.diveNumber} (${dive.diverDisplayName || "Unknown"})`;
+      if (!dive.diverDisplayName || dive.diverDisplayName.length <= 2) {
+        gaps.push({ scope: label, field: "diverDisplayName", message: "Diver name not identified" });
+      }
+      if (!dive.maxDepthFsw) {
+        gaps.push({ scope: label, field: "maxDepthFsw", message: "Max depth not recorded" });
+      }
+      if (!dive.breathingGas) {
+        gaps.push({ scope: label, field: "breathingGas", message: "Breathing gas not set" });
+      }
+      if (dive.breathingGas === "Nitrox" && !dive.fo2Percent) {
+        gaps.push({ scope: label, field: "fo2Percent", message: "FO₂% not set for Nitrox" });
+      }
+      if (!dive.lsTime) {
+        gaps.push({ scope: label, field: "lsTime", message: "Leave Surface time missing" });
+      }
+      if (!dive.rsTime) {
+        gaps.push({ scope: label, field: "rsTime", message: "Reached Surface time missing" });
+      }
+      if (!dive.tableUsed && dive.maxDepthFsw && dive.lsTime) {
+        gaps.push({ scope: label, field: "tableUsed", message: "Dive table not computed" });
+      }
+    }
+    
+    const closeoutData = (day as any).closeoutData || {};
+    if (!closeoutData.scopeStatus) {
+      gaps.push({ scope: "closeout", field: "scopeStatus", message: "Scope status not set" });
+    }
+    if (!closeoutData.documentationStatus) {
+      gaps.push({ scope: "closeout", field: "documentationStatus", message: "Documentation status not set" });
+    }
+    
+    res.json({
+      status: gaps.length === 0 ? "PASS" : "NEEDS_INFO",
+      gapCount: gaps.length,
+      diveCount: dives.length,
+      hasStopWork,
+      gaps,
+    });
+  });
+
+  async function evaluateComplianceGaps(dayId: string): Promise<string[]> {
+    const day = await storage.getDay(dayId);
+    if (!day) return ["Day not found"];
+    const dives = await storage.getDivesByDay(dayId);
+    const gaps: string[] = [];
+    
+    if (!day.defaultBreathingGas) {
+      gaps.push("Shift breathing gas not set");
+    }
+    
+    for (const dive of dives) {
+      const label = `Dive #${dive.diveNumber} (${dive.diverDisplayName || "Unknown"})`;
+      if (!dive.diverDisplayName || dive.diverDisplayName.length <= 2) gaps.push(`${label}: Diver name not identified`);
+      if (!dive.maxDepthFsw) gaps.push(`${label}: Max depth not recorded`);
+      if (!dive.breathingGas) gaps.push(`${label}: Breathing gas not set`);
+      if (dive.breathingGas === "Nitrox" && !dive.fo2Percent) gaps.push(`${label}: FO₂% not set for Nitrox`);
+      if (!dive.lsTime) gaps.push(`${label}: Leave Surface time missing`);
+      if (!dive.rsTime) gaps.push(`${label}: Reached Surface time missing`);
+      if (!dive.tableUsed && dive.maxDepthFsw && dive.lsTime) gaps.push(`${label}: Dive table not computed`);
+    }
+    
+    const closeoutData = (day as any).closeoutData || {};
+    if (!closeoutData.scopeStatus) gaps.push("Closeout: Scope status not set");
+    if (!closeoutData.documentationStatus) gaps.push("Closeout: Documentation status not set");
+    
+    return gaps;
+  }
+
   app.post("/api/days/:id/close", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
     const user = getUser(req);
     const closeoutData = req.body?.closeoutData || undefined;
+    const forceClose = req.body?.forceClose === true;
+    
+    if (!forceClose) {
+      const gaps = await evaluateComplianceGaps(req.params.id);
+      if (gaps.length > 0) {
+        return res.status(422).json({ 
+          message: "Compliance gaps detected — review before closing",
+          gaps,
+          canForceClose: isGod(user.role) || user.role === "ADMIN",
+        });
+      }
+    }
+    
     const day = await storage.closeDay(req.params.id, user.id, closeoutData);
     if (!day) return res.status(404).json({ message: "Day not found" });
     res.json(day);
@@ -869,9 +970,12 @@ export async function registerRoutes(
       
       // Detect conflicting/reversed direction tags for directives (SOP Phase 1)
       const directiveTag = detectDirectiveTag(data.rawText, category);
-      const extractedWithTag = directiveTag 
-        ? { ...extracted, directiveTag } 
-        : extracted;
+      const stopWork = isStopWork(data.rawText);
+      const hazards = detectHazards(data.rawText);
+      const extractedWithTag: any = { ...extracted };
+      if (directiveTag) extractedWithTag.directiveTag = directiveTag;
+      if (stopWork) extractedWithTag.stopWork = true;
+      if (hazards.length > 0) extractedWithTag.hazards = hazards;
 
       // Create the log event IMMEDIATELY (event sourcing)
       const logEvent = await storage.createLogEvent({
@@ -1017,8 +1121,24 @@ export async function registerRoutes(
         });
       }
       
-      // If text contains risk keywords (and wasn't already captured as safety/directive), create risk item
-      if (category !== "safety" && category !== "directive" && hasRiskKeywords(data.rawText)) {
+      // Stop-work events always create a safety risk item
+      if (stopWork && category !== "safety") {
+        const existingRisks = await storage.getRiskItemsByDay(day.id);
+        const riskId = generateRiskId(day.date, existingRisks.length + 1);
+        await storage.createRiskItem({
+          dayId: day.id,
+          projectId: data.projectId,
+          riskId,
+          triggerEventId: logEvent.id,
+          category: "safety",
+          source: "supervisor_entry",
+          description: `STOP WORK: ${data.rawText}`,
+          status: "open",
+        });
+      }
+      
+      // If text contains risk keywords (and wasn't already captured as safety/directive/stop-work), create risk item
+      if (category !== "safety" && category !== "directive" && !stopWork && hasRiskKeywords(data.rawText)) {
         const existingRisks = await storage.getRiskItemsByDay(day.id);
         const riskId = generateRiskId(day.date, existingRisks.length + 1);
         

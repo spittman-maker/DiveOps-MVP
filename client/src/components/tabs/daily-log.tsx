@@ -185,6 +185,7 @@ export function DailyLogTab() {
   const streamRef = useRef<MediaStream | null>(null);
 
   const [showCloseout, setShowCloseout] = useState(false);
+  const [showForceClose, setShowForceClose] = useState(false);
   const [closeoutForm, setCloseoutForm] = useState({
     scopeStatus: "complete" as "complete" | "incomplete",
     documentationStatus: "complete" as "complete" | "incomplete",
@@ -375,15 +376,31 @@ export function DailyLogTab() {
     };
   };
 
+  const { data: complianceData, refetch: refetchCompliance } = useQuery({
+    queryKey: ["compliance", currentDay?.id],
+    queryFn: async () => {
+      if (!currentDay) return null;
+      const res = await fetch(`/api/days/${currentDay.id}/compliance`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!currentDay && currentDay.status !== "CLOSED",
+    refetchInterval: 15000,
+  });
+
   const closeDayMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (forceClose: boolean = false) => {
       if (!currentDay) throw new Error("No day");
       const res = await fetch(`/api/days/${currentDay.id}/close`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(buildCloseoutPayload()),
+        body: JSON.stringify({ ...buildCloseoutPayload(), forceClose }),
       });
+      if (res.status === 422) {
+        const data = await res.json();
+        throw { complianceGaps: data.gaps, canForceClose: data.canForceClose };
+      }
       if (!res.ok) throw new Error("Failed to close day");
       return res.json();
     },
@@ -392,9 +409,27 @@ export function DailyLogTab() {
       refreshDay();
       queryClient.invalidateQueries({ queryKey: ["log-events"] });
       queryClient.invalidateQueries({ queryKey: ["master-log"] });
+      queryClient.invalidateQueries({ queryKey: ["compliance"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-recent-logs"] });
       toast({ title: "Shift closed", description: "QC Closeout recorded. Master Log is now locked." });
+    },
+    onError: (error: any) => {
+      if (error?.complianceGaps) {
+        const gapList = error.complianceGaps.slice(0, 5).join("\n");
+        const more = error.complianceGaps.length > 5 ? `\n...and ${error.complianceGaps.length - 5} more` : "";
+        toast({
+          title: "Compliance gaps detected",
+          description: `${gapList}${more}`,
+          variant: "destructive",
+          duration: 10000,
+        });
+        if (error.canForceClose) {
+          setShowForceClose(true);
+        }
+      } else {
+        toast({ title: "Error", description: "Failed to close day", variant: "destructive" });
+      }
     },
   });
 
@@ -930,7 +965,7 @@ export function DailyLogTab() {
                         <Button
                           data-testid="button-confirm-close"
                           size="sm"
-                          onClick={() => closeDayMutation.mutate()}
+                          onClick={() => closeDayMutation.mutate(false)}
                           disabled={closeDayMutation.isPending}
                           className="bg-amber-600 text-white hover:bg-amber-700"
                         >
@@ -945,6 +980,17 @@ export function DailyLogTab() {
                         >
                           {closeAndExportMutation.isPending ? "Exporting..." : "Close & Export"}
                         </Button>
+                        {showForceClose && (
+                          <Button
+                            data-testid="button-force-close"
+                            size="sm"
+                            onClick={() => { setShowForceClose(false); closeDayMutation.mutate(true); }}
+                            disabled={closeDayMutation.isPending}
+                            className="bg-red-600 text-white hover:bg-red-700"
+                          >
+                            Force Close (Override Gaps)
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1639,6 +1685,44 @@ export function DailyLogTab() {
                 </CardContent>
               </Card>
             </section>
+
+            {/* 7.5 Compliance Gate Status */}
+            {complianceData && currentDay?.status !== "CLOSED" && (
+              <section data-testid="section-compliance">
+                <Card className={`border ${complianceData.status === "PASS" ? "bg-green-900/20 border-green-500/40" : "bg-red-900/20 border-red-500/40"}`}>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className={`text-sm ${complianceData.status === "PASS" ? "text-green-400" : "text-red-400"}`}>
+                        {complianceData.status === "PASS" ? "COMPLIANCE: PASS" : `COMPLIANCE: ${complianceData.gapCount} GAP${complianceData.gapCount !== 1 ? "S" : ""}`}
+                      </CardTitle>
+                      <Badge className={complianceData.status === "PASS" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
+                        {complianceData.diveCount} dive{complianceData.diveCount !== 1 ? "s" : ""}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  {complianceData.gaps?.length > 0 && (
+                    <CardContent className="pt-0">
+                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                        {complianceData.gaps.map((gap: any, i: number) => (
+                          <div key={i} className="flex items-start gap-2 text-xs">
+                            <span className="text-red-400 mt-0.5 shrink-0">!</span>
+                            <span className="text-navy-300">
+                              <span className="text-red-300 font-medium">{gap.scope}:</span>{" "}
+                              {gap.message}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      {complianceData.hasStopWork && (
+                        <div className="mt-2 px-2 py-1 bg-yellow-500/10 border border-yellow-500/30 rounded text-xs text-yellow-300">
+                          STOP WORK event recorded this shift
+                        </div>
+                      )}
+                    </CardContent>
+                  )}
+                </Card>
+              </section>
+            )}
 
             {/* 8. Advisory Block */}
             <section data-testid="section-advisory">
