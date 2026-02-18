@@ -6,6 +6,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { passport } from "./auth";
 import { registerChatRoutes } from "./replit_integrations/chat";
+import { startPeriodicSweep } from "./sweep";
 
 const app = express();
 const httpServer = createServer(app);
@@ -122,6 +123,7 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
+      startPeriodicSweep();
     },
   );
 })();

@@ -111,6 +111,7 @@ export interface IStorage {
 
   // Log Renders
   createLogRender(render: InsertLogRender): Promise<LogRender>;
+  upsertLogRender(logEventId: string, renderType: string, render: Partial<InsertLogRender>): Promise<LogRender>;
   getLogRendersByEvent(logEventId: string): Promise<LogRender[]>;
 
   // Dive Plans
@@ -663,6 +664,20 @@ export class DbStorage implements IStorage {
   async createLogRender(render: InsertLogRender): Promise<LogRender> {
     const [created] = await db.insert(schema.logRenders).values(render as any).returning();
     return created!;
+  }
+
+  async upsertLogRender(logEventId: string, renderType: string, render: Partial<InsertLogRender>): Promise<LogRender> {
+    const existing = await db.select().from(schema.logRenders)
+      .where(and(eq(schema.logRenders.logEventId, logEventId), eq(schema.logRenders.renderType, renderType as any)))
+      .limit(1);
+    if (existing.length > 0) {
+      const [updated] = await db.update(schema.logRenders)
+        .set({ ...render, updatedAt: new Date() } as any)
+        .where(eq(schema.logRenders.id, existing[0]!.id))
+        .returning();
+      return updated!;
+    }
+    return this.createLogRender({ logEventId, renderType: renderType as any, ...render } as InsertLogRender);
   }
 
   async getLogRendersByEvent(logEventId: string): Promise<LogRender[]> {

@@ -3215,5 +3215,20 @@ Respond with ONLY the updated JSON object. No other text.`;
     }
   });
 
+  // Manual sweep trigger (admin/god only)
+  app.post("/api/sweep/run", requireRole("ADMIN", "GOD"), async (_req: Request, res: Response) => {
+    try {
+      const { runSweep, isSweepRunning } = await import("./sweep");
+      if (isSweepRunning()) {
+        return res.status(409).json({ message: "Sweep already running" });
+      }
+      const result = await runSweep();
+      res.json(result);
+    } catch (error) {
+      console.error("Manual sweep error:", error);
+      res.status(500).json({ message: "Sweep failed" });
+    }
+  });
+
   return httpServer;
 }

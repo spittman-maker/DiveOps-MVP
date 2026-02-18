@@ -151,7 +151,7 @@ export async function generateAIRenders(
     const [internalResponse, masterResponse] = await Promise.all([
       openai.chat.completions.create({
         model: MODEL,
-        max_tokens: 300,
+        max_completion_tokens: 300,
         messages: [
           { role: "system", content: INTERNAL_SYSTEM_PROMPT },
           { 
@@ -162,7 +162,7 @@ export async function generateAIRenders(
       }),
       openai.chat.completions.create({
         model: MODEL,
-        max_tokens: 300,
+        max_completion_tokens: 300,
         messages: [
           { role: "system", content: MASTER_LOG_SYSTEM_PROMPT },
           { 
