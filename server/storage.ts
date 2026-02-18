@@ -31,6 +31,7 @@ import type {
   CompanyContactsDefault, InsertCompanyContactsDefault,
   ProjectWorkSelection, InsertProjectWorkSelection,
   ProjectContact, InsertProjectContact,
+  DiverRoster, InsertDiverRoster,
 } from "@shared/schema";
 
 const pool = new Pool({
@@ -91,6 +92,11 @@ export interface IStorage {
   // Dive Confirmations
   createDiveConfirmation(confirmation: InsertDiveConfirmation): Promise<DiveConfirmation>;
   getDiveConfirmation(diveId: string, diverId: string): Promise<DiveConfirmation | undefined>;
+
+  // Diver Roster
+  upsertDiverRoster(projectId: string, initials: string, fullName: string): Promise<DiverRoster>;
+  getDiverRosterByProject(projectId: string): Promise<DiverRoster[]>;
+  lookupDiverName(projectId: string, initials: string): Promise<string | null>;
 
   // Risk Items
   createRiskItem(risk: InsertRiskItem): Promise<RiskItem>;
@@ -575,6 +581,39 @@ export class DbStorage implements IStorage {
     const [confirmation] = await db.select().from(schema.diveConfirmations)
       .where(and(eq(schema.diveConfirmations.diveId, diveId), eq(schema.diveConfirmations.diverId, diverId)));
     return confirmation;
+  }
+
+  // Diver Roster
+  async upsertDiverRoster(projectId: string, initials: string, fullName: string): Promise<DiverRoster> {
+    const normalized = initials.toUpperCase();
+    const existing = await db.select().from(schema.diverRoster)
+      .where(and(eq(schema.diverRoster.projectId, projectId), eq(schema.diverRoster.initials, normalized)));
+    
+    if (existing.length > 0) {
+      const [updated] = await db.update(schema.diverRoster)
+        .set({ fullName, updatedAt: new Date() } as any)
+        .where(eq(schema.diverRoster.id, existing[0]!.id))
+        .returning();
+      return updated!;
+    }
+    
+    const [created] = await db.insert(schema.diverRoster)
+      .values({ projectId, initials: normalized, fullName } as any)
+      .returning();
+    return created!;
+  }
+
+  async getDiverRosterByProject(projectId: string): Promise<DiverRoster[]> {
+    return await db.select().from(schema.diverRoster)
+      .where(eq(schema.diverRoster.projectId, projectId))
+      .orderBy(schema.diverRoster.initials);
+  }
+
+  async lookupDiverName(projectId: string, initials: string): Promise<string | null> {
+    const normalized = initials.toUpperCase();
+    const [entry] = await db.select().from(schema.diverRoster)
+      .where(and(eq(schema.diverRoster.projectId, projectId), eq(schema.diverRoster.initials, normalized)));
+    return entry?.fullName ?? null;
   }
 
   // Risk Items

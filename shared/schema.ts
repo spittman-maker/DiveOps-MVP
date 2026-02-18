@@ -385,6 +385,26 @@ export type InsertDiveConfirmation = z.infer<typeof insertDiveConfirmationSchema
 export type DiveConfirmation = typeof diveConfirmations.$inferSelect;
 
 // ────────────────────────────────────────────────────────────────────────────
+// DIVER ROSTER (project-level initials → full name mapping)
+// ────────────────────────────────────────────────────────────────────────────
+
+export const diverRoster = pgTable("diver_roster", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  initials: text("initials").notNull(),
+  fullName: text("full_name").notNull(),
+  badgeId: text("badge_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({
+  projectInitialsUnique: uniqueIndex("uq_diver_roster_project_initials").on(t.projectId, t.initials),
+}));
+
+export const insertDiverRosterSchema = createInsertSchema(diverRoster).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDiverRoster = z.infer<typeof insertDiverRosterSchema>;
+export type DiverRoster = typeof diverRoster.$inferSelect;
+
+// ────────────────────────────────────────────────────────────────────────────
 // RISK ITEM (Derived + supervisor editable with audit)
 // ────────────────────────────────────────────────────────────────────────────
 

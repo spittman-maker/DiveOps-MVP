@@ -1220,7 +1220,13 @@ export async function registerRoutes(
                 await storage.updateDive(dive.id, { diverDisplayName: bestName });
               }
             } else {
+              // Always use initials for dive lookup/creation to avoid duplicates
               dive = await storage.getOrCreateDiveByDisplayName(day.id, data.projectId, initials, station || undefined);
+              // Then check roster and upgrade display name if known
+              const rosterName = await storage.lookupDiverName(data.projectId, initials);
+              if (rosterName && (!dive.diverDisplayName || dive.diverDisplayName.trim().length <= 3)) {
+                await storage.updateDive(dive.id, { diverDisplayName: rosterName });
+              }
             }
           } else {
             const nameParts = identifier.split(/[.\s]/);
@@ -1326,7 +1332,13 @@ export async function registerRoutes(
                 await storage.updateDive(dive.id, { diverDisplayName: bestName });
               }
             } else {
+              // Always use initials for lookup to avoid duplicates
               dive = await storage.getOrCreateDiveByDisplayName(dayId, day.projectId, identifier, station || undefined);
+              // Then upgrade display name from roster if known
+              const rosterName = await storage.lookupDiverName(day.projectId, identifier);
+              if (rosterName && (!dive.diverDisplayName || dive.diverDisplayName.trim().length <= 3)) {
+                await storage.updateDive(dive.id, { diverDisplayName: rosterName });
+              }
             }
           } else {
             const nameParts = identifier.split(/[.\s]/);
@@ -1719,6 +1731,28 @@ export async function registerRoutes(
       }
       
       const updated = await storage.updateDive(req.params.id, updates);
+      
+      // If diver name was updated with a full name, save to roster and propagate
+      if (updates.diverDisplayName && updates.diverDisplayName.length > 2) {
+        const newName = updates.diverDisplayName as string;
+        const initials = newName.split(/\s+/).map((w: string) => w[0]?.toUpperCase()).join("");
+        
+        if (initials.length >= 2) {
+          // Save to project-level roster
+          await storage.upsertDiverRoster(dive.projectId, initials, newName);
+          
+          // Propagate to other dives in the same day that have just initials
+          const dayDives = await storage.getDivesByDay(dive.dayId);
+          for (const otherDive of dayDives) {
+            if (otherDive.id === dive.id) continue;
+            const otherName = otherDive.diverDisplayName?.trim();
+            if (otherName && otherName.toUpperCase() === initials) {
+              await storage.updateDive(otherDive.id, { diverDisplayName: newName });
+            }
+          }
+        }
+      }
+      
       res.json(updated);
     } catch (error) {
       console.error("Dive update error:", error);
