@@ -111,17 +111,17 @@ Never refuse to produce output. Always generate a professional log line from the
 
 function generateDeterministicAnnotations(rawText: string, category: EventCategory): AIAnnotation[] {
   const annotations: AIAnnotation[] = [];
-  const upper = rawText.toUpperCase();
+  const extracted = extractData(rawText);
+  const hasDiveOp = extracted.diveOperation === "ls" || extracted.diveOperation === "rb";
+  const hasDiver = (extracted.diverNames && extracted.diverNames.length > 0) || 
+                   (extracted.diverInitials && extracted.diverInitials.length > 0);
   
-  if (/\bL\/?S\b/.test(upper) && !/\d+\s*FSW/i.test(rawText)) {
+  if (hasDiveOp && !/\d+\s*(?:fsw|ft|feet|')/i.test(rawText)) {
     annotations.push({ type: "missing_info", message: "Dive start (L/S) detected but no depth (FSW) specified" });
   }
   
-  if (/\bL\/?S\b/.test(upper) || /\bR\/?B\b/.test(upper)) {
-    const hasName = /[A-Z][a-z]+\s+[A-Z][a-z]+/.test(rawText) || /\b[A-Z]{2,3}\b/.test(rawText);
-    if (!hasName) {
-      annotations.push({ type: "missing_info", message: "Dive event without diver name or initials" });
-    }
+  if (hasDiveOp && !hasDiver) {
+    annotations.push({ type: "missing_info", message: "Dive event without diver name or initials" });
   }
   
   if (category === "safety" && rawText.length < 30) {
