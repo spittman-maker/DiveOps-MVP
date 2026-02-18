@@ -265,7 +265,7 @@ const RS_SYNONYMS = [/\bRS\b/i, /\bR\/S\b/i, /\bsurfaced?\b/i, /\bon\s*surface/i
 // Depth patterns: 40 fsw, 40 ft, 40 feet, 40'
 const DEPTH_PATTERN = /(\d+)\s*(?:fsw|ft|feet|'|foot)/i;
 
-const NON_INITIALS = new Set(["LS", "LB", "RS", "RB", "AM", "PM", "FSW", "PSI", "DCS", "AIS", "DRA", "LWT", "PFU", "QC", "QA", "ID", "OK", "TBD", "GDS", "ATC", "DHO", "DSO", "DMT", "ROV", "OPS", "HSE", "PPE", "JHA", "SOP", "MOM", "POB", "BOP", "THA", "SIT"]);
+const NON_INITIALS = new Set(["LS", "LB", "RS", "RB", "AM", "PM", "FSW", "PSI", "DCS", "AIS", "DRA", "LWT", "PFU", "QC", "QA", "ID", "OK", "TBD", "GDS", "ATC", "DHO", "DSO", "DMT", "ROV", "OPS", "HSE", "PPE", "JHA", "SOP", "MOM", "POB", "BOP", "THA", "SIT", "SEI", "AMC", "EOD", "STBY"]);
 
 const DIVER_NAME_PATTERNS = [
   /(?:Diver\s+)?([A-Z])\.\s*([A-Z][a-z]+)/g,
@@ -283,6 +283,8 @@ const NON_NAME_WORDS = new Set([
   "Shift", "Then", "Also", "Still", "Near", "Here", "There", "Some",
   "Each", "Both", "Well", "Done", "Hold", "Move", "Pull", "Push",
   "Open", "Close", "Clear", "Clean", "Check", "Mark", "Note",
+  "Night", "Harbor", "Control", "Panel", "Install", "American", "Marine",
+  "Albert", "Boyer", "Maui", "Box", "Tremie", "Mock", "Wall",
 ]);
 
 function extractDiverNames(rawText: string): { names: string[]; initials: string[] } {

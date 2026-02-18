@@ -1242,7 +1242,14 @@ export async function registerRoutes(
                 await storage.updateDive(dive.id, { diverDisplayName: bestName });
               }
             } else {
-              dive = await storage.getOrCreateDiveByDisplayName(day.id, data.projectId, identifier, station || undefined);
+              // Use initials for lookup to avoid duplicates between "B.Murphy" and "BM"
+              dive = await storage.getOrCreateDiveByDisplayName(day.id, data.projectId, searchInitials, station || undefined);
+              // Check roster for full name, otherwise use the entered name
+              const rosterName = await storage.lookupDiverName(data.projectId, searchInitials);
+              const bestName = rosterName || identifier;
+              if (!dive.diverDisplayName || dive.diverDisplayName.trim().length <= 3 || dive.diverDisplayName !== bestName) {
+                await storage.updateDive(dive.id, { diverDisplayName: bestName });
+              }
             }
           }
           
@@ -1354,7 +1361,13 @@ export async function registerRoutes(
                 await storage.updateDive(dive.id, { diverDisplayName: bestName });
               }
             } else {
-              dive = await storage.getOrCreateDiveByDisplayName(dayId, day.projectId, identifier, station || undefined);
+              // Use initials for lookup to avoid duplicates between "B.Murphy" and "BM"
+              dive = await storage.getOrCreateDiveByDisplayName(dayId, day.projectId, searchInitials, station || undefined);
+              const rosterName = await storage.lookupDiverName(day.projectId, searchInitials);
+              const bestName = rosterName || identifier;
+              if (!dive.diverDisplayName || dive.diverDisplayName.trim().length <= 3 || dive.diverDisplayName !== bestName) {
+                await storage.updateDive(dive.id, { diverDisplayName: bestName });
+              }
             }
           }
 
