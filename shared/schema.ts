@@ -521,6 +521,27 @@ export type InsertLibraryDocument = z.infer<typeof insertLibraryDocumentSchema>;
 export type LibraryDocument = typeof libraryDocuments.$inferSelect;
 
 // ────────────────────────────────────────────────────────────────────────────
+// PROJECT SOPS (Standard Operating Procedures for AI guidance)
+// ────────────────────────────────────────────────────────────────────────────
+
+export const projectSops = pgTable("project_sops", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  projectIdx: index("project_sops_project_idx").on(t.projectId),
+}));
+
+export const insertProjectSopSchema = createInsertSchema(projectSops).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertProjectSop = z.infer<typeof insertProjectSopSchema>;
+export type ProjectSop = typeof projectSops.$inferSelect;
+
+// ────────────────────────────────────────────────────────────────────────────
 // LIBRARY EXPORTS (Generated shift documents)
 // ────────────────────────────────────────────────────────────────────────────
 

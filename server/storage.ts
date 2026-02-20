@@ -32,6 +32,7 @@ import type {
   ProjectWorkSelection, InsertProjectWorkSelection,
   ProjectContact, InsertProjectContact,
   DiverRoster, InsertDiverRoster,
+  ProjectSop, InsertProjectSop,
 } from "@shared/schema";
 
 const pool = new Pool({
@@ -197,6 +198,13 @@ export interface IStorage {
   // Dashboard Layouts
   getDashboardLayout(userId: string): Promise<schema.DashboardLayoutRecord | undefined>;
   saveDashboardLayout(userId: string, layoutData: schema.DashboardLayout): Promise<schema.DashboardLayoutRecord>;
+
+  // Project SOPs
+  getProjectSops(projectId: string): Promise<ProjectSop[]>;
+  getActiveProjectSops(projectId: string): Promise<ProjectSop[]>;
+  createProjectSop(sop: InsertProjectSop): Promise<ProjectSop>;
+  updateProjectSop(id: string, updates: Partial<InsertProjectSop>): Promise<ProjectSop | undefined>;
+  deleteProjectSop(id: string): Promise<boolean>;
 
   // Admin
   listUsers(): Promise<User[]>;
@@ -1091,6 +1099,41 @@ export class DbStorage implements IStorage {
   async removeProjectMember(projectId: string, userId: string): Promise<boolean> {
     const result = await db.delete(schema.projectMembers)
       .where(and(eq(schema.projectMembers.projectId, projectId), eq(schema.projectMembers.userId, userId)));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // Project SOPs
+  async getProjectSops(projectId: string): Promise<ProjectSop[]> {
+    return await db.select().from(schema.projectSops)
+      .where(eq(schema.projectSops.projectId, projectId))
+      .orderBy(desc(schema.projectSops.createdAt));
+  }
+
+  async getActiveProjectSops(projectId: string): Promise<ProjectSop[]> {
+    return await db.select().from(schema.projectSops)
+      .where(and(
+        eq(schema.projectSops.projectId, projectId),
+        eq(schema.projectSops.isActive, true)
+      ))
+      .orderBy(desc(schema.projectSops.createdAt));
+  }
+
+  async createProjectSop(sop: InsertProjectSop): Promise<ProjectSop> {
+    const [created] = await db.insert(schema.projectSops).values(sop).returning();
+    return created!;
+  }
+
+  async updateProjectSop(id: string, updates: Partial<InsertProjectSop>): Promise<ProjectSop | undefined> {
+    const [updated] = await db.update(schema.projectSops)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(schema.projectSops.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteProjectSop(id: string): Promise<boolean> {
+    const result = await db.delete(schema.projectSops)
+      .where(eq(schema.projectSops.id, id));
     return (result.rowCount ?? 0) > 0;
   }
 }
