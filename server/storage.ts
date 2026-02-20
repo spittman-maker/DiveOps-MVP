@@ -404,9 +404,19 @@ export class DbStorage implements IStorage {
       .orderBy(schema.logEvents.eventTime, schema.logEvents.captureTime);
   }
 
-  async updateLogEvent(id: string, updates: Partial<InsertLogEvent>): Promise<LogEvent | undefined> {
+  async updateLogEvent(id: string, updates: Partial<InsertLogEvent>, expectedVersion?: number): Promise<LogEvent | undefined> {
+    if (expectedVersion !== undefined) {
+      const [updated] = await db.update(schema.logEvents)
+        .set({ ...updates, updatedAt: new Date(), version: expectedVersion + 1 } as any)
+        .where(and(eq(schema.logEvents.id, id), eq(schema.logEvents.version, expectedVersion)))
+        .returning();
+      if (!updated) {
+        throw new Error(`VERSION_CONFLICT: Log event ${id} was modified by another request`);
+      }
+      return updated;
+    }
     const [updated] = await db.update(schema.logEvents)
-      .set({ ...updates, updatedAt: new Date() } as any)
+      .set({ ...updates, updatedAt: new Date(), version: sql`${schema.logEvents.version} + 1` } as any)
       .where(eq(schema.logEvents.id, id))
       .returning();
     return updated;
@@ -439,9 +449,19 @@ export class DbStorage implements IStorage {
       .orderBy(desc(schema.dives.lsTime));
   }
 
-  async updateDive(id: string, updates: Record<string, any>): Promise<Dive | undefined> {
+  async updateDive(id: string, updates: Record<string, any>, expectedVersion?: number): Promise<Dive | undefined> {
+    if (expectedVersion !== undefined) {
+      const [updated] = await db.update(schema.dives)
+        .set({ ...updates, updatedAt: new Date(), version: expectedVersion + 1 } as any)
+        .where(and(eq(schema.dives.id, id), eq(schema.dives.version, expectedVersion)))
+        .returning();
+      if (!updated) {
+        throw new Error(`VERSION_CONFLICT: Dive ${id} was modified by another request`);
+      }
+      return updated;
+    }
     const [updated] = await db.update(schema.dives)
-      .set({ ...updates, updatedAt: new Date() } as any)
+      .set({ ...updates, updatedAt: new Date(), version: sql`${schema.dives.version} + 1` } as any)
       .where(eq(schema.dives.id, id))
       .returning();
     return updated;
@@ -648,9 +668,19 @@ export class DbStorage implements IStorage {
       .orderBy(schema.riskItems.createdAt);
   }
 
-  async updateRiskItem(id: string, updates: Partial<InsertRiskItem>): Promise<RiskItem | undefined> {
+  async updateRiskItem(id: string, updates: Partial<InsertRiskItem>, expectedVersion?: number): Promise<RiskItem | undefined> {
+    if (expectedVersion !== undefined) {
+      const [updated] = await db.update(schema.riskItems)
+        .set({ ...updates, updatedAt: new Date(), version: expectedVersion + 1 } as any)
+        .where(and(eq(schema.riskItems.id, id), eq(schema.riskItems.version, expectedVersion)))
+        .returning();
+      if (!updated) {
+        throw new Error(`VERSION_CONFLICT: Risk item ${id} was modified by another request`);
+      }
+      return updated;
+    }
     const [updated] = await db.update(schema.riskItems)
-      .set({ ...updates, updatedAt: new Date() } as any)
+      .set({ ...updates, updatedAt: new Date(), version: sql`${schema.riskItems.version} + 1` } as any)
       .where(eq(schema.riskItems.id, id))
       .returning();
     return updated;

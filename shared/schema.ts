@@ -281,6 +281,7 @@ export const days = pgTable("days", {
   closeoutData: jsonb("closeout_data").$type<QCCloseoutData>(),
   defaultBreathingGas: text("default_breathing_gas"),
   defaultFo2Percent: integer("default_fo2_percent"),
+  version: integer("version").notNull().default(1),
 }, (t) => ({
   projectDateIdx: index("days_project_date_idx").on(t.projectId, t.date),
 }));
@@ -312,6 +313,7 @@ export const logEvents = pgTable("log_events", {
   aiAnnotations: jsonb("ai_annotations").$type<Array<{ type: string; message: string }>>(),
   validationPassed: boolean("validation_passed"),
   editReason: text("edit_reason"),
+  version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => ({
@@ -361,6 +363,7 @@ export const dives = pgTable("dives", {
   photoVideoRefs: text("photo_video_refs"),
   supervisorInitials: text("supervisor_initials"),
   notes: text("notes"),
+  version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => ({
@@ -426,6 +429,7 @@ export const riskItems = pgTable("risk_items", {
   closureAuthority: text("closure_authority"),
   linkedDirectiveId: text("linked_directive_id"),
   editReason: text("edit_reason"),
+  version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -838,3 +842,42 @@ export const dashboardLayouts = pgTable("dashboard_layouts", {
 export const insertDashboardLayoutSchema = createInsertSchema(dashboardLayouts).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertDashboardLayout = z.infer<typeof insertDashboardLayoutSchema>;
 export type DashboardLayoutRecord = typeof dashboardLayouts.$inferSelect;
+
+// ────────────────────────────────────────────────────────────────────────────
+// AUDIT EVENTS (Append-only compliance audit trail)
+// ────────────────────────────────────────────────────────────────────────────
+
+export type AuditAction =
+  | "log_event.create" | "log_event.update" | "log_event.delete"
+  | "risk.create" | "risk.update"
+  | "dive.create" | "dive.update"
+  | "day.create" | "day.activate" | "day.close" | "day.close_override" | "day.reopen"
+  | "export.generate"
+  | "user.create" | "user.update";
+
+export const auditEvents = pgTable("audit_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  correlationId: text("correlation_id").notNull(),
+  action: text("action").notNull().$type<AuditAction>(),
+  userId: varchar("user_id").references(() => users.id),
+  userRole: text("user_role").$type<UserRole>(),
+  projectId: varchar("project_id").references(() => projects.id),
+  dayId: varchar("day_id").references(() => days.id),
+  targetId: text("target_id"),
+  targetType: text("target_type"),
+  before: jsonb("before").$type<Record<string, any>>(),
+  after: jsonb("after").$type<Record<string, any>>(),
+  metadata: jsonb("metadata").$type<Record<string, any>>(),
+  ipAddress: text("ip_address"),
+  timestamp: timestamp("timestamp", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  correlationIdx: index("audit_events_correlation_idx").on(t.correlationId),
+  actionIdx: index("audit_events_action_idx").on(t.action),
+  userIdx: index("audit_events_user_idx").on(t.userId),
+  timestampIdx: index("audit_events_timestamp_idx").on(t.timestamp),
+  targetIdx: index("audit_events_target_idx").on(t.targetType, t.targetId),
+}));
+
+export const insertAuditEventSchema = createInsertSchema(auditEvents).omit({ id: true, timestamp: true });
+export type InsertAuditEvent = z.infer<typeof insertAuditEventSchema>;
+export type AuditEvent = typeof auditEvents.$inferSelect;

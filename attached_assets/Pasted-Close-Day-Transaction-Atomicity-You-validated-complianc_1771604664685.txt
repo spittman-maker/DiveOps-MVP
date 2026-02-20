@@ -1,0 +1,97 @@
+Close Day Transaction Atomicity
+
+You validated compliance gating, but I need proof that Close Day is fully transactional.
+
+Specifically:
+
+If export fails mid-process, does the day remain open?
+
+If a DB write fails during close, does the entire operation roll back?
+
+Is Close Day wrapped in a single DB transaction?
+
+Attach:
+
+Code reference showing transaction boundary
+
+Unit/integration test demonstrating rollback behavior
+
+2️⃣ Idempotency Guarantee on All Write Endpoints
+
+You validated rapid-fire submissions — good.
+
+Now confirm:
+
+All POST/PUT write endpoints are idempotent or protected by DB constraints.
+
+Retrying the same request (same payload) does not create duplicates.
+
+Retries do not mutate audit logs incorrectly.
+
+List:
+
+Which endpoints are idempotent
+
+Which rely on DB unique constraints
+
+Where request IDs or deduplication keys are enforced
+
+3️⃣ Concurrency Protection for Edits (Not Just Creation)
+
+Risk creation collisions are fixed. Good.
+
+Now confirm:
+
+Two users editing the same Daily Log entry cannot silently overwrite each other.
+
+Versioning or optimistic locking is implemented.
+
+If last-write-wins is the strategy, it is intentional and logged.
+
+Attach:
+
+Code reference
+
+Test demonstrating conflict handling
+
+4️⃣ Export Determinism
+
+Stress test shows performance — good.
+
+Now confirm:
+
+Running the same export twice without changes produces identical output.
+
+Export reflects reopened → edited → reclosed state correctly.
+
+Export does not cache stale data.
+
+Attach:
+
+Proof via before/after export comparison
+
+5️⃣ Rollback + Kill Switch Readiness
+
+Before publishing:
+
+Confirm:
+
+Monitoring thresholds configured
+
+Error alerting live
+
+Rollback procedure documented and tested
+
+Close Day + Risk creation can be disabled if corruption is detected
+
+Attach:
+
+Monitoring screenshot
+
+Rollback playbook
+
+Feature flag confirmation
+
+If all five are satisfied with evidence, I will approve publish.
+
+We are not far off — I just want to ensure we are production-safe, not just QA-passed.
