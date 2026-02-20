@@ -1,0 +1,139 @@
+Thanks for the summary. Before we publish, I need proof-based validation — not just confirmation that endpoints return JSON or tabs load.
+
+Please provide the following:
+
+1) Full Test Matrix
+
+A document listing:
+
+Every feature and workflow tested
+
+Step-by-step test actions
+
+Expected result
+
+Actual result
+
+Pass/Fail
+
+Browser tested
+
+Evidence link (screenshot or screen recording)
+
+High-level statements like “All endpoints return valid JSON” are not sufficient.
+
+2) Deep Workflow Validation (Evidence Required)
+
+Please re-run and document these specifically:
+
+A. Cross-Tab Data Integrity
+
+Create Daily Log → create Dive Logs → create Risks → close day
+
+Refresh → log out → log back in → verify nothing corrupted
+
+Export MasterLog → confirm all data matches UI
+
+B. Concurrency Testing
+
+Open same Daily Log in two tabs
+
+Edit in Tab A
+
+Save conflicting change in Tab B
+
+Show how conflict is handled
+
+C. Duplicate / Double-Submit Protection
+
+Double-click log entry submit
+
+Spam-click risk creation
+
+Confirm no duplicates created
+
+D. Compliance Gate Enforcement
+
+Attempt to close day with:
+
+Missing standby diver
+
+Missing compliance fields
+
+Missing risk entries
+
+Confirm proper block behavior
+
+Confirm GOD override works but logs audit trail
+
+E. Permission Enforcement
+
+Supervisor vs non-supervisor:
+
+Attempt to close day
+
+Attempt to reopen
+
+Attempt to export
+
+Attempt to edit closed log
+
+Show proof these are correctly restricted.
+
+3) Audit Trail Verification
+
+Show:
+
+Created by / updated by
+
+Timestamp changes
+
+Edit history after close → reopen → edit → re-close
+
+Confirm export reflects latest state
+
+4) Negative API Testing
+
+Demonstrate:
+
+Invalid IDs
+
+Expired session token
+
+Malformed request body
+
+Unauthorized role access
+
+And confirm proper structured error responses.
+
+5) Stress / Scale Check
+
+Seed a project with:
+
+100+ log entries
+
+50+ risks
+
+20+ dive logs
+
+Confirm:
+
+Load performance acceptable
+
+Exports still render
+
+No UI breakage
+
+6) Console + Network Cleanliness
+
+Provide screenshot showing:
+
+No uncaught JS errors
+
+No failing network requests
+
+No 500s during normal workflows
+
+Until I see a completed test matrix and evidence for these, we are not ready to publish.
+
+Please deliver a QA report with supporting recordings.
