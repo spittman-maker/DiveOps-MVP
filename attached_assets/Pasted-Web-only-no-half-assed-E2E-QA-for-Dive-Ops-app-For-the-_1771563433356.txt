@@ -1,0 +1,105 @@
+Web-only “no half-assed” E2E QA for Dive Ops app
+
+For the web app, I need a complete end-to-end test pass of every function and workflow. This is not a spot-check.
+
+1) Browsers & screen sizes to test
+
+Chrome (latest) and Safari (latest) (or Firefox if Safari isn’t available)
+
+Responsive widths: mobile-width, tablet, desktop
+
+2) Mandatory end-to-end flows (dive ops specific)
+
+Each flow must be tested with happy path + failure path + edge cases:
+
+A. Project / Site setup
+
+Create/edit/archive project/site
+
+Governing standard selection saved correctly
+
+B. Daily Log (rolling event log)
+
+Create daily log, correct date/time + timezone behavior
+
+Add timestamped entries, ensure ordering stays correct after refresh
+
+Append to an existing same-date log (no overwrite)
+
+Export/share/print output and confirm formatting
+
+C. Daily JHA
+
+Create JHA, fill step table, hazards, controls, stop-work triggers
+
+Required fields enforced (can’t “complete” with blanks)
+
+Attachments upload and persist
+
+Sign-off workflow + edit-after-sign behavior (audit trail / re-approval)
+
+D. Dive Log entries
+
+Create dive record (diver/tender/standby, start/end, max depth, task, gas, comms)
+
+Validation: missing fields, invalid times/depths, overlapping dives
+
+Post-dive checks + incident/near-miss entry flow
+
+E. Compliance gates
+
+Any required manning/standby/comms/emergency gear fields must block closeout if missing
+
+“Needs Info / Fail” states must behave consistently and visibly
+
+F. Roles & permissions
+
+Supervisor vs diver vs tender permissions
+
+Users cannot sign or edit as someone else
+
+Permission changes reflected immediately
+
+G. Data integrity & reliability
+
+No duplicate submissions on double-click
+
+Refresh mid-action doesn’t corrupt state
+
+Session timeout handling (auto-logout, save drafts, clear error messaging)
+
+H. Auditability
+
+Track created by / edited by / timestamps
+
+Edits after sign-off create a recorded change + require re-approval (if that’s the intended rule)
+
+3) Required deliverables (proof-based)
+
+Provide:
+
+A test matrix listing every screen/function with:
+
+steps, expected result, actual result, pass/fail, browser/device width
+
+Evidence:
+
+screenshots + console/network logs where relevant
+
+A bug list with:
+
+severity (Blocker/Major/Minor), repro steps, expected vs actual, fix PR/commit link
+
+A full regression run after fixes
+
+4) Acceptance criteria (definition of “done”)
+
+Nothing is “done” unless it has a documented test case + evidence
+
+0 blockers
+
+Majors fixed or explicitly approved by me in writing
+
+5) Release gate
+
+We don’t ship web until the full matrix shows PASS (or approved exceptions) and regression is complete.

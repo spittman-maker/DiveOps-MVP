@@ -1,0 +1,112 @@
+Dive Ops App (Web) — One-Page Critical Flows Checklist (Demo Script)
+
+Goal: In a live screen-share, run these flows start-to-finish on Chrome + Safari (or Firefox) at Desktop + Mobile-width.
+Pass rule: Each step shows the expected UI result, data persists after refresh, and exports render correctly.
+
+1) Access, Session, Roles
+
+ Login (valid creds) → lands on correct home/dashboard
+
+ Login (invalid creds) → clear error, no crash
+
+ Logout → session cleared, back button doesn’t re-open
+
+ Session timeout / token expiry → forced re-login with graceful messaging
+
+ Role check: non-supervisor cannot access supervisor-only pages/actions
+
+2) Project / Site Setup (Data Backbone)
+
+ Create new Project/Site (required fields enforced)
+
+ Select Governing Standard (or “TBD”) → saves and displays consistently
+
+ Edit project details → changes persist after refresh
+
+ Archive/Deactivate project (if supported) → disappears from active lists, still retrievable in archive
+
+3) Daily Shift Log (Rolling Event Log)
+
+ Create Daily Log for today → date/time correct (timezone)
+
+ Add rolling entries with timestamps (3–5 entries)
+
+ Refresh browser → entries persist and order remains correct
+
+ Append a new entry → appears at correct position with correct timestamp
+
+ Open the same date again → appends, does not overwrite
+
+ Export/Print Daily Log → formatting correct, timestamps readable, no missing fields
+
+4) Daily JHA (Task → Hazards → Controls)
+
+ Create Daily JHA linked to the Project/Site
+
+ Fill at least 3 steps (task detail, hazards, controls, responsible person, stop-work trigger)
+
+ Attempt to submit with missing required fields → blocked with clear prompts
+
+ Attach a file/photo (if supported) → upload succeeds, viewable after refresh
+
+ Mark “Toolbox talk complete” / briefing fields → saved correctly
+
+Sign-off behavior
+
+ Supervisor signs (and all-hands initials if required) → status becomes “Signed”
+
+ Try to edit after sign → verify expected rule:
+
+ Either edit is blocked, or
+
+ Edit allowed but creates an audit entry + forces re-sign
+
+5) Dive Log Entry (Operational Record)
+
+Create one full dive record end-to-end:
+
+ Add Dive #, Diver, Tender, Standby, start/end times, max depth, task, gas, comms
+
+ Validation checks:
+
+ End time before start time blocked
+
+ Missing diver/times/depth blocked
+
+ Overlapping dives (if applicable) flagged
+
+ Post-dive checks completed
+
+ Refresh → record persists and is searchable/filterable (if supported)
+
+6) Compliance Gates (Must Not Be Bypassable)
+
+ If standby diver required by mode: leaving standby blank blocks closeout
+
+ If comms required: cannot close a dive/log without comms status recorded
+
+ Emergency gear fields (O2/First Aid/AED/Chamber status as applicable) cannot be skipped if required
+
+ “Needs Info / Fail” state is clearly visible and prevents “Complete/Close” where intended
+
+7) Data Integrity Torture Tests (Quick)
+
+ Double-click submit on a form → no duplicate entries
+
+ Refresh mid-edit → no data corruption; draft warning or safe handling
+
+ Open same record in two tabs → conflict handled (warning or last-write rules are explicit)
+
+8) Audit + Export Package
+
+ Verify “Created by / Edited by / timestamps” present where intended
+
+ Export daily package (Log + JHA + Dive Log) → correct content, correct date, no missing sections
+
+ Export matches what’s on screen (no stale data)
+
+Result Summary (fill live)
+
+Browser: ☐ Chrome ☐ Safari/Firefox | View: ☐ Desktop ☐ Mobile-width
+
+Passes: ___ / ___ | Blockers: ___ | Majors: ___ | Notes: __________
