@@ -135,10 +135,22 @@ function generateDeterministicAnnotations(rawText: string, category: EventCatego
   return annotations;
 }
 
+export interface SOPContext {
+  title: string;
+  content: string;
+}
+
+function buildSOPBlock(sops: SOPContext[]): string {
+  if (!sops || sops.length === 0) return "";
+  const sopEntries = sops.map((s, i) => `### SOP ${i + 1}: ${s.title}\n${s.content}`).join("\n\n");
+  return `\n\n## ACTIVE STANDARD OPERATING PROCEDURES\nFollow these project-specific SOPs when processing this log entry. Apply them alongside the governing rules above.\n\n${sopEntries}`;
+}
+
 export async function generateAIRenders(
   rawText: string,
   eventTime: Date,
-  category: EventCategory
+  category: EventCategory,
+  sops?: SOPContext[]
 ): Promise<AIRenderResult> {
   const correctedText = fixTypos(rawText);
   const extracted = extractData(correctedText);
@@ -147,13 +159,17 @@ export async function generateAIRenders(
   const deterministicInternal = renderInternalCanvasLine(correctedText, eventTime, category, extracted);
   const deterministicAnnotations = generateDeterministicAnnotations(correctedText, category);
   
+  const sopBlock = buildSOPBlock(sops || []);
+  const internalPrompt = INTERNAL_SYSTEM_PROMPT + sopBlock;
+  const masterPrompt = MASTER_LOG_SYSTEM_PROMPT + sopBlock;
+  
   try {
     const [internalResponse, masterResponse] = await Promise.all([
       openai.chat.completions.create({
         model: MODEL,
         max_completion_tokens: 300,
         messages: [
-          { role: "system", content: INTERNAL_SYSTEM_PROMPT },
+          { role: "system", content: internalPrompt },
           { 
             role: "user", 
             content: `Raw log entry (${eventTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}): ${correctedText}\n\nCategory: ${category}\n\nCreate a clean internal log line.`
@@ -164,7 +180,7 @@ export async function generateAIRenders(
         model: MODEL,
         max_completion_tokens: 300,
         messages: [
-          { role: "system", content: MASTER_LOG_SYSTEM_PROMPT },
+          { role: "system", content: masterPrompt },
           { 
             role: "user", 
             content: `Raw log entry (${eventTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}): ${correctedText}\n\nCategory: ${category}\nSection: ${section}\n\nCreate a professional client-facing log line.`

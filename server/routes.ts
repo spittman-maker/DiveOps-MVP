@@ -5,7 +5,7 @@ import { storage } from "./storage";
 import { passport, hashPassword, requireAuth, requireRole, canWriteLogEvents, isGod, isAdminOrHigher } from "./auth";
 import { classifyEvent, extractData, parseEventTime, generateRiskId, getMasterLogSection, renderInternalCanvasLine, detectDirectiveTag, hasRiskKeywords, isStopWork, detectHazards } from "./extraction";
 import { processStructuredLog } from "./logging";
-import { generateAIRenders } from "./ai-drafting";
+import { generateAIRenders, type SOPContext } from "./ai-drafting";
 import { generateShiftExport } from "./document-export";
 import { speechToTextStream, ensureCompatibleFormat } from "./replit_integrations/audio/client";
 import type { User, UserRole, DayStatus } from "@shared/schema";
@@ -1051,7 +1051,11 @@ export async function registerRoutes(
         .catch(err => console.error("Structured log processing failed:", err));
       
       // Generate AI renders asynchronously (don't block the response)
-      generateAIRenders(data.rawText, eventTime, category)
+      // Load active SOPs for the project to include in AI prompts
+      storage.getActiveProjectSops(data.projectId).then(sops => {
+        const sopCtx: SOPContext[] = sops.map(s => ({ title: s.title, content: s.content }));
+        return generateAIRenders(data.rawText, eventTime, category, sopCtx);
+      })
         .then(async (renders) => {
           // Store internal canvas render
           await storage.createLogRender({
@@ -1591,10 +1595,13 @@ export async function registerRoutes(
     if (!event) return res.status(404).json({ message: "Log event not found" });
     
     try {
+      const sops = event.projectId ? await storage.getActiveProjectSops(event.projectId) : [];
+      const sopCtx: SOPContext[] = sops.map(s => ({ title: s.title, content: s.content }));
       const renders = await generateAIRenders(
         event.rawText,
         new Date(event.eventTime),
-        event.category as any
+        event.category as any,
+        sopCtx
       );
       
       // Create new renders
@@ -3212,6 +3219,63 @@ Respond with ONLY the updated JSON object. No other text.`;
     } catch (error) {
       console.error("ML full bundle export error:", error);
       res.status(500).json({ message: "Failed to export full ML bundle" });
+    }
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // PROJECT SOPs (Standard Operating Procedures)
+  // ────────────────────────────────────────────────────────────────────────────
+
+  app.get("/api/projects/:projectId/sops", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const sops = await storage.getProjectSops(req.params.projectId);
+      res.json(sops);
+    } catch (error) {
+      console.error("Get SOPs error:", error);
+      res.status(500).json({ message: "Failed to get SOPs" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/sops", requireRole("ADMIN", "GOD", "SUPERVISOR"), async (req: Request, res: Response) => {
+    try {
+      const user = req.user as any;
+      const sop = await storage.createProjectSop({
+        projectId: req.params.projectId,
+        title: req.body.title,
+        content: req.body.content,
+        isActive: req.body.isActive ?? true,
+        createdBy: user.id,
+      });
+      res.status(201).json(sop);
+    } catch (error) {
+      console.error("Create SOP error:", error);
+      res.status(500).json({ message: "Failed to create SOP" });
+    }
+  });
+
+  app.put("/api/sops/:id", requireRole("ADMIN", "GOD", "SUPERVISOR"), async (req: Request, res: Response) => {
+    try {
+      const updates: any = {};
+      if (req.body.title !== undefined) updates.title = req.body.title;
+      if (req.body.content !== undefined) updates.content = req.body.content;
+      if (req.body.isActive !== undefined) updates.isActive = req.body.isActive;
+      const sop = await storage.updateProjectSop(req.params.id, updates);
+      if (!sop) return res.status(404).json({ message: "SOP not found" });
+      res.json(sop);
+    } catch (error) {
+      console.error("Update SOP error:", error);
+      res.status(500).json({ message: "Failed to update SOP" });
+    }
+  });
+
+  app.delete("/api/sops/:id", requireRole("ADMIN", "GOD", "SUPERVISOR"), async (req: Request, res: Response) => {
+    try {
+      const deleted = await storage.deleteProjectSop(req.params.id);
+      if (!deleted) return res.status(404).json({ message: "SOP not found" });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete SOP error:", error);
+      res.status(500).json({ message: "Failed to delete SOP" });
     }
   });
 

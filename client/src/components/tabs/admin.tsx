@@ -8,7 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
-import { Download, Database, MessageSquare, FileText, Package } from "lucide-react";
+import { Download, Database, MessageSquare, FileText, Package, BookOpen, Plus, Pencil, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
@@ -24,6 +24,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { useProject } from "@/hooks/use-project";
+
+interface SopRecord {
+  id: string;
+  projectId: string;
+  title: string;
+  content: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
 
 interface UserRecord {
   id: string;
@@ -233,6 +245,7 @@ function MLDataExportSection() {
 
 export function AdminTab() {
   const { isAdmin, isGod } = useAuth();
+  const { activeProject } = useProject();
   const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState("projects");
 
@@ -240,6 +253,10 @@ export function AdminTab() {
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [manageTeamOpen, setManageTeamOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+
+  const [sopDialogOpen, setSopDialogOpen] = useState(false);
+  const [editingSop, setEditingSop] = useState<SopRecord | null>(null);
+  const [sopForm, setSopForm] = useState({ title: "", content: "" });
 
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [editUserOpen, setEditUserOpen] = useState(false);
@@ -456,6 +473,88 @@ export function AdminTab() {
     },
   });
 
+  const { data: sops = [] } = useQuery<SopRecord[]>({
+    queryKey: ["project-sops", activeProject?.id],
+    queryFn: async () => {
+      if (!activeProject) return [];
+      const res = await fetch(`/api/projects/${activeProject.id}/sops`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!activeProject,
+  });
+
+  const createSopMutation = useMutation({
+    mutationFn: async (data: { title: string; content: string }) => {
+      if (!activeProject) throw new Error("No active project");
+      const res = await fetch(`/api/projects/${activeProject.id}/sops`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to create SOP");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["project-sops"] });
+      setSopDialogOpen(false);
+      setSopForm({ title: "", content: "" });
+      toast({ title: "SOP created" });
+    },
+  });
+
+  const updateSopMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<SopRecord> }) => {
+      const res = await fetch(`/api/sops/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to update SOP");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["project-sops"] });
+      setSopDialogOpen(false);
+      setEditingSop(null);
+      setSopForm({ title: "", content: "" });
+      toast({ title: "SOP updated" });
+    },
+  });
+
+  const deleteSopMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/sops/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to delete SOP");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["project-sops"] });
+      toast({ title: "SOP deleted" });
+    },
+  });
+
+  const toggleSopMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: string; isActive: boolean }) => {
+      const res = await fetch(`/api/sops/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ isActive }),
+      });
+      if (!res.ok) throw new Error("Failed to toggle SOP");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["project-sops"] });
+    },
+  });
+
   function resetProjectForm() {
     setProjectForm({ name: "", clientName: "", jobsiteName: "", jobsiteAddress: "", jobsiteLat: "", jobsiteLng: "", timezone: "America/New_York" });
   }
@@ -603,6 +702,13 @@ export function AdminTab() {
             className="data-[state=active]:bg-navy-700"
           >
             Facility Directory
+          </TabsTrigger>
+          <TabsTrigger
+            data-testid="admin-tab-sops"
+            value="sops"
+            className="data-[state=active]:bg-navy-700"
+          >
+            SOPs
           </TabsTrigger>
           {isGod && (
             <TabsTrigger
@@ -825,6 +931,120 @@ export function AdminTab() {
               >
                 Add Facility
               </Button>
+            </div>
+          </ScrollArea>
+        </TabsContent>
+
+        {/* ───── SOPS TAB ───── */}
+        <TabsContent value="sops" className="h-full mt-0">
+          <ScrollArea className="h-[calc(100vh-240px)]">
+            <div className="grid gap-4">
+              {!activeProject ? (
+                <Card className="bg-navy-800/50 border-navy-600">
+                  <CardContent className="py-8 text-center">
+                    <p className="text-navy-400">Select a project to manage SOPs</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-white font-medium">Standard Operating Procedures</h3>
+                      <p className="text-sm text-navy-400">
+                        Active SOPs are included in AI prompts when processing log entries for {activeProject.name}
+                      </p>
+                    </div>
+                    <Button
+                      data-testid="button-create-sop"
+                      className="btn-gold-metallic"
+                      size="sm"
+                      onClick={() => {
+                        setEditingSop(null);
+                        setSopForm({ title: "", content: "" });
+                        setSopDialogOpen(true);
+                      }}
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      Add SOP
+                    </Button>
+                  </div>
+
+                  {sops.length === 0 ? (
+                    <Card className="bg-navy-800/50 border-navy-600">
+                      <CardContent className="py-8 text-center">
+                        <BookOpen className="h-8 w-8 text-navy-500 mx-auto mb-2" />
+                        <p className="text-navy-400">No SOPs yet. Add your first Standard Operating Procedure.</p>
+                        <p className="text-xs text-navy-500 mt-1">
+                          SOPs tell the AI how to process and format log entries for this project.
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    sops.map((sop) => (
+                      <Card
+                        key={sop.id}
+                        data-testid={`sop-card-${sop.id}`}
+                        className={`border-navy-600 ${sop.isActive ? "bg-navy-800/50" : "bg-navy-900/50 opacity-60"}`}
+                      >
+                        <CardHeader className="pb-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <CardTitle className="text-white text-base">{sop.title}</CardTitle>
+                              <Badge className={sop.isActive ? "bg-green-600" : "bg-gray-600"}>
+                                {sop.isActive ? "Active" : "Inactive"}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                data-testid={`button-toggle-sop-${sop.id}`}
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => toggleSopMutation.mutate({ id: sop.id, isActive: !sop.isActive })}
+                                title={sop.isActive ? "Deactivate" : "Activate"}
+                              >
+                                {sop.isActive ? <ToggleRight className="h-4 w-4 text-green-400" /> : <ToggleLeft className="h-4 w-4 text-gray-400" />}
+                              </Button>
+                              <Button
+                                data-testid={`button-edit-sop-${sop.id}`}
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setEditingSop(sop);
+                                  setSopForm({ title: sop.title, content: sop.content });
+                                  setSopDialogOpen(true);
+                                }}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                data-testid={`button-delete-sop-${sop.id}`}
+                                variant="ghost"
+                                size="sm"
+                                className="text-red-400 hover:text-red-300"
+                                onClick={() => {
+                                  if (confirm("Delete this SOP?")) {
+                                    deleteSopMutation.mutate(sop.id);
+                                  }
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <pre className="text-sm text-navy-300 whitespace-pre-wrap font-sans leading-relaxed max-h-40 overflow-y-auto">
+                            {sop.content}
+                          </pre>
+                          <p className="text-xs text-navy-500 mt-2">
+                            Updated: {new Date(sop.updatedAt).toLocaleDateString()}
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ))
+                  )}
+                </>
+              )}
             </div>
           </ScrollArea>
         </TabsContent>
@@ -1436,6 +1656,64 @@ export function AdminTab() {
               disabled={createFacilityMutation.isPending}
             >
               {createFacilityMutation.isPending ? "Adding..." : "Add Facility"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ───── SOP DIALOG ───── */}
+      <Dialog open={sopDialogOpen} onOpenChange={(open) => { setSopDialogOpen(open); if (!open) { setEditingSop(null); setSopForm({ title: "", content: "" }); } }}>
+        <DialogContent className="bg-navy-900 border-navy-600 text-white max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-white">{editingSop ? "Edit SOP" : "Add Standard Operating Procedure"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-navy-300">SOP Title</Label>
+              <Input
+                data-testid="input-sop-title"
+                className="bg-navy-800 border-navy-600 text-white"
+                placeholder="e.g., Log Formatting Standards"
+                value={sopForm.title}
+                onChange={(e) => setSopForm({ ...sopForm, title: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label className="text-navy-300">SOP Content</Label>
+              <p className="text-xs text-navy-500 mb-1">
+                Write the procedure the AI should follow when processing log entries. Be specific about formatting, terminology, and rules.
+              </p>
+              <Textarea
+                data-testid="input-sop-content"
+                className="bg-navy-800 border-navy-600 text-white min-h-[200px] font-mono text-sm"
+                placeholder={"Example:\n- Always use 24-hour time format\n- Refer to the client as 'American Marine' not 'AM'\n- Use 'L/S' for Left Surface, 'R/B' for Reached Bottom\n- Include depth in FSW for all dive events"}
+                value={sopForm.content}
+                onChange={(e) => setSopForm({ ...sopForm, content: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              data-testid="button-cancel-sop"
+              variant="outline"
+              className="border-navy-500"
+              onClick={() => { setSopDialogOpen(false); setEditingSop(null); setSopForm({ title: "", content: "" }); }}
+            >
+              Cancel
+            </Button>
+            <Button
+              data-testid="button-submit-sop"
+              className="btn-gold-metallic"
+              disabled={!sopForm.title.trim() || !sopForm.content.trim() || createSopMutation.isPending || updateSopMutation.isPending}
+              onClick={() => {
+                if (editingSop) {
+                  updateSopMutation.mutate({ id: editingSop.id, data: { title: sopForm.title, content: sopForm.content } });
+                } else {
+                  createSopMutation.mutate({ title: sopForm.title, content: sopForm.content });
+                }
+              }}
+            >
+              {(createSopMutation.isPending || updateSopMutation.isPending) ? "Saving..." : editingSop ? "Save Changes" : "Add SOP"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,6 +1,6 @@
 import { storage } from "./storage";
 import { extractData, classifyEvent, fixTypos } from "./extraction";
-import { generateAIRenders } from "./ai-drafting";
+import { generateAIRenders, type SOPContext } from "./ai-drafting";
 import { lookupDiveTable } from "@shared/navy-dive-tables";
 
 const SWEEP_INTERVAL_MS = 30 * 60 * 1000;
@@ -105,6 +105,9 @@ async function sweepDay(dayId: string, projectId: string, errors: string[]): Pro
     }
 
     // 4. AI re-processing: find log events missing renders or with failed status
+    const activeSops = await storage.getActiveProjectSops(projectId);
+    const sopContext: SOPContext[] = activeSops.map(s => ({ title: s.title, content: s.content }));
+
     for (const event of events) {
       try {
         const existingRenders = await storage.getLogRendersByEvent(event.id);
@@ -115,7 +118,7 @@ async function sweepDay(dayId: string, projectId: string, errors: string[]): Pro
 
         const category = classifyEvent(event.rawText);
         const eventTime = event.eventTime || event.captureTime;
-        const renders = await generateAIRenders(event.rawText, new Date(eventTime), category);
+        const renders = await generateAIRenders(event.rawText, new Date(eventTime), category, sopContext);
 
         if (!internalOk) {
           await storage.upsertLogRender(event.id, "internal_canvas_line", {
