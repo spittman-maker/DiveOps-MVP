@@ -30,6 +30,24 @@ async function getNextRiskId(projectId: string, date: string): Promise<string> {
   return generateRiskId(date, maxSeq + 1);
 }
 
+function isUniqueConstraintError(err: any): boolean {
+  const msg = String(err?.message || err?.detail || '');
+  return msg.includes('unique') || msg.includes('duplicate key') || msg.includes('23505');
+}
+
+async function createRiskWithRetry(riskData: any, projectId: string, date: string, maxRetries = 3): Promise<any> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const riskId = await getNextRiskId(projectId, date);
+    try {
+      return await storage.createRiskItem({ ...riskData, riskId });
+    } catch (err: any) {
+      if (!isUniqueConstraintError(err) || attempt === maxRetries - 1) throw err;
+      console.warn(`Risk ID collision on ${riskId}, retrying (attempt ${attempt + 1})...`);
+      await new Promise(r => setTimeout(r, 50 * (attempt + 1)));
+    }
+  }
+}
+
 function getUser(req: Request): User {
   return req.user as User;
 }
@@ -1133,50 +1151,54 @@ export async function registerRoutes(
           console.error("AI rendering failed:", error);
         });
       
-      // If safety incident, create a risk item synchronously
+      // If safety incident, create a risk item with retry for concurrent collisions
       if (category === "safety") {
-        const riskId = await getNextRiskId(data.projectId, day.date);
-        
-        await storage.createRiskItem({
-          dayId: day.id,
-          projectId: data.projectId,
-          riskId,
-          triggerEventId: logEvent.id,
-          category: "safety",
-          description: data.rawText,
-          status: "open",
-        });
+        try {
+          await createRiskWithRetry({
+            dayId: day.id,
+            projectId: data.projectId,
+            triggerEventId: logEvent.id,
+            category: "safety",
+            description: data.rawText,
+            status: "open",
+          }, data.projectId, day.date);
+        } catch (e: any) {
+          console.error("Failed to create safety risk after retries:", e);
+        }
       }
       
-      // Client directives also create a risk item — any directive changes operational scope and introduces risk
+      // Client directives also create a risk item with retry
       if (category === "directive") {
-        const riskId = await getNextRiskId(data.projectId, day.date);
-        
-        await storage.createRiskItem({
-          dayId: day.id,
-          projectId: data.projectId,
-          riskId,
-          triggerEventId: logEvent.id,
-          category: "operational",
-          source: "client_directive",
-          description: data.rawText,
-          status: "open",
-        });
+        try {
+          await createRiskWithRetry({
+            dayId: day.id,
+            projectId: data.projectId,
+            triggerEventId: logEvent.id,
+            category: "operational",
+            source: "client_directive",
+            description: data.rawText,
+            status: "open",
+          }, data.projectId, day.date);
+        } catch (e: any) {
+          console.error("Failed to create directive risk after retries:", e);
+        }
       }
       
       // Stop-work events always create a safety risk item
       if (stopWork && category !== "safety") {
-        const riskId = await getNextRiskId(data.projectId, day.date);
-        await storage.createRiskItem({
-          dayId: day.id,
-          projectId: data.projectId,
-          riskId,
-          triggerEventId: logEvent.id,
-          category: "safety",
-          source: "supervisor_entry",
-          description: `STOP WORK: ${data.rawText}`,
-          status: "open",
-        });
+        try {
+          await createRiskWithRetry({
+            dayId: day.id,
+            projectId: data.projectId,
+            triggerEventId: logEvent.id,
+            category: "safety",
+            source: "supervisor_entry",
+            description: `STOP WORK: ${data.rawText}`,
+            status: "open",
+          }, data.projectId, day.date);
+        } catch (e: any) {
+          console.error("Failed to create stop-work risk after retries:", e);
+        }
         
         // Auto-set RS time for all active dives (dives with LS but no RS) on this station
         const allDives = await storage.getDivesByDay(day.id);
@@ -1191,18 +1213,19 @@ export async function registerRoutes(
       
       // If text contains risk keywords (and wasn't already captured as safety/directive/stop-work), create risk item
       if (category !== "safety" && category !== "directive" && !stopWork && hasRiskKeywords(data.rawText)) {
-        const riskId = await getNextRiskId(data.projectId, day.date);
-        
-        await storage.createRiskItem({
-          dayId: day.id,
-          projectId: data.projectId,
-          riskId,
-          triggerEventId: logEvent.id,
-          category: "operational",
-          source: "supervisor_entry",
-          description: data.rawText,
-          status: "open",
-        });
+        try {
+          await createRiskWithRetry({
+            dayId: day.id,
+            projectId: data.projectId,
+            triggerEventId: logEvent.id,
+            category: "operational",
+            source: "supervisor_entry",
+            description: data.rawText,
+            status: "open",
+          }, data.projectId, day.date);
+        } catch (e: any) {
+          console.error("Failed to create keyword risk after retries:", e);
+        }
       }
       
       // Auto-compute dive table when sufficient data is available
@@ -2039,12 +2062,9 @@ export async function registerRoutes(
       const day = await storage.getDay(dayId);
       if (!day) return res.status(404).json({ message: "Day not found" });
       
-      const riskId = await getNextRiskId(projectId, day.date);
-      
-      const risk = await storage.createRiskItem({
+      const risk = await createRiskWithRetry({
         dayId,
         projectId,
-        riskId,
         triggerEventId: null,
         category: category || "operational",
         source: "manual",
@@ -2053,7 +2073,7 @@ export async function registerRoutes(
         initialRiskLevel: initialRiskLevel || null,
         owner: owner || null,
         status: "open",
-      });
+      }, projectId, day.date);
       
       // Also create a log event to record the risk creation in the master log
       const captureTime = new Date();
@@ -2077,7 +2097,7 @@ export async function registerRoutes(
         eventTime = captureTime;
       }
       
-      const logRawText = `${riskId} LOGGED: ${description}`;
+      const logRawText = `${risk.riskId} LOGGED: ${description}`;
       await storage.createLogEvent({
         dayId,
         projectId,

@@ -1,0 +1,117 @@
+Your “QA complete” claim is premature. I need you to treat this as a compliance-critical system: logs, risk IDs, exports, and day lifecycle must be correct under stress, bad networks, and user mistakes.
+
+We are entering a hardening sprint. Here’s what I need:
+
+1) Add instrumentation + diagnostics (code-level)
+
+Implement:
+
+request correlation IDs per user action (create log, create risk, close day, export)
+
+structured error logging (server + client)
+
+audit event stream for critical actions:
+
+create/update/delete log entry
+
+create/update risk
+
+close/reopen day
+
+export generation
+Include: userId, role, projectId, dayId, timestamps, before/after values.
+
+2) Enforce invariants in code (not in UI only)
+
+Add hard rules:
+
+Unique constraints where needed (risk IDs, day records, exports)
+
+Idempotency for write endpoints (double submit should not create duplicates)
+
+Atomic “close day” transaction: either closes successfully or rolls back cleanly (no partial state)
+
+Optimistic locking / versioning on editable records (concurrency safe)
+
+3) Prove it via adversarial tests
+
+I want a deliberate attempt to break the app, with evidence:
+
+A. Concurrency
+
+open same day/log in two tabs
+
+edit both
+
+prove conflict handling (version mismatch, merge strategy, or user prompt)
+
+show no silent overwrites
+
+B. Rapid Submit / Retry Storm
+
+spam clicks on create log entry + create risk + close day
+
+simulate retries at network layer
+
+prove idempotency and no dupes
+
+C. Failure Injection
+
+force API 500 / timeout during:
+
+log creation
+
+risk creation
+
+close day
+
+export generation
+Prove the system remains consistent and recoverable.
+
+D. Data Integrity
+
+close day with gaps → must block
+
+GOD override → must:
+
+log who used it
+
+record what gaps were overridden
+
+show up in export/audit
+
+E. Export Verification
+
+Exports must be deterministic:
+
+same inputs = same output
+
+export includes correct day records, risks, and lifecycle status
+
+no stale caching
+
+4) Deliverables (required for release approval)
+
+QA matrix + recordings
+
+unit tests for risk ID generation + day close enforcement + idempotency
+
+integration tests for the full workflow (create → close → reopen → edit → close → export)
+
+post-fix regression report
+
+known issues list (if any) with explicit sign-off request
+
+5) Release criteria (non-negotiable)
+
+zero blockers
+
+concurrency safe or explicitly locked (and documented)
+
+idempotent writes on critical endpoints
+
+close day is atomic
+
+complete auditability for edits + overrides
+
+Do not ask “should we publish” again until you deliver the above proof and hardening changes. The current summary is not acceptable.
