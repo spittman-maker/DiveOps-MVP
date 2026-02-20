@@ -995,8 +995,12 @@ export async function registerRoutes(
         await storage.updateDay(day.id, { status: "ACTIVE" });
       }
       
+      // Load active SOPs for this project
+      const activeSops = await storage.getProjectSops(data.projectId);
+      const sopTexts = activeSops.filter(s => s.isActive).map(s => `### ${s.title}\n${s.content}`);
+      
       // Process structured log asynchronously (normalize, classify, validate)
-      processStructuredLog(data.rawText)
+      processStructuredLog(data.rawText, { sops: sopTexts })
         .then(async (result) => {
           // Only store structured payload if validation passed
           if (result.validationPassed) {

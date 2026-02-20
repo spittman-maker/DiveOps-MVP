@@ -133,7 +133,7 @@ function convertToLegacyPayload(modelOut: DailyLogModelOutput): StructuredLogPay
  */
 export async function processStructuredLog(
   rawText: string,
-  meta?: { date?: string; window?: string }
+  meta?: { date?: string; window?: string; sops?: string[] }
 ): Promise<ProcessedLogResult> {
   // 1) Normalize + classify raw notes
   const prep = normalizeAndClassifyRawNotes(rawText);
@@ -143,13 +143,18 @@ export async function processStructuredLog(
   const window = meta?.window || "0600–0559";
   const modelInput = buildModelInputPacket(prep, { date: today, window });
   
+  let systemPrompt = STRUCTURED_LOG_PROMPT;
+  if (meta?.sops && meta.sops.length > 0) {
+    systemPrompt += `\n\n## PROJECT-SPECIFIC SOPs (MUST FOLLOW)\n${meta.sops.join("\n\n")}`;
+  }
+  
   try {
     // 3) Call LLM (JSON ONLY)
     const response = await openai.chat.completions.create({
       model: MODEL,
       max_completion_tokens: 2000,
       messages: [
-        { role: "system", content: STRUCTURED_LOG_PROMPT },
+        { role: "system", content: systemPrompt },
         { 
           role: "user", 
           content: JSON.stringify(modelInput, null, 2)
