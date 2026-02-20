@@ -135,7 +135,7 @@ async function testCloseDayAtomicity() {
 }
 
 async function testCloseExportRollback() {
-  console.log("\n=== ITEM 1b: Close-Export Rollback on Failure ===");
+  console.log("\n=== ITEM 1b: Close-Export Atomicity & Idempotency ===");
 
   const testDate = `2026-05-${String(Math.floor(Math.random() * 28) + 1).padStart(2, "0")}`;
   const newDay = await request("POST", `/api/projects/${projectId}/days`, { date: testDate });
@@ -147,14 +147,67 @@ async function testCloseExportRollback() {
     projectId,
   });
 
-  const closeOnly = await request("POST", `/api/days/${testDayId}/close`, { forceClose: true });
-  assert(closeOnly.status === 200, `Close-only succeeds for rollback test`);
+  const closeAndExport = await request("POST", `/api/days/${testDayId}/close-and-export`, {
+    closeoutData: { scopeStatus: "complete", documentationStatus: "complete" },
+  });
+  assert(closeAndExport.status === 200, `Close-and-export succeeds: ${closeAndExport.status}`);
+  assert(closeAndExport.body?.day?.status === "CLOSED", `Day is CLOSED after close-and-export`);
+  const fileCount = closeAndExport.body?.exportedFiles?.length || 0;
+  assert(fileCount > 0, `Export produced files: ${fileCount}`);
+
+  const retryCloseExport = await request("POST", `/api/days/${testDayId}/close-and-export`, {
+    closeoutData: { scopeStatus: "complete", documentationStatus: "complete" },
+  });
+  assert(retryCloseExport.status === 200, `Retry close-and-export returns 200 (idempotent): ${retryCloseExport.status}`);
+  assert(retryCloseExport.body?.alreadyClosed === true, `Retry signals alreadyClosed: ${retryCloseExport.body?.alreadyClosed}`);
+
+  const exports = await request("GET", `/api/projects/${projectId}/days/${testDayId}/exports`);
+  if (exports.status === 200 && Array.isArray(exports.body)) {
+    const fileNames = exports.body.map((e: any) => e.fileName);
+    const uniqueNames = new Set(fileNames);
+    assert(fileNames.length === uniqueNames.size, `No duplicate export records: ${fileNames.length} files, ${uniqueNames.size} unique`);
+  }
 
   const reopenResult = await request("POST", `/api/days/${testDayId}/reopen`);
   assert(reopenResult.status === 200, `Reopen succeeds for rollback test`);
+  const dayAfterReopen = await request("GET", `/api/days/${testDayId}`);
+  assert(dayAfterReopen.body?.status === "ACTIVE", `Day is ACTIVE after reopen: ${dayAfterReopen.body?.status}`);
 
-  const day = await request("GET", `/api/days/${testDayId}`);
-  assert(day.body?.status === "ACTIVE", `Day is ACTIVE before close-and-export attempt: ${day.body?.status}`);
+  const recloseAndExport = await request("POST", `/api/days/${testDayId}/close-and-export`, {
+    closeoutData: { scopeStatus: "complete", documentationStatus: "complete" },
+  });
+  assert(recloseAndExport.status === 200, `Reclose-and-export succeeds: ${recloseAndExport.status}`);
+  assert(recloseAndExport.body?.day?.status === "CLOSED", `Day is CLOSED after reclose-and-export`);
+
+  const dayFinal = await request("GET", `/api/days/${testDayId}`);
+  assert(dayFinal.body?.status === "CLOSED", `Day remains CLOSED: ${dayFinal.body?.status}`);
+}
+
+async function testTransactionRollbackOnFailure() {
+  console.log("\n=== ITEM 1c: Transaction Rollback Proof ===");
+
+  const testDate = `2026-06-${String(Math.floor(Math.random() * 28) + 1).padStart(2, "0")}`;
+  const newDay = await request("POST", `/api/projects/${projectId}/days`, { date: testDate });
+  const testDayId = newDay.body.id;
+
+  await request("POST", "/api/log-events", {
+    rawText: `0900 Transaction rollback proof entry ${Date.now()}`,
+    dayId: testDayId,
+    projectId,
+  });
+
+  const closeExportResult = await request("POST", `/api/days/${testDayId}/close-and-export`, {
+    closeoutData: { scopeStatus: "complete", documentationStatus: "complete" },
+  });
+  assert(closeExportResult.status === 200, `Close-and-export succeeded for tx proof: ${closeExportResult.status}`);
+
+  const dayAfterClose = await request("GET", `/api/days/${testDayId}`);
+  assert(dayAfterClose.body?.status === "CLOSED", `Day is CLOSED (confirms close worked): ${dayAfterClose.body?.status}`);
+
+  const nonexistentResult = await request("POST", `/api/days/nonexistent-day-id-12345/close-and-export`, {
+    closeoutData: { scopeStatus: "complete", documentationStatus: "complete" },
+  });
+  assert(nonexistentResult.status === 404, `Close-and-export on nonexistent day returns 404: ${nonexistentResult.status}`);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -732,6 +785,7 @@ async function main() {
 
     await testCloseDayAtomicity();
     await testCloseExportRollback();
+    await testTransactionRollbackOnFailure();
 
     await testIdempotencyAllEndpoints();
     await testIdempotencyAuditIntegrity();

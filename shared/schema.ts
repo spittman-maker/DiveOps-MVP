@@ -562,6 +562,7 @@ export const libraryExports = pgTable("library_exports", {
   exportedAt: timestamp("exported_at").notNull().defaultNow(),
 }, (t) => ({
   projectDayIdx: index("library_exports_project_day_idx").on(t.projectId, t.dayId),
+  dayFileUnique: uniqueIndex("uq_library_exports_day_file").on(t.dayId, t.fileName),
 }));
 
 export const insertLibraryExportSchema = createInsertSchema(libraryExports).omit({ id: true, exportedAt: true });
@@ -881,3 +882,11 @@ export const auditEvents = pgTable("audit_events", {
 export const insertAuditEventSchema = createInsertSchema(auditEvents).omit({ id: true, timestamp: true });
 export type InsertAuditEvent = z.infer<typeof insertAuditEventSchema>;
 export type AuditEvent = typeof auditEvents.$inferSelect;
+
+export const idempotencyKeys = pgTable("idempotency_keys", {
+  key: varchar("key").primaryKey(),
+  route: text("route").notNull(),
+  responseStatus: integer("response_status").notNull().default(0),
+  responseBody: jsonb("response_body"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

@@ -6,7 +6,7 @@ import { passport, hashPassword, requireAuth, requireRole, canWriteLogEvents, is
 import { classifyEvent, extractData, parseEventTime, generateRiskId, getMasterLogSection, renderInternalCanvasLine, detectDirectiveTag, hasRiskKeywords, isStopWork, detectHazards } from "./extraction";
 import { processStructuredLog } from "./logging";
 import { generateAIRenders, type SOPContext } from "./ai-drafting";
-import { generateShiftExport } from "./document-export";
+import { generateShiftExport, snapshotExportData, generateShiftExportFromSnapshot } from "./document-export";
 import { speechToTextStream, ensureCompatibleFormat } from "./replit_integrations/audio/client";
 import type { User, UserRole, DayStatus } from "@shared/schema";
 import { lookupDiveTable } from "@shared/navy-dive-tables";
@@ -834,12 +834,14 @@ export async function registerRoutes(
     const beforeDay = await storage.getDay(dayId);
 
     try {
+      const snapshot = await snapshotExportData(dayId);
+      const exportResult = await generateShiftExportFromSnapshot(snapshot);
+
       const result = await storage.closeDayAndExport(
         dayId,
         user.id,
         closeoutData,
-        generateShiftExport,
-        storage.createLibraryExport.bind(storage)
+        exportResult.files
       );
 
       const ctx: AuditContext = { ...req.auditCtx!, projectId: result.day.projectId, dayId: result.day.id };
@@ -851,8 +853,11 @@ export async function registerRoutes(
 
       res.json(result);
     } catch (error: any) {
-      if (error?.message === "DAY_NOT_FOUND") {
+      if (error?.message === "DAY_NOT_FOUND" || error?.message === "Day not found") {
         return res.status(404).json({ message: "Day not found" });
+      }
+      if (error?.message === "Project not found") {
+        return res.status(404).json({ message: "Project not found" });
       }
       if (error?.message === "DAY_ALREADY_CLOSED") {
         const existing = await storage.getDay(dayId);

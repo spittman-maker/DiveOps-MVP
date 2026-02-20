@@ -19,7 +19,7 @@ import {
 } from "docx";
 import ExcelJS from "exceljs";
 import { storage } from "./storage";
-import type { Day, LogEvent, RiskItem, Dive } from "@shared/schema";
+import type { Day, LogEvent, LogRender, RiskItem, Dive, User, Project } from "@shared/schema";
 import { validateMasterLogPayload, validateAIContent, sanitizeForMasterLog, type MasterLogPayload } from "./validator";
 
 export interface ExportResult {
@@ -31,6 +31,126 @@ export interface ExportResult {
     type: "docx" | "xlsx";
     buffer: Buffer;
   }[];
+}
+
+export interface ExportSnapshot {
+  day: Day;
+  project: Project;
+  events: LogEvent[];
+  dives: Dive[];
+  risks: RiskItem[];
+  rendersByEventId: Map<string, LogRender[]>;
+  usersByDiverId: Map<string, User>;
+}
+
+export async function snapshotExportData(dayId: string): Promise<ExportSnapshot> {
+  const day = await storage.getDay(dayId);
+  if (!day) throw new Error("Day not found");
+
+  const project = await storage.getProject(day.projectId);
+  if (!project) throw new Error("Project not found");
+
+  const events = await storage.getLogEventsByDay(dayId);
+  const dives = await storage.getDivesByDay(dayId);
+  const risks = await storage.getRiskItemsByDay(dayId);
+
+  const rendersByEventId = new Map<string, LogRender[]>();
+  for (const event of events) {
+    const renders = await storage.getLogRendersByEvent(event.id);
+    rendersByEventId.set(event.id, renders);
+  }
+
+  const usersByDiverId = new Map<string, User>();
+  const uniqueDiverIds = Array.from(new Set(dives.map(d => d.diverId).filter(Boolean))) as string[];
+  for (const diverId of uniqueDiverIds) {
+    const user = await storage.getUser(diverId);
+    if (user) usersByDiverId.set(diverId, user);
+  }
+
+  return { day, project, events, dives, risks, rendersByEventId, usersByDiverId };
+}
+
+export async function generateShiftExportFromSnapshot(snapshot: ExportSnapshot): Promise<ExportResult & { validation: ValidationReport }> {
+  const { day, project, events, dives, risks, rendersByEventId, usersByDiverId } = snapshot;
+
+  const masterLogPayload = buildMasterLogPayload(events, day, project.name, dives);
+  const validationResult = validateMasterLogPayload(masterLogPayload);
+
+  const validationReport: ValidationReport = {
+    valid: validationResult.valid,
+    criticalErrors: validationResult.errors
+      .filter(e => e.severity === "critical")
+      .map(e => e.message),
+    warnings: validationResult.warnings.map(w => w.message),
+  };
+
+  if (!validationResult.valid) {
+    console.error("[VALIDATOR] Critical errors found:", validationReport.criticalErrors);
+  }
+  if (validationResult.warnings.length > 0) {
+    console.warn("[VALIDATOR] Warnings:", validationReport.warnings);
+  }
+
+  const dateStr = formatDateYYYYMMDD(day.date);
+  const projectFolder = sanitizeFolderName(project.name);
+  const dayFolder = dateStr;
+  const files: ExportResult["files"] = [];
+
+  const eventsWithRenders = events.map(event => ({
+    ...event,
+    renders: rendersByEventId.get(event.id) || [],
+  }));
+
+  const rawNotesBuffer = await generateRawNotesDoc(events, day, project.name);
+  files.push({
+    name: `RawNotes_${dateStr}.docx`,
+    path: `${projectFolder}/${dayFolder}/RawNotes_${dateStr}.docx`,
+    type: "docx",
+    buffer: rawNotesBuffer,
+  });
+
+  const dailyLogBuffer = await generateDailyLogDocPure(eventsWithRenders, day, project, dives, risks);
+  files.push({
+    name: `DailyLog_${dateStr}.docx`,
+    path: `${projectFolder}/${dayFolder}/DailyLog_${dateStr}.docx`,
+    type: "docx",
+    buffer: dailyLogBuffer,
+  });
+
+  const masterLogBuffer = await generateMasterLogDocPure(eventsWithRenders, day, project.name, dives, usersByDiverId);
+  files.push({
+    name: `MasterLog_${dateStr}.docx`,
+    path: `${projectFolder}/${dayFolder}/ML_${dateStr}/MasterLog_${dateStr}.docx`,
+    type: "docx",
+    buffer: masterLogBuffer,
+  });
+
+  for (const dive of dives) {
+    const diver = dive.diverId ? usersByDiverId.get(dive.diverId) : undefined;
+    const initials = diver?.initials
+      || diver?.username?.substring(0, 2).toUpperCase()
+      || deriveInitialsFromDisplayName(dive.diverDisplayName)
+      || "UNK";
+    const diveBuffer = await generateDiveLogDoc(dive, day, project.name, initials);
+    files.push({
+      name: `${initials}_${dateStr}_DL.docx`,
+      path: `${projectFolder}/${dayFolder}/DL_${dateStr}/${initials}_${dateStr}_DL.docx`,
+      type: "docx",
+      buffer: diveBuffer,
+    });
+  }
+
+  if (risks.length > 0) {
+    const riskBuffer = await generateRiskRegisterExcel(risks, day, project.name);
+    files.push({
+      name: `RRR_${dateStr}.xlsx`,
+      path: `${projectFolder}/${dayFolder}/RRR_${dateStr}.xlsx`,
+      type: "xlsx",
+      buffer: riskBuffer,
+    });
+  }
+
+  return { projectFolder, dayFolder, files, validation: validationReport };
 }
 
 function formatDateYYYYMMDD(date: string): string {
@@ -412,14 +532,266 @@ async function generateDailyLogDoc(events: LogEvent[], day: Day, projectName: st
 
 interface DiveWithUser {
   id: string;
-  diverId: string;
+  diverId: string | null;
   diveNumber: number;
+  diverDisplayName?: string | null;
   lsTime: Date | null;
   rbTime: Date | null;
   lbTime: Date | null;
   rsTime: Date | null;
   maxDepthFsw: number | null;
   taskSummary: string | null;
+}
+
+type EventWithRenders = LogEvent & { renders: LogRender[] };
+
+async function generateDailyLogDocPure(
+  eventsWithRenders: EventWithRenders[],
+  day: Day,
+  project: Project,
+  dives: Dive[],
+  risks: RiskItem[]
+): Promise<Buffer> {
+  const projectName = project.name;
+  const closeout = (day as any).closeoutData as import("@shared/schema").QCCloseoutData | null;
+
+  const children: Paragraph[] = [];
+
+  children.push(
+    new Paragraph({ text: "PSG-TPL-0001 — Daily Shift Log", heading: HeadingLevel.HEADING_1 }),
+    new Paragraph({ text: `PRECISION SUBSEA GROUP LLC`, spacing: { after: 200 }, alignment: AlignmentType.CENTER,
+      children: [new TextRun({ text: "PRECISION SUBSEA GROUP LLC", bold: true, size: 28 })] }),
+  );
+
+  const headerFields = [
+    ["Date (local)", day.date],
+    ["Project/Site", `${projectName}${project?.jobsiteName ? ` — ${project.jobsiteName}` : ""}`],
+    ["Client/Contract", project?.clientName || "—"],
+    ["Shift", day.shift || "Day"],
+  ];
+
+  headerFields.forEach(([label, value]) => {
+    children.push(new Paragraph({
+      children: [
+        new TextRun({ text: `${label}: `, bold: true }),
+        new TextRun({ text: value || "—" }),
+      ],
+      spacing: { after: 80 },
+    }));
+  });
+
+  children.push(new Paragraph({ text: "", spacing: { after: 200 } }));
+
+  children.push(new Paragraph({ text: "Team & Manning", heading: HeadingLevel.HEADING_2, spacing: { before: 300 } }));
+  const diverNames = dives.map(d => d.diverDisplayName || "—").filter((v, i, a) => a.indexOf(v) === i);
+  const teamFields = [
+    ["Divers", diverNames.join(", ") || "—"],
+    ["Total Dives", String(dives.length)],
+  ];
+  teamFields.forEach(([label, value]) => {
+    children.push(new Paragraph({
+      children: [new TextRun({ text: `${label}: `, bold: true }), new TextRun({ text: value })],
+      spacing: { after: 80 },
+    }));
+  });
+
+  children.push(new Paragraph({ text: "", spacing: { after: 200 } }));
+  children.push(new Paragraph({ text: "Rolling Event Log", heading: HeadingLevel.HEADING_2, spacing: { before: 300 } }));
+
+  eventsWithRenders.forEach((event) => {
+    const internalRender = event.renders?.find((r: { renderType: string }) => r.renderType === "internal_canvas_line");
+    const displayText = internalRender?.renderText || event.rawText;
+    children.push(new Paragraph({
+      children: [
+        new TextRun({ text: `[${formatTime(event.eventTime)}] `, bold: true }),
+        new TextRun({ text: displayText }),
+      ],
+      spacing: { after: 120 },
+    }));
+  });
+
+  if (closeout) {
+    children.push(new Paragraph({ text: "", spacing: { after: 200 } }));
+    children.push(new Paragraph({ text: "Deviations / Stop-Work / Lessons Learned", heading: HeadingLevel.HEADING_2, spacing: { before: 300 } }));
+    children.push(new Paragraph({ text: closeout.deviations || "None noted.", spacing: { after: 200 } }));
+
+    children.push(new Paragraph({ text: "End-of-Shift Closeout", heading: HeadingLevel.HEADING_2, spacing: { before: 300 } }));
+
+    const closeoutFields = [
+      ["Scope", closeout.scopeStatus === "complete" ? "Complete" : "Incomplete"],
+      ["Documentation", closeout.documentationStatus === "complete" ? "Complete" : "Incomplete"],
+      ["Exceptions", closeout.exceptions || "None Noted"],
+      ["Outstanding Issues", closeout.outstandingIssues || "None"],
+      ["Planned Work Next Shift", closeout.plannedNextShift || "—"],
+    ];
+    closeoutFields.forEach(([label, value]) => {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: `${label}: `, bold: true }), new TextRun({ text: value })],
+        spacing: { after: 80 },
+      }));
+    });
+
+    children.push(new Paragraph({ text: "", spacing: { after: 100 } }));
+    children.push(new Paragraph({
+      children: [new TextRun({ text: "SEI Advisories", bold: true, underline: {} })],
+      spacing: { before: 200, after: 80 },
+    }));
+    children.push(new Paragraph({
+      children: [new TextRun({ text: "Advised FOR: ", bold: true }), new TextRun({ text: closeout.advisedFor || "None" })],
+      spacing: { after: 80 },
+    }));
+    children.push(new Paragraph({
+      children: [new TextRun({ text: "Advised AGAINST: ", bold: true }), new TextRun({ text: closeout.advisedAgainst || "None" })],
+      spacing: { after: 80 },
+    }));
+
+    if (closeout.standingRisks && closeout.standingRisks.length > 0) {
+      children.push(new Paragraph({ text: "", spacing: { after: 100 } }));
+      children.push(new Paragraph({
+        children: [new TextRun({ text: "Standing Risks Referenced", bold: true, underline: {} })],
+        spacing: { before: 200, after: 80 },
+      }));
+      closeout.standingRisks.forEach(r => {
+        children.push(new Paragraph({
+          children: [
+            new TextRun({ text: `${r.riskId}`, bold: true }),
+            new TextRun({ text: ` — Status: ${r.status}` }),
+          ],
+          spacing: { after: 60 },
+        }));
+      });
+    }
+
+    children.push(new Paragraph({ text: "", spacing: { after: 200 } }));
+    children.push(new Paragraph({
+      children: [new TextRun({ text: "Log Closed By: ", bold: true }), new TextRun({ text: day.closedBy || "—" })],
+      spacing: { after: 80 },
+    }));
+    children.push(new Paragraph({
+      children: [new TextRun({ text: "Date/Time Closed: ", bold: true }), new TextRun({ text: day.closedAt ? new Date(day.closedAt).toLocaleString() : "—" })],
+      spacing: { after: 80 },
+    }));
+  }
+
+  children.push(new Paragraph({ text: "", spacing: { after: 300 } }));
+  children.push(new Paragraph({ text: "Sign-offs", heading: HeadingLevel.HEADING_2, spacing: { before: 300 } }));
+  children.push(new Paragraph({
+    children: [new TextRun({ text: "Dive Supervisor: ", bold: true }), new TextRun({ text: "______________________" })],
+    spacing: { after: 200 },
+  }));
+  children.push(new Paragraph({
+    children: [new TextRun({ text: "Client Rep (if required): ", bold: true }), new TextRun({ text: "______________________" })],
+    spacing: { after: 200 },
+  }));
+
+  const doc = new Document({ sections: [{ children }] });
+  return Buffer.from(await Packer.toBuffer(doc));
+}
+
+async function generateMasterLogDocPure(
+  eventsWithRenders: EventWithRenders[],
+  day: Day,
+  projectName: string,
+  dives: DiveWithUser[],
+  usersByDiverId: Map<string, User>
+): Promise<Buffer> {
+  const directiveEvents = eventsWithRenders.filter((e) => e.category === "directive" || e.category === "safety");
+  const productionEvents = eventsWithRenders.filter((e) => e.category !== "directive" && e.category !== "safety");
+
+  const children: Paragraph[] = [
+    new Paragraph({
+      text: `Master Log - ${projectName}`,
+      heading: HeadingLevel.HEADING_1,
+    }),
+    new Paragraph({
+      text: `Date: ${day.date} | Shift: ${day.shift || "Day"}`,
+      spacing: { after: 400 },
+    }),
+  ];
+
+  if (directiveEvents.length > 0) {
+    children.push(
+      new Paragraph({
+        text: "Client Directives and Changes",
+        heading: HeadingLevel.HEADING_2,
+        spacing: { before: 400 },
+      })
+    );
+
+    directiveEvents.forEach((event) => {
+      const masterRender = event.renders?.find((r: { renderType: string }) => r.renderType === "master_log_line");
+      const displayText = masterRender?.renderText || event.rawText;
+      children.push(
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: `[${formatTime(event.eventTime)}] `,
+              bold: true,
+            }),
+            new TextRun({ text: displayText }),
+          ],
+          spacing: { after: 200 },
+        })
+      );
+    });
+  }
+
+  children.push(
+    new Paragraph({
+      text: "Station Log (Non-Timestamped)",
+      heading: HeadingLevel.HEADING_2,
+      spacing: { before: 400 },
+    })
+  );
+
+  productionEvents.forEach((event) => {
+    const masterRender = event.renders?.find((r: { renderType: string }) => r.renderType === "master_log_line");
+    const displayText = masterRender?.renderText || event.rawText;
+    children.push(
+      new Paragraph({
+        children: [new TextRun({ text: `• ${displayText}` })],
+        spacing: { after: 100 },
+      })
+    );
+  });
+
+  if (dives.length > 0) {
+    children.push(
+      new Paragraph({
+        text: "Dive Operations Summary",
+        heading: HeadingLevel.HEADING_2,
+        spacing: { before: 400 },
+      })
+    );
+
+    for (const dive of dives) {
+      const diver = dive.diverId ? usersByDiverId.get(dive.diverId) : undefined;
+      const initials = diver?.initials
+        || diver?.username?.substring(0, 2).toUpperCase()
+        || deriveInitialsFromDisplayName(dive.diverDisplayName)
+        || "UNK";
+      children.push(
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: `${initials}: `,
+              bold: true,
+            }),
+            new TextRun({
+              text: `L/S ${formatTime(dive.lsTime)} | R/B ${formatTime(dive.rbTime)} | L/B ${formatTime(dive.lbTime)} | R/S ${formatTime(dive.rsTime)} | Depth: ${dive.maxDepthFsw || "-"} FSW | Task: ${dive.taskSummary || "-"}`,
+            }),
+          ],
+          spacing: { after: 100 },
+        })
+      );
+    }
+  }
+
+  const doc = new Document({
+    sections: [{ children }],
+  });
+
+  return Buffer.from(await Packer.toBuffer(doc));
 }
 
 async function generateMasterLogDoc(

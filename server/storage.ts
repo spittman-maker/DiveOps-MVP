@@ -391,8 +391,7 @@ export class DbStorage implements IStorage {
     id: string,
     closedBy: string,
     closeoutData: schema.QCCloseoutData | undefined,
-    exportFn: (dayId: string) => Promise<{ files: { name: string; path: string; type: "docx" | "xlsx"; buffer: Buffer }[] }>,
-    saveExportFn: (exportData: InsertLibraryExport) => Promise<LibraryExport>
+    preBuiltFiles: { name: string; path: string; type: "docx" | "xlsx"; buffer: Buffer }[]
   ): Promise<{ day: Day; exportedFiles: { name: string; path: string; type: string }[] }> {
     return await db.transaction(async (tx) => {
       const [updated] = await tx.update(schema.days)
@@ -414,8 +413,6 @@ export class DbStorage implements IStorage {
         throw new Error("DAY_NOT_FOUND");
       }
 
-      const exportResult = await exportFn(id);
-
       const docCategoryMap: Record<string, "raw_notes" | "daily_log" | "master_log" | "dive_log" | "risk_register"> = {
         "RawNotes": "raw_notes",
         "DailyLog": "daily_log",
@@ -424,7 +421,7 @@ export class DbStorage implements IStorage {
         "RRR": "risk_register",
       };
 
-      for (const file of exportResult.files) {
+      for (const file of preBuiltFiles) {
         let docCategory: "raw_notes" | "daily_log" | "master_log" | "dive_log" | "risk_register" = "daily_log";
         for (const [prefix, category] of Object.entries(docCategoryMap)) {
           if (file.name.includes(prefix)) {
@@ -442,12 +439,12 @@ export class DbStorage implements IStorage {
           docCategory,
           fileData: file.buffer.toString("base64"),
           exportedBy: closedBy,
-        } as any);
+        } as any).onConflictDoNothing();
       }
 
       return {
         day: updated,
-        exportedFiles: exportResult.files.map(f => ({ name: f.name, path: f.path, type: f.type })),
+        exportedFiles: preBuiltFiles.map(f => ({ name: f.name, path: f.path, type: f.type })),
       };
     });
   }
