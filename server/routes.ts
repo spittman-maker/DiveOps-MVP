@@ -11,6 +11,18 @@ import { speechToTextStream, ensureCompatibleFormat } from "./replit_integration
 import type { User, UserRole, DayStatus } from "@shared/schema";
 import { lookupDiveTable } from "@shared/navy-dive-tables";
 import { z } from "zod";
+import { generateCorrelationId, emitAuditEvent, sanitizeForAudit, diffFields, type AuditContext } from "./audit";
+import type { AuditAction } from "@shared/schema";
+
+declare global {
+  namespace Express {
+    interface Request {
+      correlationId?: string;
+      auditCtx?: AuditContext;
+      idempotencyKey?: string;
+    }
+  }
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 // Type Helpers
@@ -35,11 +47,18 @@ function isUniqueConstraintError(err: any): boolean {
   return msg.includes('unique') || msg.includes('duplicate key') || msg.includes('23505');
 }
 
-async function createRiskWithRetry(riskData: any, projectId: string, date: string, maxRetries = 3): Promise<any> {
+async function createRiskWithRetry(riskData: any, projectId: string, date: string, maxRetries = 3, auditCtx?: AuditContext): Promise<any> {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const riskId = await getNextRiskId(projectId, date);
     try {
-      return await storage.createRiskItem({ ...riskData, riskId });
+      const risk = await storage.createRiskItem({ ...riskData, riskId });
+      if (auditCtx) {
+        emitAuditEvent(auditCtx, "risk.create", {
+          targetId: risk.id, targetType: "risk_item",
+          after: { id: risk.id, riskId: risk.riskId, category: risk.category, source: risk.source, description: risk.description },
+        });
+      }
+      return risk;
     } catch (err: any) {
       if (!isUniqueConstraintError(err) || attempt === maxRetries - 1) throw err;
       console.warn(`Risk ID collision on ${riskId}, retrying (attempt ${attempt + 1})...`);
@@ -103,6 +122,20 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    const cid = (req.headers["x-correlation-id"] as string) || generateCorrelationId();
+    req.correlationId = cid;
+    req.idempotencyKey = req.headers["x-idempotency-key"] as string | undefined;
+    const user = req.user as User | undefined;
+    req.auditCtx = {
+      correlationId: cid,
+      userId: user?.id,
+      userRole: user?.role as UserRole | undefined,
+      ipAddress: req.ip || req.socket.remoteAddress,
+    };
+    next();
+  });
 
   // ──────────────────────────────────────────────────────────────────────────
   // AUTH ROUTES
@@ -768,8 +801,16 @@ export async function registerRoutes(
       }
     }
     
+    const beforeDay = await storage.getDay(req.params.id);
     const day = await storage.closeDay(req.params.id, user.id, closeoutData);
     if (!day) return res.status(404).json({ message: "Day not found" });
+
+    const ctx: AuditContext = { ...req.auditCtx!, projectId: day.projectId, dayId: day.id };
+    emitAuditEvent(ctx, forceClose ? "day.close_override" : "day.close", {
+      targetId: day.id, targetType: "day",
+      before: { status: beforeDay?.status }, after: { status: "CLOSED", closedBy: user.id },
+      metadata: forceClose ? { forceClose: true } : undefined,
+    });
     res.json(day);
   });
 
@@ -778,8 +819,15 @@ export async function registerRoutes(
     const dayId = req.params.id;
     const closeoutData = req.body?.closeoutData || undefined;
     
+    const beforeDay = await storage.getDay(dayId);
     const day = await storage.closeDay(dayId, user.id, closeoutData);
     if (!day) return res.status(404).json({ message: "Day not found" });
+
+    const ctx: AuditContext = { ...req.auditCtx!, projectId: day.projectId, dayId: day.id };
+    emitAuditEvent(ctx, "day.close", {
+      targetId: day.id, targetType: "day",
+      before: { status: beforeDay?.status }, after: { status: "CLOSED", closedBy: user.id },
+    });
 
     try {
       const exportResult = await generateShiftExport(dayId);
@@ -831,6 +879,13 @@ export async function registerRoutes(
     
     const reopened = await storage.reopenDay(req.params.id);
     if (!reopened) return res.status(500).json({ message: "Failed to reopen day" });
+
+    const ctx: AuditContext = { ...req.auditCtx!, projectId: reopened.projectId, dayId: reopened.id };
+    emitAuditEvent(ctx, "day.reopen", {
+      targetId: reopened.id, targetType: "day",
+      before: { status: "CLOSED" }, after: { status: "ACTIVE" },
+      metadata: { reopenedBy: user.id },
+    });
     
     const project = await storage.getProject(reopened.projectId);
     const systemRawText = `Day reopened by ${user.fullName || user.username}`;
@@ -1032,6 +1087,20 @@ export async function registerRoutes(
       if (stopWork) extractedWithTag.stopWork = true;
       if (hazards.length > 0) extractedWithTag.hazards = hazards;
 
+      const ctx: AuditContext = { ...req.auditCtx!, projectId: data.projectId, dayId: data.dayId };
+
+      // Atomic idempotency guard: reserve key first, then process
+      if (req.idempotencyKey) {
+        const existing = await storage.getIdempotencyResult(req.idempotencyKey);
+        if (existing) {
+          return res.status(existing.responseStatus).json(existing.responseBody);
+        }
+        const reserved = await storage.reserveIdempotencyKey(req.idempotencyKey, "POST /api/log-events");
+        if (!reserved) {
+          return res.status(409).json({ message: "Request is being processed", code: "IDEMPOTENCY_IN_PROGRESS" });
+        }
+      }
+
       // Create the log event IMMEDIATELY (event sourcing)
       const logEvent = await storage.createLogEvent({
         dayId: data.dayId,
@@ -1044,10 +1113,19 @@ export async function registerRoutes(
         category,
         extractedJson: extractedWithTag,
       });
+
+      emitAuditEvent(ctx, "log_event.create", {
+        targetId: logEvent.id, targetType: "log_event",
+        after: { id: logEvent.id, rawText: data.rawText, category, eventTime },
+      });
       
       // Activate day if it was draft
       if (day.status === "DRAFT") {
         await storage.updateDay(day.id, { status: "ACTIVE" });
+        emitAuditEvent(ctx, "day.activate", {
+          targetId: day.id, targetType: "day",
+          before: { status: "DRAFT" }, after: { status: "ACTIVE" },
+        });
       }
       
       // Load active SOPs for this project
@@ -1161,7 +1239,7 @@ export async function registerRoutes(
             category: "safety",
             description: data.rawText,
             status: "open",
-          }, data.projectId, day.date);
+          }, data.projectId, day.date, 3, ctx);
         } catch (e: any) {
           console.error("Failed to create safety risk after retries:", e);
         }
@@ -1178,7 +1256,7 @@ export async function registerRoutes(
             source: "client_directive",
             description: data.rawText,
             status: "open",
-          }, data.projectId, day.date);
+          }, data.projectId, day.date, 3, ctx);
         } catch (e: any) {
           console.error("Failed to create directive risk after retries:", e);
         }
@@ -1195,7 +1273,7 @@ export async function registerRoutes(
             source: "supervisor_entry",
             description: `STOP WORK: ${data.rawText}`,
             status: "open",
-          }, data.projectId, day.date);
+          }, data.projectId, day.date, 3, ctx);
         } catch (e: any) {
           console.error("Failed to create stop-work risk after retries:", e);
         }
@@ -1222,7 +1300,7 @@ export async function registerRoutes(
             source: "supervisor_entry",
             description: data.rawText,
             status: "open",
-          }, data.projectId, day.date);
+          }, data.projectId, day.date, 3, ctx);
         } catch (e: any) {
           console.error("Failed to create keyword risk after retries:", e);
         }
@@ -1356,12 +1434,19 @@ export async function registerRoutes(
       }
       
       // Return immediately with the persisted event
-      res.status(201).json({
+      const responseBody = {
         ...logEvent,
         category,
         extracted,
         autosaved: true,
-      });
+      };
+
+      // Finalize idempotency result (key was already reserved atomically)
+      if (req.idempotencyKey) {
+        storage.finalizeIdempotencyKey(req.idempotencyKey, 201, responseBody).catch(() => {});
+      }
+
+      res.status(201).json(responseBody);
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Validation error", errors: error.errors });
@@ -1621,7 +1706,7 @@ export async function registerRoutes(
 
   app.patch("/api/log-events/:id", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
-      const { rawText, editReason } = req.body;
+      const { rawText, editReason, version: expectedVersion } = req.body;
       if (!rawText || typeof rawText !== "string") {
         return res.status(400).json({ message: "rawText is required" });
       }
@@ -1640,10 +1725,21 @@ export async function registerRoutes(
       const updated = await storage.updateLogEvent(req.params.id, {
         rawText: rawText.trim(),
         editReason: editReason || "Manual edit",
+      }, typeof expectedVersion === "number" ? expectedVersion : undefined);
+
+      const ctx: AuditContext = { ...req.auditCtx!, projectId: event.projectId || undefined, dayId: event.dayId };
+      emitAuditEvent(ctx, "log_event.update", {
+        targetId: event.id, targetType: "log_event",
+        before: { rawText: event.rawText },
+        after: { rawText: rawText.trim() },
+        metadata: { editReason: editReason || "Manual edit" },
       });
 
       res.json(updated);
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.message?.startsWith("VERSION_CONFLICT")) {
+        return res.status(409).json({ message: error.message, code: "VERSION_CONFLICT" });
+      }
       console.error("LogEvent edit error:", error);
       res.status(500).json({ message: "Failed to update log event" });
     }
@@ -1810,7 +1906,15 @@ export async function registerRoutes(
         return res.status(400).json({ message: "No valid fields to update" });
       }
       
-      const updated = await storage.updateDive(req.params.id, updates);
+      const expectedVersion = typeof req.body.version === "number" ? req.body.version : undefined;
+      const updated = await storage.updateDive(req.params.id, updates, expectedVersion);
+
+      const ctx: AuditContext = { ...req.auditCtx!, dayId: dive.dayId };
+      emitAuditEvent(ctx, "dive.update", {
+        targetId: dive.id, targetType: "dive",
+        before: sanitizeForAudit(dive),
+        after: sanitizeForAudit(updated),
+      });
       
       // If diver name was updated with a full name, save to roster and propagate
       if (updates.diverDisplayName && updates.diverDisplayName.length > 2) {
@@ -1834,7 +1938,10 @@ export async function registerRoutes(
       }
       
       res.json(updated);
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.message?.startsWith("VERSION_CONFLICT")) {
+        return res.status(409).json({ message: error.message, code: "VERSION_CONFLICT" });
+      }
       console.error("Dive update error:", error);
       res.status(500).json({ message: "Failed to update dive" });
     }
@@ -2062,6 +2169,7 @@ export async function registerRoutes(
       const day = await storage.getDay(dayId);
       if (!day) return res.status(404).json({ message: "Day not found" });
       
+      const manualCtx: AuditContext = { ...req.auditCtx!, projectId, dayId };
       const risk = await createRiskWithRetry({
         dayId,
         projectId,
@@ -2073,7 +2181,7 @@ export async function registerRoutes(
         initialRiskLevel: initialRiskLevel || null,
         owner: owner || null,
         status: "open",
-      }, projectId, day.date);
+      }, projectId, day.date, 3, manualCtx);
       
       // Also create a log event to record the risk creation in the master log
       const captureTime = new Date();
@@ -2119,15 +2227,27 @@ export async function registerRoutes(
   app.patch("/api/risks/:id", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
       const data = riskUpdateSchema.parse(req.body);
+      const expectedVersion = req.body.version as number | undefined;
       
       const risk = await storage.getRiskItem(req.params.id);
       if (!risk) return res.status(404).json({ message: "Risk not found" });
       
-      const updated = await storage.updateRiskItem(req.params.id, data);
+      const updated = await storage.updateRiskItem(req.params.id, data, expectedVersion);
+      
+      const ctx: AuditContext = { ...req.auditCtx!, projectId: risk.projectId, dayId: risk.dayId };
+      emitAuditEvent(ctx, "risk.update", {
+        targetId: risk.id, targetType: "risk_item",
+        before: sanitizeForAudit(risk),
+        after: sanitizeForAudit(updated),
+        metadata: { editReason: data.editReason, diff: diffFields(sanitizeForAudit(risk), sanitizeForAudit(updated!)) },
+      });
       res.json(updated);
-    } catch (error) {
+    } catch (error: any) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Validation error", errors: error.errors });
+      }
+      if (error?.message?.startsWith("VERSION_CONFLICT")) {
+        return res.status(409).json({ message: error.message, code: "VERSION_CONFLICT" });
       }
       res.status(500).json({ message: "Failed to update risk" });
     }
@@ -3084,6 +3204,25 @@ Respond with ONLY the updated JSON object. No other text.`;
       res.json({ message: "Member removed" });
     } catch (error) {
       res.status(500).json({ message: "Failed to remove member" });
+    }
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // AUDIT TRAIL API
+  // ────────────────────────────────────────────────────────────────────────────
+
+  app.get("/api/audit-events", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const events = await storage.getAuditEvents({
+        targetId: req.query.targetId as string | undefined,
+        targetType: req.query.targetType as string | undefined,
+        action: req.query.action as string | undefined,
+        dayId: req.query.dayId as string | undefined,
+        limit: req.query.limit ? parseInt(req.query.limit as string) : 100,
+      });
+      res.json(events);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch audit events" });
     }
   });
 

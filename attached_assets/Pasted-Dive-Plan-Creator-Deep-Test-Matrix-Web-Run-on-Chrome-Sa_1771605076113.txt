@@ -1,0 +1,284 @@
+Dive Plan Creator — Deep Test Matrix (Web)
+
+Run on: Chrome + Safari/Firefox | Desktop + Mobile-width
+Evidence: recording for each section + screenshots for failures
+
+A. Create / Validate
+
+ Create Dive Plan with all required fields → saves successfully
+
+ Missing required field(s) → blocked with clear inline errors
+
+ Invalid formats (dates, times) → blocked
+
+ Invalid depth values (negative, unrealistic, max < min) → blocked
+
+ Invalid gas selection (if applicable) → blocked
+
+ Save Draft → refresh → draft persists
+
+ Cancel/discard changes → no partial data saved
+
+B. Edit / Versioning / Ownership
+
+ Edit existing plan → persists after refresh
+
+ Confirm who can edit (Supervisor vs Diver) → RBAC enforced
+
+ Edit after plan is referenced by a Day/Dive Log:
+
+ If allowed: verify audit entry + downstream behavior
+
+ If blocked: verify clear reason and no silent failures
+
+ “Last updated by / timestamp” accurate
+
+C. Linking & Dependencies
+
+ Link plan to Project/Site → correct relationship shown everywhere
+
+ Link plan to Daily Log (if feature exists) → appears correctly in Daily Log UI
+
+ Link plan to Dive Logs → plan reference visible in dive records
+
+ Export types include correct Dive Plan content where expected
+
+D. Duplicates / Conflicts / State
+
+ Duplicate plan name in same project:
+
+ blocked OR allowed with unique internal ID (confirm intended)
+
+ Duplicate plan content but different ID works
+
+ Archive plan:
+
+ removed from selection lists
+
+ existing historical dives still reference correctly
+
+ Delete plan:
+
+ if referenced → blocked with clear message
+
+ if not referenced → deletes cleanly
+
+E. Boundary / Scale
+
+ Large Dive Plan (50+ line items/steps) → UI stays usable
+
+ Export plan-heavy day → output not truncated
+
+ Search/filter plans (if available) works
+
+F. Error & Recovery
+
+ Force API 500 on save → UI shows recoverable error; no partial duplicate created
+
+ Retry save after failure → single plan saved (no duplicates)
+
+ Session expired mid-edit → user prompted; no data corruption
+
+2) Dive Log Creator — Deep Test Matrix (Web)
+
+Goal: prove this module is safe as a legal/ops record (create → edit → close day → reopen → re-edit → reclose → export)
+
+A. Create Dive Record (Core Fields)
+
+ Create dive with Diver/Tender/Standby, start/end, max depth, gas, comms, task → saves
+
+ Missing required field blocks save (verify each required field)
+
+ Time validation:
+
+ end < start blocked
+
+ zero-duration dive allowed or blocked (confirm intended)
+
+ dive spanning midnight handled correctly
+
+ Depth validation:
+
+ negative blocked
+
+ max depth required and numeric
+
+ unrealistic depth triggers warning/block (confirm intended)
+
+B. Multi-Dive Logic
+
+ Create 3 dives same day → ordering correct
+
+ Overlapping dives:
+
+ blocked OR flagged (confirm intended)
+
+ Multiple divers same day → assigned correctly; no leakage between records
+
+C. Edits, Audit, and Locking
+
+ Edit dive notes → audit trail updates
+
+ Edit critical fields (depth/time) → audit logs before/after + editReason captured (if required)
+
+ Delete dive:
+
+ allowed only by proper role
+
+ audit records deletion event
+
+ Closed day:
+
+ editing blocked OR triggers reopen flow (confirm intended)
+
+ Reopen day → edit dive → reclose → export reflects final state
+
+D. Cross-References (Where bugs hide)
+
+ Dive references Dive Plan:
+
+ if plan edited after: dive either snapshots or live-updates (confirm intended)
+
+ Dive references Risk(s):
+
+ risk deleted/archived → dive shows warning, preserves historical reference
+
+ Dive references attachments:
+
+ attachments persist and show in export list
+
+E. Attachments & Evidence
+
+ Add photo/doc to dive entry → persists after refresh/logout/login
+
+ Download works
+
+ Permissions enforced (who can delete attachments)
+
+F. Error Handling / Resilience
+
+ Force API 500 on save → no duplicate dive created, user can retry
+
+ Force timeout → retry safe (idempotent or uniqueness enforced)
+
+ Invalid ID retrieval shows correct error
+
+G. Export Parity
+
+ Export day package includes all dives accurately (counts, times, depths)
+
+ Export matches UI after reopen/edit/reclose
+
+ Two exports back-to-back without changes are identical (determinism)
+
+3) Brutal Adversarial Scenario Script (Break-It Plan)
+
+This is a single “day-from-hell” scenario designed to surface the deep bugs: concurrency, state transitions, stale exports, silent overwrites, broken links.
+
+Run it exactly, record the whole session.
+
+Phase 1 — Setup & Baseline
+
+Create new Project “QA Torture Project”
+
+Create Dive Plan “Plan-A” with enough detail to matter (10+ items)
+
+Create 10 risks across 2 “days” (including same calendar date if supported)
+
+✅ Verify: risk IDs unique across project, no collision.
+
+Phase 2 — Two-Tab Concurrency Attack
+
+Open Daily Log for today in Tab A
+
+Open same Daily Log in Tab B
+
+In Tab A: add 5 rolling entries, save
+
+In Tab B: add 5 different rolling entries, save
+
+✅ Expected: conflict warning OR merge strategy; no silent overwrite.
+
+Phase 3 — Double-Submit + Retry Storm
+
+On Dive Log create screen: double-click submit
+
+Spam-click “Create Risk” 10 times quickly
+
+Simulate network throttling, then offline for 10 seconds, then back online
+
+✅ Expected: no duplicates, no corrupted partial records, clear error messaging.
+
+Phase 4 — Close-Day Atomicity Trap
+
+Intentionally leave compliance gaps (missing required fields)
+
+Attempt to Close Day → must be blocked with specific gap list
+
+Use GOD override (close-and-export) → must:
+
+record who used it
+
+record what was overridden
+
+show it in audit + export
+
+Now the trap:
+14. Force export failure (simulate API 500) during close-and-export
+
+✅ Expected: no partial close. Either:
+
+day remains open, or
+
+day closes but export failure is explicitly logged AND the system can regenerate export safely.
+(Whatever the intended behavior is — it must be consistent, documented, and auditable.)
+
+Phase 5 — Reopen/Edit/Reclose + Export Diff
+
+Reopen the day
+
+Edit Dive Plan “Plan-A” (change meaningful fields)
+
+Edit a risk (change severity/mitigation)
+
+Edit a dive log entry (time/depth)
+
+Reclose the day
+
+Export MasterLog + DailyLog + RRR again
+
+✅ Expected:
+
+exports reflect final state
+
+audit trail clearly shows all changes
+
+no stale cached export output
+
+Phase 6 — Illegal Actions (RBAC & Security)
+
+Login as DIVER role:
+
+attempt close day (must fail)
+
+attempt edit closed day (must fail)
+
+attempt delete risk (must fail unless allowed)
+
+attempt privilege escalation via API (must return forbidden)
+
+✅ Expected: strong RBAC, correct error codes, no UI leakage.
+
+Phase 7 — Determinism & Integrity Checks
+
+Run the same export twice without changes → should match exactly
+
+Verify counts:
+
+daily log entries count matches export
+
+dives count matches export
+
+risks count matches export
+
+✅ Expected: 1:1 parity UI ↔ exports.

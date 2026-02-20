@@ -1,0 +1,156 @@
+we validated core infrastructure and concurrency, but I need module-level deep validation for:
+
+Dive Plan Creator
+
+Dive Log Creator
+
+Cross-module interactions
+
+State transitions between modules
+
+Please provide dedicated E2E validation for each major module, not just platform-level testing.
+
+What You Specifically Need Tested
+1️⃣ Dive Plan Creator (This Is Operationally Critical)
+
+Test:
+
+Creation
+
+Create a new Dive Plan
+
+Required fields enforced
+
+Invalid depth / invalid gas / invalid time blocked
+
+Save draft → reload → persists
+
+Edit Lifecycle
+
+Edit Dive Plan after creation
+
+Version tracking (if applicable)
+
+Attempt edit after linked Daily Log created — allowed or blocked?
+
+Linking Behavior
+
+Link Dive Plan to Daily Log
+
+Link Dive Plan to Dive Logs
+
+Verify exported documents include correct Dive Plan data
+
+Edge Cases
+
+Delete Dive Plan with active logs — blocked?
+
+Duplicate Dive Plan names — allowed or prevented?
+
+Large plan with many entries — performance check
+
+2️⃣ Dive Log Creator (This Is Legal Record Material)
+
+Beyond basic field validation, test:
+
+Lifecycle
+
+Create dive
+
+Edit dive
+
+Delete dive
+
+Close day
+
+Reopen day
+
+Edit dive again
+
+Reclose
+
+Verify audit integrity through entire lifecycle.
+
+Dependency Testing
+
+Dive references Risk ID → delete risk → what happens?
+
+Dive references Plan → edit plan → does dive reflect or snapshot?
+
+Multiple dives overlapping — handled?
+
+Boundary Testing
+
+Max depth extremely high
+
+Zero duration dive
+
+Dive across midnight boundary
+
+Large notes field
+
+3️⃣ Cross-Module Integrity (This Is Where Bugs Hide)
+
+Simulate real operations:
+
+Create Project
+
+Create Dive Plan
+
+Create Risks
+
+Create Daily Log
+
+Create Dive Logs referencing plan + risks
+
+Close Day
+
+Export
+
+Reopen
+
+Modify Dive Plan
+
+Modify Risk
+
+Re-close
+
+Export again
+
+Compare both exports.
+
+If differences are unexpected, that’s a bug.
+
+4️⃣ State Machine Validation
+
+List all allowed states for:
+
+Day: Open → Closed → Reopened → Closed
+
+Dive: Draft → Final
+
+Risk: Open → Mitigated → Closed (if applicable)
+
+Plan: Draft → Active → Archived
+
+Confirm illegal transitions are blocked.
+
+Why This Matters
+
+Infrastructure testing ensures:
+
+No crashes
+
+No collisions
+
+No duplicates
+
+Module testing ensures:
+
+No logical corruption
+
+No regulatory gaps
+
+No silent data inconsistencies
+
+Those are two different layers of safety.

@@ -14,6 +14,7 @@ Preferred communication style: Simple, everyday language.
 - **Role-Based Access Control**: Four-tier hierarchy (GOD, ADMIN, SUPERVISOR, DIVER) for secure operations.
 - **Compliance Framework**: Strict adherence to U.S. Navy Dive Manual standards for dive planning and safety, with four parallel controlled records for auditing.
 - **AI Integration**: Leverages OpenAI for intelligent assistance without compromising safety-critical calculations.
+- **Enterprise Reliability**: Request correlation IDs, audit event trail, optimistic locking with version columns, atomic idempotent writes, and adversarial-tested concurrency safety.
 
 ### Frontend
 - **Framework**: React 19 with TypeScript.

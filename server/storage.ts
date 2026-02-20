@@ -372,17 +372,23 @@ export class DbStorage implements IStorage {
         closedBy, 
         closedAt: new Date(), 
         updatedAt: new Date(),
+        version: sql`${schema.days.version} + 1`,
         ...(closeoutData ? { closeoutData } : {}),
-      })
-      .where(eq(schema.days.id, id))
+      } as any)
+      .where(and(eq(schema.days.id, id), sql`${schema.days.status} != 'CLOSED'`))
       .returning();
+    if (!updated) {
+      const existing = await this.getDay(id);
+      if (existing?.status === "CLOSED") return existing;
+      return undefined;
+    }
     return updated;
   }
 
   async reopenDay(id: string): Promise<Day | undefined> {
     const [updated] = await db.update(schema.days)
-      .set({ status: "ACTIVE", closedBy: null, closedAt: null, updatedAt: new Date() })
-      .where(eq(schema.days.id, id))
+      .set({ status: "ACTIVE", closedBy: null, closedAt: null, updatedAt: new Date(), version: sql`${schema.days.version} + 1` } as any)
+      .where(and(eq(schema.days.id, id), eq(schema.days.status, "CLOSED")))
       .returning();
     return updated;
   }
@@ -1165,6 +1171,60 @@ export class DbStorage implements IStorage {
     const result = await db.delete(schema.projectSops)
       .where(eq(schema.projectSops.id, id));
     return (result.rowCount ?? 0) > 0;
+  }
+
+  // Idempotency
+  async getIdempotencyResult(key: string): Promise<{ responseStatus: number; responseBody: any } | null> {
+    const result = await db.execute(sql`SELECT response_status, response_body FROM idempotency_keys WHERE key = ${key}`);
+    const rows = result.rows as any[];
+    if (rows.length === 0) return null;
+    if (rows[0].response_status === 0) return null;
+    return { responseStatus: rows[0].response_status, responseBody: rows[0].response_body };
+  }
+
+  async reserveIdempotencyKey(key: string, route: string): Promise<boolean> {
+    try {
+      await db.execute(sql`
+        INSERT INTO idempotency_keys (key, route, response_status, response_body)
+        VALUES (${key}, ${route}, 0, 'null'::jsonb)
+      `);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async finalizeIdempotencyKey(key: string, status: number, body: any): Promise<void> {
+    await db.execute(sql`
+      UPDATE idempotency_keys SET response_status = ${status}, response_body = ${JSON.stringify(body)}::jsonb
+      WHERE key = ${key}
+    `);
+  }
+
+  async saveIdempotencyResult(key: string, route: string, status: number, body: any): Promise<void> {
+    await db.execute(sql`
+      INSERT INTO idempotency_keys (key, route, response_status, response_body)
+      VALUES (${key}, ${route}, ${status}, ${JSON.stringify(body)}::jsonb)
+      ON CONFLICT (key) DO NOTHING
+    `);
+  }
+
+  // Audit Events
+  async getAuditEvents(filters: { targetId?: string; targetType?: string; action?: string; dayId?: string; limit?: number }): Promise<any[]> {
+    const conditions = [];
+    if (filters.targetId) conditions.push(eq(schema.auditEvents.targetId, filters.targetId));
+    if (filters.targetType) conditions.push(eq(schema.auditEvents.targetType, filters.targetType));
+    if (filters.action) conditions.push(eq(schema.auditEvents.action, filters.action));
+    if (filters.dayId) conditions.push(eq(schema.auditEvents.dayId, filters.dayId));
+    
+    let query = db.select().from(schema.auditEvents)
+      .orderBy(desc(schema.auditEvents.timestamp))
+      .limit(filters.limit || 100);
+    
+    if (conditions.length > 0) {
+      return await (query as any).where(and(...conditions));
+    }
+    return await query;
   }
 }
 
