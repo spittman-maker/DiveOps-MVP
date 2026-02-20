@@ -801,15 +801,38 @@ export async function registerRoutes(
     if (!reopened) return res.status(500).json({ message: "Failed to reopen day" });
     
     const project = await storage.getProject(reopened.projectId);
-    await storage.createLogEvent({
+    const systemRawText = `Day reopened by ${user.fullName || user.username}`;
+    const systemEvent = await storage.createLogEvent({
       dayId: reopened.id,
       projectId: reopened.projectId,
       authorId: user.id,
-      rawText: `Day reopened by ${user.fullName || user.username}`,
-      category: "directive",
+      rawText: systemRawText,
+      category: "ops",
       captureTime: new Date(),
       eventTime: new Date(),
       extractedJson: {},
+    });
+    
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+    const masterLine = `At ${timeStr}, ${systemRawText}.`;
+    await storage.createLogRender({
+      logEventId: systemEvent.id,
+      renderType: "master_log_line",
+      renderText: masterLine,
+      section: "ops",
+      model: "system",
+      promptVersion: "system",
+      status: "ok",
+    });
+    await storage.createLogRender({
+      logEventId: systemEvent.id,
+      renderType: "internal_canvas_line",
+      renderText: `**${timeStr} | SYSTEM:** ${systemRawText}`,
+      section: "ops",
+      model: "system",
+      promptVersion: "system",
+      status: "ok",
     });
     
     res.json(reopened);
