@@ -147,7 +147,7 @@ export async function processStructuredLog(
     // 3) Call LLM (JSON ONLY)
     const response = await openai.chat.completions.create({
       model: MODEL,
-      max_tokens: 2000,
+      max_completion_tokens: 2000,
       messages: [
         { role: "system", content: STRUCTURED_LOG_PROMPT },
         { 

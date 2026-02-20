@@ -1881,7 +1881,7 @@ export async function registerRoutes(
         
         const response = await openai.chat.completions.create({
           model: "gpt-5.2",
-          max_tokens: 200,
+          max_completion_tokens: 200,
           messages: [
             {
               role: "system",
