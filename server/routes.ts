@@ -16,6 +16,20 @@ import { z } from "zod";
 // Type Helpers
 // ────────────────────────────────────────────────────────────────────────────
 
+async function getNextRiskId(projectId: string, date: string): Promise<string> {
+  const allProjectRisks = await storage.getRiskItemsByProject(projectId);
+  const dateStr = date.replace(/-/g, '');
+  const prefix = `RISK-${dateStr}-`;
+  const matchingRisks = allProjectRisks.filter(r => r.riskId.startsWith(prefix));
+  let maxSeq = 0;
+  for (const r of matchingRisks) {
+    const seqStr = r.riskId.slice(prefix.length);
+    const seq = parseInt(seqStr, 10);
+    if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
+  }
+  return generateRiskId(date, maxSeq + 1);
+}
+
 function getUser(req: Request): User {
   return req.user as User;
 }
@@ -1121,8 +1135,7 @@ export async function registerRoutes(
       
       // If safety incident, create a risk item synchronously
       if (category === "safety") {
-        const existingRisks = await storage.getRiskItemsByDay(day.id);
-        const riskId = generateRiskId(day.date, existingRisks.length + 1);
+        const riskId = await getNextRiskId(data.projectId, day.date);
         
         await storage.createRiskItem({
           dayId: day.id,
@@ -1137,8 +1150,7 @@ export async function registerRoutes(
       
       // Client directives also create a risk item — any directive changes operational scope and introduces risk
       if (category === "directive") {
-        const existingRisks = await storage.getRiskItemsByDay(day.id);
-        const riskId = generateRiskId(day.date, existingRisks.length + 1);
+        const riskId = await getNextRiskId(data.projectId, day.date);
         
         await storage.createRiskItem({
           dayId: day.id,
@@ -1154,8 +1166,7 @@ export async function registerRoutes(
       
       // Stop-work events always create a safety risk item
       if (stopWork && category !== "safety") {
-        const existingRisks = await storage.getRiskItemsByDay(day.id);
-        const riskId = generateRiskId(day.date, existingRisks.length + 1);
+        const riskId = await getNextRiskId(data.projectId, day.date);
         await storage.createRiskItem({
           dayId: day.id,
           projectId: data.projectId,
@@ -1180,8 +1191,7 @@ export async function registerRoutes(
       
       // If text contains risk keywords (and wasn't already captured as safety/directive/stop-work), create risk item
       if (category !== "safety" && category !== "directive" && !stopWork && hasRiskKeywords(data.rawText)) {
-        const existingRisks = await storage.getRiskItemsByDay(day.id);
-        const riskId = generateRiskId(day.date, existingRisks.length + 1);
+        const riskId = await getNextRiskId(data.projectId, day.date);
         
         await storage.createRiskItem({
           dayId: day.id,
@@ -2029,8 +2039,7 @@ export async function registerRoutes(
       const day = await storage.getDay(dayId);
       if (!day) return res.status(404).json({ message: "Day not found" });
       
-      const existingRisks = await storage.getRiskItemsByDay(dayId);
-      const riskId = generateRiskId(day.date, existingRisks.length + 1);
+      const riskId = await getNextRiskId(projectId, day.date);
       
       const risk = await storage.createRiskItem({
         dayId,
