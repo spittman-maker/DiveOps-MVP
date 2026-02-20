@@ -1,4 +1,5 @@
 import { drizzle } from "drizzle-orm/node-postgres";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import pkg from "pg";
 const { Pool } = pkg;
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -40,6 +41,7 @@ const pool = new Pool({
 });
 
 export const db = drizzle({ client: pool, schema, casing: "snake_case" });
+export { pool };
 
 export interface IStorage {
   // Users
@@ -383,6 +385,71 @@ export class DbStorage implements IStorage {
       return undefined;
     }
     return updated;
+  }
+
+  async closeDayAndExport(
+    id: string,
+    closedBy: string,
+    closeoutData: schema.QCCloseoutData | undefined,
+    exportFn: (dayId: string) => Promise<{ files: { name: string; path: string; type: "docx" | "xlsx"; buffer: Buffer }[] }>,
+    saveExportFn: (exportData: InsertLibraryExport) => Promise<LibraryExport>
+  ): Promise<{ day: Day; exportedFiles: { name: string; path: string; type: string }[] }> {
+    return await db.transaction(async (tx) => {
+      const [updated] = await tx.update(schema.days)
+        .set({
+          status: "CLOSED",
+          closedBy,
+          closedAt: new Date(),
+          updatedAt: new Date(),
+          version: sql`${schema.days.version} + 1`,
+          ...(closeoutData ? { closeoutData } : {}),
+        } as any)
+        .where(and(eq(schema.days.id, id), sql`${schema.days.status} != 'CLOSED'`))
+        .returning();
+      if (!updated) {
+        const [existing] = await tx.select().from(schema.days).where(eq(schema.days.id, id));
+        if (existing?.status === "CLOSED") {
+          throw new Error("DAY_ALREADY_CLOSED");
+        }
+        throw new Error("DAY_NOT_FOUND");
+      }
+
+      const exportResult = await exportFn(id);
+
+      const docCategoryMap: Record<string, "raw_notes" | "daily_log" | "master_log" | "dive_log" | "risk_register"> = {
+        "RawNotes": "raw_notes",
+        "DailyLog": "daily_log",
+        "MasterLog": "master_log",
+        "DL": "dive_log",
+        "RRR": "risk_register",
+      };
+
+      for (const file of exportResult.files) {
+        let docCategory: "raw_notes" | "daily_log" | "master_log" | "dive_log" | "risk_register" = "daily_log";
+        for (const [prefix, category] of Object.entries(docCategoryMap)) {
+          if (file.name.includes(prefix)) {
+            docCategory = category;
+            break;
+          }
+        }
+
+        await tx.insert(schema.libraryExports).values({
+          projectId: updated.projectId,
+          dayId: id,
+          fileName: file.name,
+          filePath: file.path,
+          fileType: file.type,
+          docCategory,
+          fileData: file.buffer.toString("base64"),
+          exportedBy: closedBy,
+        } as any);
+      }
+
+      return {
+        day: updated,
+        exportedFiles: exportResult.files.map(f => ({ name: f.name, path: f.path, type: f.type })),
+      };
+    });
   }
 
   async reopenDay(id: string): Promise<Day | undefined> {

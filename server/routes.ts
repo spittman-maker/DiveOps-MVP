@@ -13,6 +13,8 @@ import { lookupDiveTable } from "@shared/navy-dive-tables";
 import { z } from "zod";
 import { generateCorrelationId, emitAuditEvent, sanitizeForAudit, diffFields, type AuditContext } from "./audit";
 import type { AuditAction } from "@shared/schema";
+import { isEnabled, setFlag, resetFlags, getFlagStatus } from "./feature-flags";
+import { pool, db } from "./storage";
 
 declare global {
   namespace Express {
@@ -786,6 +788,10 @@ export async function registerRoutes(
   }
 
   app.post("/api/days/:id/close", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    if (!isEnabled("closeDay")) {
+      return res.status(503).json({ message: "Close Day is currently disabled by operations team", code: "FEATURE_DISABLED" });
+    }
+
     const user = getUser(req);
     const closeoutData = req.body?.closeoutData || undefined;
     const forceClose = req.body?.forceClose === true;
@@ -815,59 +821,57 @@ export async function registerRoutes(
   });
 
   app.post("/api/days/:id/close-and-export", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    if (!isEnabled("closeDay")) {
+      return res.status(503).json({ message: "Close Day is currently disabled by operations team", code: "FEATURE_DISABLED" });
+    }
+    if (!isEnabled("exportGeneration")) {
+      return res.status(503).json({ message: "Export generation is currently disabled by operations team", code: "FEATURE_DISABLED" });
+    }
+
     const user = getUser(req);
     const dayId = req.params.id;
     const closeoutData = req.body?.closeoutData || undefined;
-    
     const beforeDay = await storage.getDay(dayId);
-    const day = await storage.closeDay(dayId, user.id, closeoutData);
-    if (!day) return res.status(404).json({ message: "Day not found" });
-
-    const ctx: AuditContext = { ...req.auditCtx!, projectId: day.projectId, dayId: day.id };
-    emitAuditEvent(ctx, "day.close", {
-      targetId: day.id, targetType: "day",
-      before: { status: beforeDay?.status }, after: { status: "CLOSED", closedBy: user.id },
-    });
 
     try {
-      const exportResult = await generateShiftExport(dayId);
-      
-      const docCategoryMap: Record<string, "raw_notes" | "daily_log" | "master_log" | "dive_log" | "risk_register"> = {
-        "RawNotes": "raw_notes",
-        "DailyLog": "daily_log",
-        "MasterLog": "master_log",
-        "DL": "dive_log",
-        "RRR": "risk_register",
-      };
+      const result = await storage.closeDayAndExport(
+        dayId,
+        user.id,
+        closeoutData,
+        generateShiftExport,
+        storage.createLibraryExport.bind(storage)
+      );
 
-      for (const file of exportResult.files) {
-        let docCategory: "raw_notes" | "daily_log" | "master_log" | "dive_log" | "risk_register" = "daily_log";
-        for (const [prefix, category] of Object.entries(docCategoryMap)) {
-          if (file.name.includes(prefix)) {
-            docCategory = category;
-            break;
-          }
-        }
+      const ctx: AuditContext = { ...req.auditCtx!, projectId: result.day.projectId, dayId: result.day.id };
+      emitAuditEvent(ctx, "day.close", {
+        targetId: result.day.id, targetType: "day",
+        before: { status: beforeDay?.status }, after: { status: "CLOSED", closedBy: user.id },
+        metadata: { withExport: true, fileCount: result.exportedFiles.length, transactional: true },
+      });
 
-        await storage.createLibraryExport({
-          projectId: day.projectId,
-          dayId: dayId,
-          fileName: file.name,
-          filePath: file.path,
-          fileType: file.type,
-          docCategory,
-          fileData: file.buffer.toString("base64"),
-          exportedBy: user.id,
-        });
+      res.json(result);
+    } catch (error: any) {
+      if (error?.message === "DAY_NOT_FOUND") {
+        return res.status(404).json({ message: "Day not found" });
+      }
+      if (error?.message === "DAY_ALREADY_CLOSED") {
+        const existing = await storage.getDay(dayId);
+        return res.status(200).json({ day: existing, exportedFiles: [], alreadyClosed: true });
       }
 
-      res.json({ 
-        day,
-        exportedFiles: exportResult.files.map(f => ({ name: f.name, path: f.path, type: f.type })),
+      console.error("Close-and-export failed, transaction rolled back:", error);
+
+      const ctx: AuditContext = { ...req.auditCtx!, dayId };
+      emitAuditEvent(ctx, "day.close" as AuditAction, {
+        targetId: dayId, targetType: "day",
+        metadata: { error: "close_and_export_rolled_back", reason: String(error) },
       });
-    } catch (error) {
-      console.error("Export failed:", error);
-      res.status(500).json({ message: "Day closed but export failed", day });
+
+      const currentDay = await storage.getDay(dayId);
+      res.status(500).json({ 
+        message: "Close-and-export failed — day remains open (transaction rolled back)", 
+        dayStatus: currentDay?.status || "unknown",
+      });
     }
   });
 
@@ -2157,6 +2161,9 @@ export async function registerRoutes(
   });
 
   app.post("/api/risks", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    if (!isEnabled("riskCreation")) {
+      return res.status(503).json({ message: "Risk creation is currently disabled by operations team", code: "FEATURE_DISABLED" });
+    }
     try {
       const user = req.user as any;
       if (!user?.id) return res.status(401).json({ message: "Not authenticated" });
@@ -3472,6 +3479,65 @@ Respond with ONLY the updated JSON object. No other text.`;
       console.error("Delete SOP error:", error);
       res.status(500).json({ message: "Failed to delete SOP" });
     }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // HEALTH CHECK & FEATURE FLAGS (Operations)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  app.get("/api/health", async (_req: Request, res: Response) => {
+    try {
+      const dbCheck = await pool.query("SELECT 1 AS ok");
+      const flags = getFlagStatus();
+      res.json({
+        status: "healthy",
+        timestamp: new Date().toISOString(),
+        database: dbCheck.rows.length > 0 ? "connected" : "error",
+        featureFlags: flags,
+        uptime: process.uptime(),
+      });
+    } catch (error) {
+      res.status(503).json({
+        status: "unhealthy",
+        timestamp: new Date().toISOString(),
+        database: "disconnected",
+        error: String(error),
+      });
+    }
+  });
+
+  app.get("/api/admin/feature-flags", requireRole("GOD"), async (_req: Request, res: Response) => {
+    res.json(getFlagStatus());
+  });
+
+  app.post("/api/admin/feature-flags", requireRole("GOD"), async (req: Request, res: Response) => {
+    const { flag, enabled } = req.body;
+    const validFlags = ["closeDay", "riskCreation", "exportGeneration", "aiProcessing"];
+    if (!validFlags.includes(flag)) {
+      return res.status(400).json({ message: `Invalid flag. Valid flags: ${validFlags.join(", ")}` });
+    }
+    if (typeof enabled !== "boolean") {
+      return res.status(400).json({ message: "enabled must be boolean" });
+    }
+    setFlag(flag as any, enabled);
+
+    const ctx: AuditContext = { ...req.auditCtx! };
+    emitAuditEvent(ctx, "system.feature_flag" as AuditAction, {
+      targetType: "feature_flag",
+      metadata: { flag, enabled },
+    });
+
+    res.json({ flag, enabled, allFlags: getFlagStatus() });
+  });
+
+  app.post("/api/admin/feature-flags/reset", requireRole("GOD"), async (req: Request, res: Response) => {
+    resetFlags();
+    const ctx: AuditContext = { ...req.auditCtx! };
+    emitAuditEvent(ctx, "system.feature_flag" as AuditAction, {
+      targetType: "feature_flag",
+      metadata: { action: "reset_all" },
+    });
+    res.json({ message: "All feature flags reset to defaults", flags: getFlagStatus() });
   });
 
   // Manual sweep trigger (admin/god only)
