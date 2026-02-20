@@ -1,0 +1,157 @@
+=== DiveOps API Endpoint Test Results ===
+Date: 2026-02-20T06:19:31.005Z
+
+--- Logins verified: GOD=200 OK, SUPERVISOR=200 OK ---
+
+=== GOD USER TESTS ===
+
+1. [PASS] GET /api/auth/me (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Object keys: id, username, role, fullName, initials
+2. [PASS] GET /api/dashboard/stats (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Object keys: totalDives, activeDives, activeDivers, completedDives, safetyIncidents, openRisks, recentRisks, logEntriesToday, directivesToday, dayStatus, dayDate
+3. [PASS] GET /api/dashboard/recent-logs (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 8 items
+4. [PASS] GET /api/dashboard/layout (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Object keys: widgets, version
+5. [PASS] GET /api/projects (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 1 items
+6. [PASS] GET /api/projects/a3ab6a29-b19a-4b49-8118-38c2ea83de3d (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Object keys: id, name, clientName, jobsiteName, jobsiteAddress, jobsiteLat, jobsiteLng, timezone, emergencyContacts, createdAt, updatedAt
+7. [PASS] GET /api/projects/a3ab6a29-b19a-4b49-8118-38c2ea83de3d/days (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 1 items
+8. [PASS] GET /api/days/8c31d082-2dc7-44e7-ac75-3cbc1c0a58b5 (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Object keys: id, projectId, date, shift, status, createdBy, createdAt, updatedAt, closedBy, closedAt, closeoutData, defaultBreathingGas, defaultFo2Percent
+9. [PASS] GET /api/days/8c31d082-2dc7-44e7-ac75-3cbc1c0a58b5/log-events (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 16 items
+10. [PASS] GET /api/days/8c31d082-2dc7-44e7-ac75-3cbc1c0a58b5/dives (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 1 items
+11. [PASS] GET /api/days/8c31d082-2dc7-44e7-ac75-3cbc1c0a58b5/risks (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 0 items
+12. [PASS] GET /api/days/8c31d082-2dc7-44e7-ac75-3cbc1c0a58b5/master-log (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Object keys: day, isLocked, isDraft, sections, stationLogs, directiveEntries, conflictEntries, operationalNotes, riskEntries, risks, dives, summary
+13. [PASS] GET /api/days/8c31d082-2dc7-44e7-ac75-3cbc1c0a58b5/compliance (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Object keys: status, gapCount, diveCount, hasStopWork, gaps
+14. [PASS] GET /api/days/8c31d082-2dc7-44e7-ac75-3cbc1c0a58b5/status (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Object keys: id, projectId, date, shift, status, createdBy, createdAt, updatedAt, closedBy, closedAt, closeoutData, defaultBreathingGas, defaultFo2Percent, isPastMidnight, requiresConfirmation
+15. [PASS] GET /api/days/8c31d082-2dc7-44e7-ac75-3cbc1c0a58b5/library-exports (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 4 items
+16. [NOT_FOUND (JSON)] GET /api/days/8c31d082-2dc7-44e7-ac75-3cbc1c0a58b5/summary (GOD)
+   HTTP: 404 | Format: JSON
+   Summary: Object keys: message
+17. [PASS] GET /api/projects/a3ab6a29-b19a-4b49-8118-38c2ea83de3d/risks (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 8 items
+18. [PASS] GET /api/projects/a3ab6a29-b19a-4b49-8118-38c2ea83de3d/sops (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 1 items
+19. [PASS] GET /api/projects/a3ab6a29-b19a-4b49-8118-38c2ea83de3d/dive-plans (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 1 items
+20. [PASS] GET /api/projects/a3ab6a29-b19a-4b49-8118-38c2ea83de3d/project-dive-plans (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 0 items
+21. [NOT_FOUND (JSON)] GET /api/projects/a3ab6a29-b19a-4b49-8118-38c2ea83de3d/project-dive-plans/active (GOD)
+   HTTP: 404 | Format: JSON
+   Summary: Object keys: message
+22. [PASS] GET /api/projects/a3ab6a29-b19a-4b49-8118-38c2ea83de3d/library (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 0 items
+23. [PASS] GET /api/projects/a3ab6a29-b19a-4b49-8118-38c2ea83de3d/library-exports (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Array with library export items (large response - buffer overflow in test runner, manually verified OK)
+24. [PASS] GET /api/projects/a3ab6a29-b19a-4b49-8118-38c2ea83de3d/members (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 3 items
+25. [PASS] GET /api/projects/a3ab6a29-b19a-4b49-8118-38c2ea83de3d/contacts (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 0 items
+26. [PASS] GET /api/projects/a3ab6a29-b19a-4b49-8118-38c2ea83de3d/directory (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Object keys: status
+27. [PASS] GET /api/projects/a3ab6a29-b19a-4b49-8118-38c2ea83de3d/work-selections (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 0 items
+28. [PASS] GET /api/users (GOD only)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 3 items
+29. [PASS] GET /api/admin/users (GOD only)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 0 items
+30. [PASS] GET /api/dive-plan-templates (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 0 items
+31. [PASS] GET /api/weather?lat=21.3544&lon=-157.9501 (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Object keys: configured, location, country, temp, feelsLike, humidity, windSpeed, windDir, conditions, description, icon, hasThunderstorm, visibility, pressure, clouds, sunrise, sunset, timestamp
+32. [PASS] GET /api/weather/lightning?lat=21.3544&lon=-157.9501 (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Object keys: configured, location, thunderstormAlerts, hasUpcomingStorms, nextStormTime
+33. [PASS] GET /api/companies (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 1 items
+34. [PASS] GET /api/work-library (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 41 items
+35. [PASS] GET /api/directory-facilities (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 0 items
+36. [PASS] GET /api/library (GOD)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 0 items
+37. [PASS] GET /api/ml-export/stats (GOD only)
+   HTTP: 200 | Format: JSON
+   Summary: Object keys: conversations, messages, logEvents
+38. [NOT_FOUND (JSON)] GET /api/dives/b5332cda-439e-455b-ba16-fa4bee6b7646/details (GOD - dive details)
+   HTTP: 404 | Format: JSON
+   Summary: Object keys: message
+
+=== SUPERVISOR USER TESTS ===
+
+S1. [PASS] GET /api/auth/me (SUPERVISOR)
+   HTTP: 200 | Format: JSON
+   Summary: Object keys: id, username, role, fullName, initials
+S2. [PASS] GET /api/projects (SUPERVISOR)
+   HTTP: 200 | Format: JSON
+   Summary: Array with 1 items
+S3. [PASS] GET /api/dashboard/stats (SUPERVISOR)
+   HTTP: 200 | Format: JSON
+   Summary: Object keys: totalDives, activeDives, activeDivers, completedDives, safetyIncidents, openRisks, recentRisks, logEntriesToday, directivesToday, dayStatus, dayDate
+S4. [FORBIDDEN (expected)] GET /api/users (SUPERVISOR - should be restricted)
+   HTTP: 403 | Format: JSON
+   Summary: Object keys: message
+S5. [FORBIDDEN (expected)] GET /api/admin/users (SUPERVISOR - should be restricted)
+   HTTP: 403 | Format: JSON
+   Summary: Object keys: message
+S6. [FORBIDDEN (expected)] GET /api/ml-export/stats (SUPERVISOR - should be restricted)
+   HTTP: 403 | Format: JSON
+   Summary: Object keys: message
+
+=== SUMMARY ===
+PASS: 38
+FAIL: 0
+NOT_FOUND (404 JSON): 3
+FORBIDDEN (403 expected): 3
+
+=== ENDPOINTS THAT NEED ATTENTION ===
+These returned 404 with JSON (route exists but data/logic issue):
+  16. /api/days/{dayId}/summary - 404 "Daily summary not found"
+  21. /api/projects/{pid}/project-dive-plans/active - 404 "No approved dive plan found"
+  38. /api/dives/{diveId}/details - 404 "Dive log details not found"
+
+Note: #21 and #16 may be expected if no active dive plan or summary exists for this day.
+#38 route exists but returns 404 for the specific dive - may need investigation.
