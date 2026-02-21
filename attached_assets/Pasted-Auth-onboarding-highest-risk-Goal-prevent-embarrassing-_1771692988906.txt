@@ -1,0 +1,149 @@
+Auth + onboarding (highest risk)
+
+Goal: prevent embarrassing failures and security optics problems.
+
+Add tests for:
+
+First-time setup
+
+“0 users → setup form available”
+
+“after first admin created → setup endpoint locked (403)”
+
+Login
+
+invalid credentials → correct status + message
+
+rate-limit / lockout behavior (even basic)
+
+session persistence (refresh keeps you logged in)
+
+Role-based access control
+
+each role can/can’t access each endpoint and UI tab
+
+API tests should assert 403 vs 401 correctly
+
+Password policy
+
+minimum length, reset behavior (even if admin-created only)
+
+Deliverable: a permissions matrix test that fails if a new route is accidentally exposed.
+
+2) API contract tests (stops “frontend/backend drift”)
+
+If your frontend calls /api/..., add contract tests:
+
+response schema validation (e.g., zod schema validation in tests)
+
+required fields always present
+
+error format consistent
+
+Why: LLM-assisted coding frequently breaks the “shape” of responses.
+
+3) E2E UI tests (Cypress/Playwright)
+
+Focus on 5 “money flows”:
+
+Login → dashboard loads
+
+Admin creates a user → user can login
+
+Role restrictions: diver cannot open admin panel
+
+Critical workflow flow (PSG app’s core function) end-to-end
+
+Logout → protected routes redirect to login
+
+Also add:
+
+“no test credentials visible”
+
+“no seed button visible”
+
+basic smoke checks for every tab route
+
+4) Regression tests for “polish killers”
+
+These are the things that make a demo look amateur:
+
+any “test account” strings
+
+placeholder text
+
+debug routes
+
+internal role labels (“GOD”, etc.)
+
+console errors on page load
+
+You can automate some of this:
+
+a Playwright test that checks the DOM for forbidden strings
+
+a Playwright hook that fails if console.error fires (with a small allowlist)
+
+5) Performance + timeout tests (esp. RAG/LLM)
+
+If you have RAG/search/chat:
+
+enforce max context size and top-k limits with tests
+
+mock slow vector DB / slow LLM and assert:
+
+request still streams output, or
+
+returns a “still working” status (if async), or
+
+fails gracefully with a clear error (not a hang)
+
+Add a “slow mode” CI test that sets artificial latency and ensures the UI doesn’t freeze.
+
+6) Security sanity checks (cheap, high value)
+
+confirm no secrets are shipped to the client bundle
+
+dependency scan (Snyk/GitHub Dependabot)
+
+basic OWASP checks:
+
+CSRF (if cookie sessions)
+
+XSS (dangerous HTML rendering)
+
+authorization checks server-side (never trust frontend)
+
+7) Data integrity tests
+
+If you have logs/entries:
+
+required fields enforced
+
+timezones consistent
+
+“create → read → update → delete” works and permissions apply
+
+export endpoints produce valid CSV/JSON
+
+What I need from you to tailor this to your PSG app
+
+Paste any one of the following and I’ll respond with a concrete test plan + exact test files to add:
+
+The folder tree (top-level):
+
+backend folder name
+
+frontend folder name
+
+tests folder name
+
+package.json and whichever test runner exists (Jest/Vitest/Playwright/Cypress).
+
+The key routes:
+
+auth routes file (e.g., routes.ts)
+
+user/admin routes
+
+the “PSG core” route(s)
