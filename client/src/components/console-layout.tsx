@@ -4,7 +4,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ChatAssistant } from "./chat-assistant";
-import { Sun, Moon } from "lucide-react";
+import { Sun, Moon, LogOut, MessageSquare } from "lucide-react";
 
 interface ConsoleLayoutProps {
   children: ReactNode;
@@ -17,27 +17,32 @@ const TABS = [
   { id: "daily-log", label: "Daily Log" },
   { id: "dive-logs", label: "Dive Logs" },
   { id: "dive-plan", label: "Dive Plan" },
+  { id: "risk-register", label: "Risk Register" },
   { id: "library", label: "Library" },
   { id: "admin", label: "Admin" },
-  { id: "risk-register", label: "Risk Register" },
 ];
+
+const ROLE_DISPLAY: Record<string, string> = {
+  GOD: "System Admin",
+  ADMIN: "Administrator",
+  SUPERVISOR: "Supervisor",
+  DIVER: "Diver",
+};
+
+const ROLE_COLORS: Record<string, string> = {
+  GOD: "bg-amber-600",
+  ADMIN: "bg-purple-600",
+  SUPERVISOR: "btn-gold-metallic",
+  DIVER: "bg-teal-600",
+};
 
 export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayoutProps) {
   const { user, logout, isAdmin, isSupervisor } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [chatOpen, setChatOpen] = useState(false);
 
-  const getRoleBadgeColor = (role: string) => {
-    switch (role) {
-      case "GOD": return "bg-amber-600";
-      case "ADMIN": return "bg-purple-600";
-      case "SUPERVISOR": return "btn-gold-metallic";
-      case "DIVER": return "bg-teal-600";
-      default: return "bg-gray-600";
-    }
-  };
-
   const isDark = theme === "dark";
+  const roleKey = user?.role || "";
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background">
@@ -70,14 +75,18 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
             variant="outline"
             size="sm"
             onClick={() => setChatOpen(true)}
-            className="text-xs btn-gold-metallic"
+            className="text-xs btn-gold-metallic gap-1"
           >
+            <MessageSquare className="h-3.5 w-3.5" />
             AI Assistant
           </Button>
+          <div className="h-4 w-px bg-border" />
           <div className="flex items-center gap-2">
-            <span className="text-sm text-white">{user?.fullName || user?.username}</span>
-            <Badge className={`${getRoleBadgeColor(user?.role || "")} text-white text-xs`}>
-              {user?.role}
+            <span data-testid="text-user-display" className="text-sm text-white">
+              {user?.fullName || user?.username}
+            </span>
+            <Badge data-testid="badge-user-role" className={`${ROLE_COLORS[roleKey] || "bg-gray-600"} text-white text-xs`}>
+              {ROLE_DISPLAY[roleKey] || roleKey}
             </Badge>
           </div>
           <Button
@@ -85,9 +94,10 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
             variant="ghost"
             size="sm"
             onClick={logout}
-            className="text-muted-foreground hover:text-foreground hover:bg-secondary"
+            className="text-muted-foreground hover:text-foreground hover:bg-secondary gap-1"
           >
-            Logout
+            <LogOut className="h-3.5 w-3.5" />
+            Sign Out
           </Button>
         </div>
       </header>
@@ -95,8 +105,7 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
       <nav className="px-4 shrink-0 border-b bg-secondary border-border">
         <div className="flex gap-1">
           {TABS.map((tab) => {
-            const isHidden = tab.id === "admin" && !isAdmin;
-            if (isHidden) return null;
+            if (tab.id === "admin" && !isAdmin) return null;
 
             return (
               <button

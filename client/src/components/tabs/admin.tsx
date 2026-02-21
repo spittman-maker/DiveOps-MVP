@@ -650,6 +650,13 @@ export function AdminTab() {
     }
   };
 
+  const ROLE_DISPLAY: Record<string, string> = {
+    GOD: "System Admin",
+    ADMIN: "Administrator",
+    SUPERVISOR: "Supervisor",
+    DIVER: "Diver",
+  };
+
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
       case "GOD": return "bg-purple-600";
@@ -659,6 +666,8 @@ export function AdminTab() {
       default: return "bg-gray-600";
     }
   };
+
+  const displayRole = (role: string) => ROLE_DISPLAY[role] || role;
 
   if (!isAdmin) {
     return (
@@ -840,7 +849,7 @@ export function AdminTab() {
                               {u.fullName || u.username}
                             </h3>
                             <Badge className={getRoleBadgeColor(u.role)} data-testid={`badge-role-${u.id}`}>
-                              {u.role}
+                              {displayRole(u.role)}
                             </Badge>
                           </div>
                           <p className="text-sm text-navy-400" data-testid={`text-email-${u.id}`}>
@@ -1353,7 +1362,7 @@ export function AdminTab() {
                   <SelectContent className="bg-navy-800 border-navy-600">
                     {ROLES.map((r) => (
                       <SelectItem key={r} value={r} className="text-white">
-                        {r}
+                        {displayRole(r)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1446,7 +1455,7 @@ export function AdminTab() {
                   <SelectContent className="bg-navy-800 border-navy-600">
                     {ROLES.map((r) => (
                       <SelectItem key={r} value={r} className="text-white">
-                        {r}
+                        {displayRole(r)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1533,7 +1542,7 @@ export function AdminTab() {
                   <SelectContent className="bg-navy-800 border-navy-600">
                     {ROLES.map((r) => (
                       <SelectItem key={r} value={r} className="text-white">
-                        {r}
+                        {displayRole(r)}
                       </SelectItem>
                     ))}
                   </SelectContent>

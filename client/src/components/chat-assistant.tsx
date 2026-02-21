@@ -249,7 +249,7 @@ export function ChatAssistant({ isOpen, onClose }: { isOpen: boolean; onClose: (
                   ))}
                 </div>
                 {user?.role === "GOD" && (
-                  <p className="text-xs mt-6 text-amber-500/80">GOD mode enabled: You can also request app changes</p>
+                  <p className="text-xs mt-6 text-amber-500/80">Admin mode: Full system access enabled</p>
                 )}
               </div>
             )}

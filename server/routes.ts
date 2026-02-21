@@ -15,6 +15,8 @@ import { generateCorrelationId, emitAuditEvent, sanitizeForAudit, diffFields, ty
 import type { AuditAction } from "@shared/schema";
 import { isEnabled, setFlag, resetFlags, getFlagStatus } from "./feature-flags";
 import { pool, db } from "./storage";
+import { sql } from "drizzle-orm";
+import * as schema from "@shared/schema";
 
 declare global {
   namespace Express {
@@ -200,12 +202,67 @@ export async function registerRoutes(
   });
 
   // ──────────────────────────────────────────────────────────────────────────
-  // SEED (Development Helper - Creates GOD user and sample data)
+  // SETUP (First-time system initialization)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  app.get("/api/setup/status", async (_req: Request, res: Response) => {
+    try {
+      const result = await db.select({ count: sql<number>`count(*)` }).from(schema.users);
+      const userCount = Number(result[0]?.count ?? 0);
+      res.json({ initialized: userCount > 0, userCount });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to check setup status" });
+    }
+  });
+
+  const setupSchema = z.object({
+    username: z.string().min(3, "Username must be at least 3 characters"),
+    password: z.string().min(8, "Password must be at least 8 characters"),
+    fullName: z.string().min(1, "Full name is required"),
+    initials: z.string().min(1, "Initials are required").max(4),
+    email: z.string().email("Valid email required"),
+  });
+
+  app.post("/api/setup/init", async (req: Request, res: Response) => {
+    try {
+      const result = await db.select({ count: sql<number>`count(*)` }).from(schema.users);
+      const userCount = Number(result[0]?.count ?? 0);
+      if (userCount > 0) {
+        return res.status(403).json({ message: "System already initialized. Contact your administrator." });
+      }
+
+      const data = setupSchema.parse(req.body);
+      const admin = await storage.createUser({
+        username: data.username,
+        password: hashPassword(data.password),
+        role: "GOD",
+        fullName: data.fullName,
+        initials: data.initials.toUpperCase(),
+        email: data.email,
+      });
+
+      req.login(admin, (err) => {
+        if (err) return res.status(500).json({ message: "Account created but login failed" });
+        res.status(201).json({
+          message: "System initialized successfully",
+          user: { id: admin.id, username: admin.username, role: admin.role, fullName: admin.fullName },
+        });
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Validation error", errors: error.errors });
+      }
+      console.error("Setup init error:", error);
+      res.status(500).json({ message: "Setup failed" });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // SEED (Development/Testing Only - hidden from production UI)
   // ──────────────────────────────────────────────────────────────────────────
 
   app.post("/api/seed", async (req: Request, res: Response) => {
     try {
-      // Check if GOD user exists
       let god = await storage.getUserByUsername("god");
       if (!god) {
         god = await storage.createUser({
@@ -218,7 +275,6 @@ export async function registerRoutes(
         });
       }
 
-      // Create sample supervisor
       let supervisor = await storage.getUserByUsername("supervisor");
       if (!supervisor) {
         supervisor = await storage.createUser({
@@ -231,7 +287,6 @@ export async function registerRoutes(
         });
       }
 
-      // Create sample diver
       let diver = await storage.getUserByUsername("diver");
       if (!diver) {
         diver = await storage.createUser({
@@ -244,7 +299,6 @@ export async function registerRoutes(
         });
       }
 
-      // Create sample project
       const projects = await storage.getAllProjects();
       let project = projects.find(p => p.name === "Pearl Harbor Inspection");
       if (!project) {
@@ -262,7 +316,6 @@ export async function registerRoutes(
           ],
         });
 
-        // Add members to project
         await storage.addProjectMember({ projectId: project.id, userId: god.id, role: "GOD" });
         await storage.addProjectMember({ projectId: project.id, userId: supervisor.id, role: "SUPERVISOR" });
         await storage.addProjectMember({ projectId: project.id, userId: diver.id, role: "DIVER" });
