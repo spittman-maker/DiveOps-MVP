@@ -264,15 +264,18 @@ export async function registerRoutes(
 
   app.post("/api/seed", async (req: Request, res: Response) => {
     try {
-      let god = await storage.getUserByUsername("god");
+      let god = await storage.getUserByUsername("spittman@precisionsubsea.com");
+      if (!god) {
+        god = await storage.getUserByUsername("god");
+      }
       if (!god) {
         god = await storage.createUser({
-          username: "god",
-          password: hashPassword("godmode"),
+          username: "spittman@precisionsubsea.com",
+          password: hashPassword("Whisky9954!"),
           role: "GOD",
-          fullName: "System Administrator",
-          initials: "GOD",
-          email: "god@navydive.console",
+          fullName: "S. Pittman",
+          initials: "SP",
+          email: "spittman@precisionsubsea.com",
         });
       }
 
