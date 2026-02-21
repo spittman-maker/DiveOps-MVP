@@ -833,6 +833,13 @@ export async function registerRoutes(
     const closeoutData = req.body?.closeoutData || undefined;
     const beforeDay = await storage.getDay(dayId);
 
+    if (!beforeDay) {
+      return res.status(404).json({ message: "Day not found" });
+    }
+    if (beforeDay.status === "CLOSED") {
+      return res.status(200).json({ day: beforeDay, exportedFiles: [], alreadyClosed: true });
+    }
+
     try {
       const snapshot = await snapshotExportData(dayId);
       const exportResult = await generateShiftExportFromSnapshot(snapshot);
