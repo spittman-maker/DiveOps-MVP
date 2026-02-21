@@ -32,13 +32,14 @@ declare global {
 // Type Helpers
 // ────────────────────────────────────────────────────────────────────────────
 
-async function getNextRiskId(projectId: string, date: string): Promise<string> {
-  const allProjectRisks = await storage.getRiskItemsByProject(projectId);
+async function getNextRiskId(_projectId: string, date: string): Promise<string> {
   const dateStr = date.replace(/-/g, '');
   const prefix = `RISK-${dateStr}-`;
-  const matchingRisks = allProjectRisks.filter(r => r.riskId.startsWith(prefix));
+  const result = await db.select({ riskId: schema.riskItems.riskId })
+    .from(schema.riskItems)
+    .where(sql`${schema.riskItems.riskId} LIKE ${prefix + '%'}`);
   let maxSeq = 0;
-  for (const r of matchingRisks) {
+  for (const r of result) {
     const seqStr = r.riskId.slice(prefix.length);
     const seq = parseInt(seqStr, 10);
     if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
@@ -51,7 +52,7 @@ function isUniqueConstraintError(err: any): boolean {
   return msg.includes('unique') || msg.includes('duplicate key') || msg.includes('23505');
 }
 
-async function createRiskWithRetry(riskData: any, projectId: string, date: string, maxRetries = 3, auditCtx?: AuditContext): Promise<any> {
+async function createRiskWithRetry(riskData: any, projectId: string, date: string, maxRetries = 5, auditCtx?: AuditContext): Promise<any> {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const riskId = await getNextRiskId(projectId, date);
     try {
