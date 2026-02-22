@@ -76,7 +76,7 @@ async function run() {
   // ─── SUCCESSFUL LOGIN ──────────────────────────────────────────
   console.log("\n── Successful Login ──");
 
-  const godLogin = await request("POST", "/api/auth/login", { username: "god", password: "godmode" });
+  const godLogin = await request("POST", "/api/auth/login", { username: "spittman@precisionsubsea.com", password: "Whisky9954!" });
   assert(godLogin.status === 200, `GOD login succeeds: ${godLogin.status}`);
   assert(godLogin.body.role === "GOD", `GOD role returned: ${godLogin.body.role}`);
   assert(godLogin.body.username === "god", `Username returned: ${godLogin.body.username}`);
@@ -113,7 +113,7 @@ async function run() {
   // ─── LOGOUT ────────────────────────────────────────────────────
   console.log("\n── Logout ──");
 
-  const freshLogin = await request("POST", "/api/auth/login", { username: "god", password: "godmode" });
+  const freshLogin = await request("POST", "/api/auth/login", { username: "spittman@precisionsubsea.com", password: "Whisky9954!" });
   const tempCookie = freshLogin.setCookie!;
 
   const logout = await request("POST", "/api/auth/logout", undefined, tempCookie);

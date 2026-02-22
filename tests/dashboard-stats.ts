@@ -79,7 +79,7 @@ async function setup() {
 
   await request("POST", "/api/seed");
 
-  const godLogin = await request("POST", "/api/auth/login", { username: "god", password: "godmode" });
+  const godLogin = await request("POST", "/api/auth/login", { username: "spittman@precisionsubsea.com", password: "Whisky9954!" });
   godCookie = extractCookie(godLogin);
   assert(godLogin.status === 200 && !!godCookie, "GOD login");
 

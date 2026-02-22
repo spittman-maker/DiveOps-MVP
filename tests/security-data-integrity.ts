@@ -64,7 +64,7 @@ async function run() {
   console.log("╚════════════════════════════════════════════════════════════════╝\n");
 
   await request("POST", "/api/seed");
-  godCookie = await loginGetCookie("god", "godmode");
+  godCookie = await loginGetCookie("spittman@precisionsubsea.com", "Whisky9954!");
   supervisorCookie = await loginGetCookie("supervisor", "supervisor123");
 
   // ─── NO SECRETS IN CLIENT BUNDLE ───────────────────────────────
@@ -147,7 +147,7 @@ async function run() {
   // ─── SESSION COOKIE SECURITY ───────────────────────────────────
   console.log("\n── Session Cookie Properties ──");
 
-  const loginRes = await request("POST", "/api/auth/login", { username: "god", password: "godmode" });
+  const loginRes = await request("POST", "/api/auth/login", { username: "spittman@precisionsubsea.com", password: "Whisky9954!" });
   const setCookieHeader = loginRes.headers["set-cookie"];
   if (setCookieHeader) {
     const cookieStr = Array.isArray(setCookieHeader) ? setCookieHeader.join("; ") : setCookieHeader;

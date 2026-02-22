@@ -63,7 +63,7 @@ async function run() {
   console.log("╚════════════════════════════════════════════════════════════════╝\n");
 
   await request("POST", "/api/seed");
-  godCookie = await loginGetCookie("god", "godmode");
+  godCookie = await loginGetCookie("spittman@precisionsubsea.com", "Whisky9954!");
   supervisorCookie = await loginGetCookie("supervisor", "supervisor123");
   diverCookie = await loginGetCookie("diver", "diver123");
 

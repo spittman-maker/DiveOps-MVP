@@ -81,7 +81,7 @@ async function setup() {
   console.log("\n=== SETUP ===");
   await request("POST", "/api/seed", undefined, undefined, "");
 
-  const godLogin = await request("POST", "/api/auth/login", { username: "god", password: "godmode" });
+  const godLogin = await request("POST", "/api/auth/login", { username: "spittman@precisionsubsea.com", password: "Whisky9954!" });
   godCookie = extractCookie(godLogin);
   assert(godLogin.status === 200, `GOD login: ${godLogin.status}`);
   assert(!!godCookie, `GOD cookie captured: ${godCookie.substring(0, 30)}...`);
@@ -122,7 +122,7 @@ async function setup() {
     console.log(`  (reusing supervisor cookie for sup2)`);
   }
 
-  const godRelogin = await request("POST", "/api/auth/login", { username: "god", password: "godmode" });
+  const godRelogin = await request("POST", "/api/auth/login", { username: "spittman@precisionsubsea.com", password: "Whisky9954!" });
   godCookie = extractCookie(godRelogin);
   assert(godRelogin.status === 200, `GOD re-login after register: ${godRelogin.status}`);
 
@@ -182,6 +182,7 @@ async function testConcurrentLogEvents() {
   for (let i = 0; i < N; i++) {
     sup1Promises.push(
       request("POST", "/api/log-events", {
+        projectId,
         rawText: `0${7 + i % 3}${String(i * 5).padStart(2, "0")} SUP1 concurrent entry ${i} - ${Date.now()}`,
         dayId: concDayId,
         projectId,
@@ -189,6 +190,7 @@ async function testConcurrentLogEvents() {
     );
     sup2Promises.push(
       request("POST", "/api/log-events", {
+        projectId,
         rawText: `0${7 + i % 3}${String(i * 5 + 2).padStart(2, "0")} SUP2 concurrent entry ${i} - ${Date.now()}`,
         dayId: concDayId,
         projectId,
@@ -224,6 +226,7 @@ async function testConcurrentCloseRace() {
   const raceDayId = raceDay.body.id;
 
   await request("POST", "/api/log-events", {
+    projectId,
     rawText: `0800 Race test entry ${Date.now()}`,
     dayId: raceDayId,
     projectId,
@@ -255,6 +258,7 @@ async function testConcurrentEditSameEvent() {
   const editDayId = editDay.body.id;
 
   const evt = await request("POST", "/api/log-events", {
+    projectId,
     rawText: `0900 Original event text ${Date.now()}`,
     dayId: editDayId,
     projectId,
@@ -305,6 +309,7 @@ async function testCloseAndExportEndToEnd() {
   ];
   for (const entry of entries) {
     const res = await request("POST", "/api/log-events", {
+      projectId,
       rawText: entry,
       dayId: exportDayId,
       projectId,
@@ -387,6 +392,7 @@ async function testDiverCannotCloseAndExport() {
 async function testDiverCannotCreateLogEvent() {
   console.log("\n=== SUITE 3e: DIVER Cannot Create Log Events ===");
   const res = await request("POST", "/api/log-events", {
+    projectId,
     rawText: "0800 Diver trying to log",
     dayId,
     projectId,
@@ -407,6 +413,7 @@ async function testDiverCannotEditLogEvent() {
   } else {
     console.log("  (No events to test edit on, creating one)");
     const evt = await request("POST", "/api/log-events", {
+      projectId,
       rawText: `0800 Test for diver edit check ${Date.now()}`,
       dayId,
       projectId,
@@ -459,6 +466,7 @@ async function testUnauthenticatedAccess() {
   assert(res1.status === 401, `Unauthenticated GET projects: ${res1.status}`);
 
   const res2 = await request("POST", "/api/log-events", {
+    projectId,
     rawText: "0800 No auth",
     dayId,
     projectId,
@@ -491,6 +499,7 @@ async function testEventTimeParsing() {
 
   for (const tc of testCases) {
     const res = await request("POST", "/api/log-events", {
+      projectId,
       rawText: `${tc.raw} ${Date.now()}`,
       dayId: boundaryDayId,
       projectId,
@@ -528,6 +537,7 @@ async function testNightWorkAttachesToPriorDay() {
   ];
   for (const entry of events) {
     const res = await request("POST", "/api/log-events", {
+      projectId,
       rawText: `${entry} ${Date.now()}`,
       dayId: nightDayId,
       projectId,
@@ -562,6 +572,7 @@ async function testChronologicalOrdering() {
   ];
   for (const entry of outOfOrder) {
     await request("POST", "/api/log-events", {
+      projectId,
       rawText: `${entry} ${Date.now()}`,
       dayId: chronDayId,
       projectId,
@@ -586,6 +597,7 @@ async function testEventTimeOverride() {
 
   const overrideTime = `${overrideDate}T14:30:00.000Z`;
   const res = await request("POST", "/api/log-events", {
+    projectId,
     rawText: `0800 This text says 0800 but override says 1430 ${Date.now()}`,
     dayId: overrideDayId,
     projectId,
@@ -608,6 +620,7 @@ async function testSlashDelimitedEntries() {
   const slashDayId = slashDay.body.id;
 
   const res = await request("POST", "/api/log-events", {
+    projectId,
     rawText: `0530 Pre-dive checks complete / 0600 DHO meeting / 0615 Crew briefing ${Date.now()}`,
     dayId: slashDayId,
     projectId,

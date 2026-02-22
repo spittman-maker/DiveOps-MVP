@@ -68,7 +68,7 @@ async function run() {
   console.log("╚════════════════════════════════════════════════════════════════╝\n");
 
   await request("POST", "/api/seed");
-  godCookie = await loginGetCookie("god", "godmode");
+  godCookie = await loginGetCookie("spittman@precisionsubsea.com", "Whisky9954!");
 
   // ─── AUTH RESPONSE CONTRACTS ────────────────────────────────────
   console.log("── Auth Response Contracts ──");

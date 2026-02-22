@@ -58,13 +58,13 @@ async function setup() {
   console.log("\n=== SETUP ===");
   
   await request("POST", "/api/seed");
-  const login = await request("POST", "/api/auth/login", { username: "god", password: "godmode" });
+  const login = await request("POST", "/api/auth/login", { username: "spittman@precisionsubsea.com", password: "Whisky9954!" });
   assert(login.status === 200, `GOD login: ${login.status}`);
 
   const diverLogin = await request("POST", "/api/auth/login", { username: "diver", password: "diver123" });
   diverCookie = diverLogin.headers["set-cookie"]?.map((c: string) => c.split(";")[0]).join("; ") || "";
 
-  const loginAgain = await request("POST", "/api/auth/login", { username: "god", password: "godmode" });
+  const loginAgain = await request("POST", "/api/auth/login", { username: "spittman@precisionsubsea.com", password: "Whisky9954!" });
 
   const projects = await request("GET", "/api/projects");
   projectId = projects.body[0].id;
@@ -99,6 +99,7 @@ async function testCloseDayAtomicity() {
   const testDayId = newDay.body.id;
 
   await request("POST", "/api/log-events", {
+    projectId,
     rawText: `0800 Commenced dive ops for atomicity test ${Date.now()}`,
     dayId: testDayId,
     projectId,
@@ -142,6 +143,7 @@ async function testCloseExportRollback() {
   const testDayId = newDay.body.id;
 
   await request("POST", "/api/log-events", {
+    projectId,
     rawText: `0900 Rollback test entry ${Date.now()}`,
     dayId: testDayId,
     projectId,
@@ -191,6 +193,7 @@ async function testTransactionRollbackOnFailure() {
   const testDayId = newDay.body.id;
 
   await request("POST", "/api/log-events", {
+    projectId,
     rawText: `0900 Transaction rollback proof entry ${Date.now()}`,
     dayId: testDayId,
     projectId,
@@ -272,6 +275,7 @@ async function testIdempotencyAuditIntegrity() {
 
   const idKey = `idem-audit-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const payload = {
+    projectId,
     rawText: `1100 Audit integrity test ${Date.now()}`,
     dayId,
     projectId,
@@ -296,6 +300,7 @@ async function testOptimisticLockingLogEvents() {
   console.log("\n=== ITEM 3a: Optimistic Locking — Log Events ===");
 
   const create = await request("POST", "/api/log-events", {
+    projectId,
     rawText: `1200 Locking test ${Date.now()}`,
     dayId,
     projectId,
@@ -359,6 +364,7 @@ async function testOptimisticLockingDives() {
   console.log("\n=== ITEM 3c: Optimistic Locking — Dives ===");
 
   await request("POST", "/api/log-events", {
+    projectId,
     rawText: `1300 BM left surface 45 fsw ${Date.now()}`,
     dayId,
     projectId,
@@ -391,6 +397,7 @@ async function testConcurrentEditsAuditTrail() {
   console.log("\n=== ITEM 3d: Concurrent Edits — Audit Trail ===");
 
   const create = await request("POST", "/api/log-events", {
+    projectId,
     rawText: `1400 Audit trail test ${Date.now()}`,
     dayId,
     projectId,
@@ -427,6 +434,7 @@ async function testExportDeterminism() {
   const testDayId = newDay.body.id;
 
   await request("POST", "/api/log-events", {
+    projectId,
     rawText: `0800 Determinism test dive ops commence ${Date.now()}`,
     dayId: testDayId,
     projectId,
@@ -475,6 +483,7 @@ async function testExportAfterReopenEditReclose() {
   const testDayId = newDay.body.id;
 
   await request("POST", "/api/log-events", {
+    projectId,
     rawText: `0800 Export lifecycle test entry ${Date.now()}`,
     dayId: testDayId,
     projectId,
@@ -492,6 +501,7 @@ async function testExportAfterReopenEditReclose() {
   assert(reopen.status === 200, `Reopen succeeds`);
 
   await request("POST", "/api/log-events", {
+    projectId,
     rawText: `0900 Added after reopen — new entry ${Date.now()}`,
     dayId: testDayId,
     projectId,
@@ -609,7 +619,7 @@ async function testRBACEnforcement() {
   const flagSetAttempt = await request("POST", "/api/admin/feature-flags", { flag: "closeDay", enabled: false }, {}, diverSess);
   assert(flagSetAttempt.status === 403 || flagSetAttempt.status === 401, `Diver cannot set feature flags: ${flagSetAttempt.status}`);
 
-  await request("POST", "/api/auth/login", { username: "god", password: "godmode" });
+  await request("POST", "/api/auth/login", { username: "spittman@precisionsubsea.com", password: "Whisky9954!" });
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -657,6 +667,7 @@ async function testClosedDayProtection() {
   const testDayId = newDay.body.id;
 
   await request("POST", "/api/log-events", {
+    projectId,
     rawText: `0800 Protection test ${Date.now()}`,
     dayId: testDayId,
     projectId,
@@ -676,7 +687,7 @@ async function testClosedDayProtection() {
     assert(editAttempt.status === 403, `Supervisor cannot edit closed day log: ${editAttempt.status}`);
   }
 
-  await request("POST", "/api/auth/login", { username: "god", password: "godmode" });
+  await request("POST", "/api/auth/login", { username: "spittman@precisionsubsea.com", password: "Whisky9954!" });
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -755,6 +766,7 @@ async function testCrossModuleIntegrity() {
     assert(riskEdit.status === 200, `Risk edited after reopen: ${riskEdit.status}`);
   }
 
+  projectId,
   await request("POST", "/api/log-events", { rawText: `0900 Additional safety briefing conducted`, dayId: testDayId, projectId });
 
   const reclose = await request("POST", `/api/days/${testDayId}/close`, { forceClose: true });
