@@ -53,6 +53,11 @@ const DIVE_OP_PATTERNS = [
   /\bdiver\s*(up|down)/i,
   /\bdiving/i,
   /\bdive\s*#?\d*/i,
+  /\bin\s*(?:the\s*)?water/i,
+  /\bentered?\s*(?:the\s*)?water/i,
+  /\bwater\s*entry/i,
+  /\bsplash/i,
+  /\bout\s*(?:of\s*)?(?:the\s*)?water/i,
 ];
 
 const DIRECTIVE_PATTERNS = [
@@ -257,10 +262,10 @@ const INITIALS_PATTERN = /\b([A-Z]{2,3})\b/g;
 const TIME_PATTERN = /(\d{1,2}):?(\d{2})/g;
 
 // LS/RB/LB/RS synonyms
-const LS_SYNONYMS = [/\bLS\b/i, /\bL\/S\b/i, /\bleave\s*surface/i, /\bleft\s*surface/i, /\bdiver\s*down/i, /\bsubmerg/i];
+const LS_SYNONYMS = [/\bLS\b/i, /\bL\/S\b/i, /\bleave\s*surface/i, /\bleft\s*surface/i, /\bdiver\s*down/i, /\bsubmerg/i, /\bin\s*(?:the\s*)?water/i, /\bentered?\s*(?:the\s*)?water/i, /\bwater\s*entry/i, /\bsplash/i];
 const RB_SYNONYMS = [/\bRB\b/i, /\bR\/B\b/i, /\bon\s*bottom/i, /\breached?\s*bottom/i];
 const LB_SYNONYMS = [/\bLB\b/i, /\bL\/B\b/i, /\bleaving\s*bottom/i, /\bleft?\s*bottom/i, /\bascending/i];
-const RS_SYNONYMS = [/\bRS\b/i, /\bR\/S\b/i, /\bsurfaced?\b/i, /\bon\s*surface/i, /\breached?\s*surface/i, /\bdiver\s*up/i];
+const RS_SYNONYMS = [/\bRS\b/i, /\bR\/S\b/i, /\bsurfaced?\b/i, /\bon\s*surface/i, /\breached?\s*surface/i, /\bdiver\s*up/i, /\bout\s*(?:of\s*)?(?:the\s*)?water/i, /\bon\s*deck/i];
 
 // Depth patterns: 40 fsw, 40 ft, 40 feet, 40'
 const DEPTH_PATTERN = /(\d+)\s*(?:fsw|ft|feet|'|foot)/i;
@@ -322,7 +327,7 @@ function extractDiverNames(rawText: string): { names: string[]; initials: string
   
   // Extract standalone initials (2-3 uppercase letters) that appear near dive operation keywords
   // Supervisors often write "JM L/S" or "L/S BW" or "R/S CN" with just initials
-  const isDiveText = /\b(?:L\/?S|R\/?S|R\/?B|L\/?B|leave\s*surface|left\s*surface|reached?\s*surface|surfaced?|on\s*bottom|leaving\s*bottom|diver\s*(?:up|down))\b/i.test(rawText);
+  const isDiveText = /\b(?:L\/?S|R\/?S|R\/?B|L\/?B|leave\s*surface|left\s*surface|reached?\s*surface|surfaced?|on\s*bottom|leaving\s*bottom|diver\s*(?:up|down)|in\s*(?:the\s*)?water|entered?\s*(?:the\s*)?water|out\s*(?:of\s*)?(?:the\s*)?water|on\s*deck|splash)\b/i.test(rawText);
   if (isDiveText) {
     const standaloneInitials = rawText.match(INITIALS_PATTERN);
     if (standaloneInitials) {
