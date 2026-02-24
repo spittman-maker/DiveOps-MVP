@@ -8,7 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
-import { Download, Database, MessageSquare, FileText, Package, BookOpen, Plus, Pencil, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
+import { Download, Database, MessageSquare, FileText, Package, BookOpen, Plus, Pencil, Trash2, ToggleLeft, ToggleRight, AlertTriangle, Shield, Clock, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
@@ -83,15 +83,38 @@ interface DirectoryFacility {
 const ROLES = ["GOD", "ADMIN", "SUPERVISOR", "DIVER"] as const;
 const FACILITY_TYPES = ["chamber", "hospital", "coastguard"] as const;
 
+interface MLStats {
+  conversations: number;
+  messages: number;
+  logEvents: number;
+  projects: number;
+  days: number;
+  lastFullExport: { exportedAt: string; recordCount: number } | null;
+  exportHistory: Array<{ id: number; exportType: string; recordCount: number; exportedAt: string }>;
+}
+
 function MLDataExportSection() {
   const { toast } = useToast();
+  const { isGod } = useAuth();
+  const queryClient = useQueryClient();
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [purgeConfirm, setPurgeConfirm] = useState<string | null>(null);
+  const [purging, setPurging] = useState(false);
 
-  const { data: stats } = useQuery<{ conversations: number; messages: number; logEvents: number }>({
+  const { data: stats, refetch: refetchStats } = useQuery<MLStats>({
     queryKey: ["ml-export-stats"],
     queryFn: async () => {
       const res = await fetch("/api/ml-export/stats", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch stats");
+      return res.json();
+    },
+  });
+
+  const { data: projects } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ["projects"],
+    queryFn: async () => {
+      const res = await fetch("/api/projects", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch projects");
       return res.json();
     },
   });
@@ -111,6 +134,7 @@ function MLDataExportSection() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       toast({ title: `${label} exported successfully` });
+      refetchStats();
     } catch (error) {
       toast({ title: `Failed to export ${label}`, variant: "destructive" });
     } finally {
@@ -118,6 +142,30 @@ function MLDataExportSection() {
     }
   };
 
+  const handlePurge = async (type: string, projectId?: string) => {
+    setPurging(true);
+    try {
+      const url = type === "project"
+        ? `/api/ml-export/purge/project/${projectId}`
+        : `/api/ml-export/purge/conversations`;
+      const res = await fetch(url, { method: "DELETE", credentials: "include" });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({ title: data.message || "Purge failed", variant: "destructive" });
+        return;
+      }
+      toast({ title: data.message });
+      refetchStats();
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+    } catch (error) {
+      toast({ title: "Purge operation failed", variant: "destructive" });
+    } finally {
+      setPurging(false);
+      setPurgeConfirm(null);
+    }
+  };
+
+  const hasFullExport = !!stats?.lastFullExport;
   const today = new Date().toISOString().split("T")[0];
 
   return (
@@ -131,7 +179,7 @@ function MLDataExportSection() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-3 gap-4 mb-4">
               <div className="bg-navy-900/50 rounded-lg p-4 border border-navy-700">
                 <div className="flex items-center gap-2 mb-1">
                   <MessageSquare className="w-4 h-4 text-amber-400" />
@@ -157,6 +205,26 @@ function MLDataExportSection() {
                 <p className="text-navy-500 text-xs">ready for fine-tuning</p>
               </div>
             </div>
+
+            {hasFullExport ? (
+              <div className="flex items-center gap-2 p-3 bg-green-900/20 rounded-lg border border-green-700/30">
+                <CheckCircle2 className="w-4 h-4 text-green-400 flex-shrink-0" />
+                <div>
+                  <p className="text-green-400 text-sm font-medium">Full ML Bundle exported</p>
+                  <p className="text-navy-400 text-xs">
+                    Last export: {new Date(stats.lastFullExport!.exportedAt).toLocaleString()} ({stats.lastFullExport!.recordCount} records)
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 p-3 bg-amber-900/20 rounded-lg border border-amber-700/30">
+                <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                <div>
+                  <p className="text-amber-400 text-sm font-medium">No full bundle export yet</p>
+                  <p className="text-navy-400 text-xs">Export the Full ML Bundle before data purge operations become available</p>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -216,6 +284,146 @@ function MLDataExportSection() {
             </div>
           </CardContent>
         </Card>
+
+        {isGod && (
+          <Card className="bg-navy-800/50 border-red-900/50">
+            <CardHeader>
+              <CardTitle className="text-white text-base flex items-center gap-2">
+                <Shield className="w-5 h-5 text-red-400" />
+                Data Purge (GOD Only)
+              </CardTitle>
+              <p className="text-navy-400 text-sm mt-1">
+                Permanently delete operational data. Requires a full ML bundle export first to preserve training data.
+              </p>
+            </CardHeader>
+            <CardContent>
+              {!hasFullExport ? (
+                <div className="flex items-center gap-3 p-4 bg-navy-900/50 rounded-lg border border-navy-700">
+                  <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0" />
+                  <div>
+                    <p className="text-amber-400 font-medium">Purge locked</p>
+                    <p className="text-navy-400 text-sm">You must export the Full ML Bundle before any data can be purged. This ensures all training data is preserved.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="p-3 bg-navy-900/50 rounded-lg border border-navy-700">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-white font-medium">Purge AI Conversations</p>
+                      {purgeConfirm === "conversations" ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-red-400 text-sm">Confirm permanent deletion?</span>
+                          <Button
+                            data-testid="button-confirm-purge-conversations"
+                            variant="destructive"
+                            size="sm"
+                            disabled={purging}
+                            onClick={() => handlePurge("conversations")}
+                          >
+                            {purging ? "Purging..." : "Yes, Purge"}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-navy-600 text-navy-300"
+                            onClick={() => setPurgeConfirm(null)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          data-testid="button-purge-conversations"
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => setPurgeConfirm("conversations")}
+                        >
+                          <Trash2 className="w-4 h-4 mr-1" /> Purge
+                        </Button>
+                      )}
+                    </div>
+                    <p className="text-navy-400 text-sm">Deletes all {stats?.conversations ?? 0} conversations and {stats?.messages ?? 0} messages</p>
+                  </div>
+
+                  {projects && projects.length > 0 && (
+                    <div className="p-3 bg-navy-900/50 rounded-lg border border-navy-700">
+                      <p className="text-white font-medium mb-3">Purge Project Data</p>
+                      <p className="text-navy-400 text-sm mb-3">Permanently removes a project and all its days, log events, dives, risks, and exported documents</p>
+                      <div className="space-y-2">
+                        {projects.map((project) => (
+                          <div key={project.id} className="flex items-center justify-between p-2 bg-navy-800/50 rounded border border-navy-700">
+                            <span className="text-white text-sm">{project.name}</span>
+                            {purgeConfirm === `project-${project.id}` ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-red-400 text-xs">Delete forever?</span>
+                                <Button
+                                  data-testid={`button-confirm-purge-project-${project.id}`}
+                                  variant="destructive"
+                                  size="sm"
+                                  disabled={purging}
+                                  onClick={() => handlePurge("project", project.id)}
+                                >
+                                  {purging ? "..." : "Confirm"}
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="border-navy-600 text-navy-300"
+                                  onClick={() => setPurgeConfirm(null)}
+                                >
+                                  No
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button
+                                data-testid={`button-purge-project-${project.id}`}
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => setPurgeConfirm(`project-${project.id}`)}
+                              >
+                                <Trash2 className="w-3 h-3 mr-1" /> Purge
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {stats?.exportHistory && stats.exportHistory.length > 0 && (
+          <Card className="bg-navy-800/50 border-navy-600">
+            <CardHeader>
+              <CardTitle className="text-white text-base flex items-center gap-2">
+                <Clock className="w-5 h-5 text-amber-400" />
+                Export History
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {stats.exportHistory.map((entry) => (
+                  <div key={entry.id} className="flex items-center justify-between p-2 bg-navy-900/50 rounded border border-navy-700">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className={
+                        entry.exportType === "full-bundle"
+                          ? "border-green-600 text-green-400"
+                          : "border-amber-600 text-amber-400"
+                      }>
+                        {entry.exportType}
+                      </Badge>
+                      <span className="text-navy-400 text-sm">{entry.recordCount} records</span>
+                    </div>
+                    <span className="text-navy-500 text-xs">{new Date(entry.exportedAt).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="bg-navy-800/50 border-navy-600">
           <CardHeader>

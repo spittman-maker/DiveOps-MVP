@@ -883,6 +883,22 @@ export const insertAuditEventSchema = createInsertSchema(auditEvents).omit({ id:
 export type InsertAuditEvent = z.infer<typeof insertAuditEventSchema>;
 export type AuditEvent = typeof auditEvents.$inferSelect;
 
+// ────────────────────────────────────────────────────────────────────────────
+// ML EXPORT LOG (Tracks when data is exported for ML training)
+// ────────────────────────────────────────────────────────────────────────────
+
+export const mlExportLog = pgTable("ml_export_log", {
+  id: serial("id").primaryKey(),
+  exportType: text("export_type").notNull().$type<"conversations" | "log-training" | "full-bundle">(),
+  exportedBy: varchar("exported_by").notNull().references(() => users.id),
+  recordCount: integer("record_count").notNull().default(0),
+  exportedAt: timestamp("exported_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const insertMlExportLogSchema = createInsertSchema(mlExportLog).omit({ id: true, exportedAt: true });
+export type InsertMlExportLog = z.infer<typeof insertMlExportLogSchema>;
+export type MlExportLog = typeof mlExportLog.$inferSelect;
+
 export const idempotencyKeys = pgTable("idempotency_keys", {
   key: varchar("key").primaryKey(),
   route: text("route").notNull(),

@@ -3453,17 +3453,37 @@ Respond with ONLY the updated JSON object. No other text.`;
   app.get("/api/ml-export/stats", requireRole("ADMIN", "GOD"), async (_req: Request, res: Response) => {
     try {
       const { db } = await import("./db");
-      const { conversations, messages, logEvents } = await import("@shared/schema");
-      const { count } = await import("drizzle-orm");
+      const { conversations, messages, logEvents, mlExportLog, projects, days } = await import("@shared/schema");
+      const { count, desc } = await import("drizzle-orm");
 
       const [convCount] = await db.select({ value: count() }).from(conversations);
       const [msgCount] = await db.select({ value: count() }).from(messages);
       const [eventCount] = await db.select({ value: count() }).from(logEvents);
+      const [projectCount] = await db.select({ value: count() }).from(projects);
+      const [dayCount] = await db.select({ value: count() }).from(days);
+
+      const exportHistory = await db.select().from(mlExportLog)
+        .orderBy(desc(mlExportLog.exportedAt))
+        .limit(20);
+
+      const lastFullExport = exportHistory.find(e => e.exportType === "full-bundle");
 
       res.json({
         conversations: convCount?.value || 0,
         messages: msgCount?.value || 0,
         logEvents: eventCount?.value || 0,
+        projects: projectCount?.value || 0,
+        days: dayCount?.value || 0,
+        lastFullExport: lastFullExport ? {
+          exportedAt: lastFullExport.exportedAt?.toISOString(),
+          recordCount: lastFullExport.recordCount,
+        } : null,
+        exportHistory: exportHistory.map(e => ({
+          id: e.id,
+          exportType: e.exportType,
+          recordCount: e.recordCount,
+          exportedAt: e.exportedAt?.toISOString(),
+        })),
       });
     } catch (error) {
       console.error("ML export stats error:", error);
@@ -3471,7 +3491,7 @@ Respond with ONLY the updated JSON object. No other text.`;
     }
   });
 
-  app.get("/api/ml-export/conversations", requireRole("ADMIN", "GOD"), async (_req: Request, res: Response) => {
+  app.get("/api/ml-export/conversations", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
       const { db } = await import("./db");
       const { conversations, messages } = await import("@shared/schema");
@@ -3502,6 +3522,14 @@ Respond with ONLY the updated JSON object. No other text.`;
         }));
       }
 
+      const user = getUser(req);
+      const { mlExportLog } = await import("@shared/schema");
+      await db.insert(mlExportLog).values({
+        exportType: "conversations",
+        exportedBy: user.id,
+        recordCount: lines.length,
+      });
+
       res.setHeader("Content-Type", "application/x-ndjson");
       res.setHeader("Content-Disposition", `attachment; filename="diveops_conversations_${new Date().toISOString().split('T')[0]}.jsonl"`);
       res.send(lines.join("\n"));
@@ -3511,7 +3539,7 @@ Respond with ONLY the updated JSON object. No other text.`;
     }
   });
 
-  app.get("/api/ml-export/log-training", requireRole("ADMIN", "GOD"), async (_req: Request, res: Response) => {
+  app.get("/api/ml-export/log-training", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
       const { db } = await import("./db");
       const { logEvents, days, projects } = await import("@shared/schema");
@@ -3546,6 +3574,14 @@ Respond with ONLY the updated JSON object. No other text.`;
         }));
       }
 
+      const user = getUser(req);
+      const { mlExportLog } = await import("@shared/schema");
+      await db.insert(mlExportLog).values({
+        exportType: "log-training",
+        exportedBy: user.id,
+        recordCount: lines.length,
+      });
+
       res.setHeader("Content-Type", "application/x-ndjson");
       res.setHeader("Content-Disposition", `attachment; filename="diveops_log_training_${new Date().toISOString().split('T')[0]}.jsonl"`);
       res.send(lines.join("\n"));
@@ -3555,7 +3591,7 @@ Respond with ONLY the updated JSON object. No other text.`;
     }
   });
 
-  app.get("/api/ml-export/full-bundle", requireRole("ADMIN", "GOD"), async (_req: Request, res: Response) => {
+  app.get("/api/ml-export/full-bundle", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
       const { db } = await import("./db");
       const { conversations, messages, logEvents, days, projects, dives, riskItems } = await import("@shared/schema");
@@ -3628,12 +3664,148 @@ Respond with ONLY the updated JSON object. No other text.`;
         status: r.status,
       }));
 
+      const user = getUser(req);
+      const { mlExportLog: mlExportLogTable } = await import("@shared/schema");
+      const totalRecords = (bundle.datasets.conversations?.length || 0) +
+        (bundle.datasets.log_events?.length || 0) +
+        (bundle.datasets.dives?.length || 0) +
+        (bundle.datasets.risks?.length || 0);
+      await db.insert(mlExportLogTable).values({
+        exportType: "full-bundle",
+        exportedBy: user.id,
+        recordCount: totalRecords,
+      });
+
       res.setHeader("Content-Type", "application/json");
       res.setHeader("Content-Disposition", `attachment; filename="diveops_ml_bundle_${new Date().toISOString().split('T')[0]}.json"`);
       res.json(bundle);
     } catch (error) {
       console.error("ML full bundle export error:", error);
       res.status(500).json({ message: "Failed to export full ML bundle" });
+    }
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // ML-GATED DATA PURGE ENDPOINTS (requires full-bundle export first)
+  // ────────────────────────────────────────────────────────────────────────────
+
+  app.delete("/api/ml-export/purge/project/:projectId", requireRole("GOD"), async (req: Request, res: Response) => {
+    try {
+      const { db } = await import("./db");
+      const { mlExportLog, projects, days, logEvents, dives, libraryExports, riskItems, auditEvents } = await import("@shared/schema");
+      const { eq, desc } = await import("drizzle-orm");
+
+      const lastFullExport = await db.select().from(mlExportLog)
+        .where(eq(mlExportLog.exportType, "full-bundle"))
+        .orderBy(desc(mlExportLog.exportedAt))
+        .limit(1);
+
+      if (lastFullExport.length === 0) {
+        return res.status(403).json({
+          message: "Cannot purge data: No ML full-bundle export has been performed. Export the full ML bundle first to preserve training data before deletion.",
+        });
+      }
+
+      const projectId = req.params.projectId;
+      const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      const projectDays = await db.select({ id: days.id }).from(days).where(eq(days.projectId, projectId));
+      const dayIds = projectDays.map(d => d.id);
+
+      let deletedEvents = 0, deletedDives = 0, deletedExports = 0, deletedRisks = 0;
+
+      if (dayIds.length > 0) {
+        for (const dayId of dayIds) {
+          const evtResult = await db.delete(logEvents).where(eq(logEvents.dayId, dayId));
+          deletedEvents += (evtResult as any).rowCount || 0;
+          const diveResult = await db.delete(dives).where(eq(dives.dayId, dayId));
+          deletedDives += (diveResult as any).rowCount || 0;
+          await db.delete(libraryExports).where(eq(libraryExports.dayId, dayId));
+        }
+      }
+
+      const riskResult = await db.delete(riskItems).where(eq(riskItems.projectId, projectId));
+      deletedRisks = (riskResult as any).rowCount || 0;
+
+      await db.delete(days).where(eq(days.projectId, projectId));
+      await db.delete(auditEvents).where(eq(auditEvents.projectId, projectId));
+      await db.delete(projects).where(eq(projects.id, projectId));
+
+      const user = getUser(req);
+      await db.insert(auditEvents).values({
+        action: "DATA_PURGE",
+        userId: user.id,
+        projectId: null,
+        details: {
+          purgeType: "project",
+          projectName: project.name,
+          projectId,
+          deletedEvents,
+          deletedDives,
+          deletedRisks,
+          deletedDays: dayIds.length,
+          mlExportRef: lastFullExport[0].id,
+        },
+      });
+
+      res.json({
+        message: `Project "${project.name}" and all associated data purged successfully`,
+        deleted: { events: deletedEvents, dives: deletedDives, risks: deletedRisks, days: dayIds.length },
+        mlExportRef: lastFullExport[0].id,
+      });
+    } catch (error) {
+      console.error("Project purge error:", error);
+      res.status(500).json({ message: "Failed to purge project data" });
+    }
+  });
+
+  app.delete("/api/ml-export/purge/conversations", requireRole("GOD"), async (_req: Request, res: Response) => {
+    try {
+      const { db } = await import("./db");
+      const { mlExportLog, conversations, messages, auditEvents } = await import("@shared/schema");
+      const { eq, desc, count } = await import("drizzle-orm");
+
+      const lastFullExport = await db.select().from(mlExportLog)
+        .where(eq(mlExportLog.exportType, "full-bundle"))
+        .orderBy(desc(mlExportLog.exportedAt))
+        .limit(1);
+
+      if (lastFullExport.length === 0) {
+        return res.status(403).json({
+          message: "Cannot purge conversations: No ML full-bundle export has been performed. Export first.",
+        });
+      }
+
+      const [msgCount] = await db.select({ value: count() }).from(messages);
+      const [convCount] = await db.select({ value: count() }).from(conversations);
+
+      await db.delete(messages);
+      await db.delete(conversations);
+
+      const user = getUser(_req);
+      await db.insert(auditEvents).values({
+        action: "DATA_PURGE",
+        userId: user.id,
+        projectId: null,
+        details: {
+          purgeType: "conversations",
+          deletedConversations: convCount?.value || 0,
+          deletedMessages: msgCount?.value || 0,
+          mlExportRef: lastFullExport[0].id,
+        },
+      });
+
+      res.json({
+        message: "All AI conversations purged successfully",
+        deleted: { conversations: convCount?.value || 0, messages: msgCount?.value || 0 },
+        mlExportRef: lastFullExport[0].id,
+      });
+    } catch (error) {
+      console.error("Conversations purge error:", error);
+      res.status(500).json({ message: "Failed to purge conversations" });
     }
   });
 
