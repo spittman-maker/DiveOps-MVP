@@ -8,6 +8,14 @@ import { passport } from "./auth";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { startPeriodicSweep } from "./sweep";
 
+process.on("uncaughtException", (err) => {
+  console.error("[FATAL] Uncaught exception:", err);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[FATAL] Unhandled rejection:", reason);
+});
+
 const app = express();
 const httpServer = createServer(app);
 
