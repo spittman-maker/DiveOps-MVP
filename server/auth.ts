@@ -3,15 +3,21 @@ import { Strategy as LocalStrategy } from "passport-local";
 import { storage } from "./storage";
 import type { User, UserRole } from "@shared/schema";
 import type { Request, Response, NextFunction } from "express";
+import crypto from "crypto";
 
-// For this MVP, we'll use a simple password comparison
-// In production, use bcrypt or similar
-function verifyPassword(password: string, hash: string): boolean {
-  return password === hash;
+function verifyPassword(password: string, stored: string): boolean {
+  if (!stored.includes(".")) {
+    return password === stored;
+  }
+  const [salt, hash] = stored.split(".");
+  const derived = crypto.scryptSync(password, salt, 64).toString("hex");
+  return derived === hash;
 }
 
 function hashPassword(password: string): string {
-  return password;
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  return `${salt}.${hash}`;
 }
 
 passport.use(
