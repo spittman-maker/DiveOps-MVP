@@ -2487,7 +2487,7 @@ export async function registerRoutes(
       ...dives.map(d => d.maxDepthFsw || 0)
     );
     const totalDives = dives.length > 0 ? dives.length : Math.max(diveStartCount, sections.dive.length);
-    const totalDivers = dives.length > 0 ? uniqueDivers.size : Math.max(allDiverNames.size, 1);
+    const totalDivers = dives.length > 0 ? uniqueDivers.size : allDiverNames.size;
 
     // Get risk items for this day
     const risks = await storage.getRiskItemsByDay(req.params.dayId);

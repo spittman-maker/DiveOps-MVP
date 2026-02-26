@@ -395,139 +395,8 @@ async function generateDailyLogDoc(events: LogEvent[], day: Day, projectName: st
   const project = await storage.getProject(day.projectId);
   const risks = await storage.getRiskItemsByDay(day.id);
   const dives = await storage.getDivesByDay(day.id);
-  const closeout = (day as any).closeoutData as import("@shared/schema").QCCloseoutData | null;
 
-  const children: Paragraph[] = [];
-
-  children.push(
-    new Paragraph({ text: "PSG-TPL-0001 — Daily Shift Log", heading: HeadingLevel.HEADING_1 }),
-    new Paragraph({ text: `PRECISION SUBSEA GROUP LLC`, spacing: { after: 200 }, alignment: AlignmentType.CENTER,
-      children: [new TextRun({ text: "PRECISION SUBSEA GROUP LLC", bold: true, size: 28 })] }),
-  );
-
-  const headerFields = [
-    ["Date (local)", day.date],
-    ["Project/Site", `${projectName}${project?.jobsiteName ? ` — ${project.jobsiteName}` : ""}`],
-    ["Client/Contract", project?.clientName || "—"],
-    ["Shift", day.shift || "Day"],
-  ];
-
-  headerFields.forEach(([label, value]) => {
-    children.push(new Paragraph({
-      children: [
-        new TextRun({ text: `${label}: `, bold: true }),
-        new TextRun({ text: value || "—" }),
-      ],
-      spacing: { after: 80 },
-    }));
-  });
-
-  children.push(new Paragraph({ text: "", spacing: { after: 200 } }));
-
-  children.push(new Paragraph({ text: "Team & Manning", heading: HeadingLevel.HEADING_2, spacing: { before: 300 } }));
-  const diverNames = dives.map(d => d.diverDisplayName || "—").filter((v, i, a) => a.indexOf(v) === i);
-  const teamFields = [
-    ["Divers", diverNames.join(", ") || "—"],
-    ["Total Dives", String(dives.length)],
-  ];
-  teamFields.forEach(([label, value]) => {
-    children.push(new Paragraph({
-      children: [new TextRun({ text: `${label}: `, bold: true }), new TextRun({ text: value })],
-      spacing: { after: 80 },
-    }));
-  });
-
-  children.push(new Paragraph({ text: "", spacing: { after: 200 } }));
-  children.push(new Paragraph({ text: "Rolling Event Log", heading: HeadingLevel.HEADING_2, spacing: { before: 300 } }));
-
-  eventsWithRenders.forEach((event) => {
-    const internalRender = event.renders?.find((r: { renderType: string }) => r.renderType === "internal_canvas_line");
-    const displayText = internalRender?.renderText || event.rawText;
-    children.push(new Paragraph({
-      children: [
-        new TextRun({ text: `[${formatTime(event.eventTime)}] `, bold: true }),
-        new TextRun({ text: displayText }),
-      ],
-      spacing: { after: 120 },
-    }));
-  });
-
-  if (closeout) {
-    children.push(new Paragraph({ text: "", spacing: { after: 200 } }));
-    children.push(new Paragraph({ text: "Deviations / Stop-Work / Lessons Learned", heading: HeadingLevel.HEADING_2, spacing: { before: 300 } }));
-    children.push(new Paragraph({ text: closeout.deviations || "None noted.", spacing: { after: 200 } }));
-
-    children.push(new Paragraph({ text: "End-of-Shift Closeout", heading: HeadingLevel.HEADING_2, spacing: { before: 300 } }));
-
-    const closeoutFields = [
-      ["Scope", closeout.scopeStatus === "complete" ? "Complete" : "Incomplete"],
-      ["Documentation", closeout.documentationStatus === "complete" ? "Complete" : "Incomplete"],
-      ["Exceptions", closeout.exceptions || "None Noted"],
-      ["Outstanding Issues", closeout.outstandingIssues || "None"],
-      ["Planned Work Next Shift", closeout.plannedNextShift || "—"],
-    ];
-    closeoutFields.forEach(([label, value]) => {
-      children.push(new Paragraph({
-        children: [new TextRun({ text: `${label}: `, bold: true }), new TextRun({ text: value })],
-        spacing: { after: 80 },
-      }));
-    });
-
-    children.push(new Paragraph({ text: "", spacing: { after: 100 } }));
-    children.push(new Paragraph({
-      children: [new TextRun({ text: "SEI Advisories", bold: true, underline: {} })],
-      spacing: { before: 200, after: 80 },
-    }));
-    children.push(new Paragraph({
-      children: [new TextRun({ text: "Advised FOR: ", bold: true }), new TextRun({ text: closeout.advisedFor || "None" })],
-      spacing: { after: 80 },
-    }));
-    children.push(new Paragraph({
-      children: [new TextRun({ text: "Advised AGAINST: ", bold: true }), new TextRun({ text: closeout.advisedAgainst || "None" })],
-      spacing: { after: 80 },
-    }));
-
-    if (closeout.standingRisks && closeout.standingRisks.length > 0) {
-      children.push(new Paragraph({ text: "", spacing: { after: 100 } }));
-      children.push(new Paragraph({
-        children: [new TextRun({ text: "Standing Risks Referenced", bold: true, underline: {} })],
-        spacing: { before: 200, after: 80 },
-      }));
-      closeout.standingRisks.forEach(r => {
-        children.push(new Paragraph({
-          children: [
-            new TextRun({ text: `${r.riskId}`, bold: true }),
-            new TextRun({ text: ` — Status: ${r.status}` }),
-          ],
-          spacing: { after: 60 },
-        }));
-      });
-    }
-
-    children.push(new Paragraph({ text: "", spacing: { after: 200 } }));
-    children.push(new Paragraph({
-      children: [new TextRun({ text: "Log Closed By: ", bold: true }), new TextRun({ text: day.closedBy || "—" })],
-      spacing: { after: 80 },
-    }));
-    children.push(new Paragraph({
-      children: [new TextRun({ text: "Date/Time Closed: ", bold: true }), new TextRun({ text: day.closedAt ? new Date(day.closedAt).toLocaleString() : "—" })],
-      spacing: { after: 80 },
-    }));
-  }
-
-  children.push(new Paragraph({ text: "", spacing: { after: 300 } }));
-  children.push(new Paragraph({ text: "Sign-offs", heading: HeadingLevel.HEADING_2, spacing: { before: 300 } }));
-  children.push(new Paragraph({
-    children: [new TextRun({ text: "Dive Supervisor: ", bold: true }), new TextRun({ text: "______________________" })],
-    spacing: { after: 200 },
-  }));
-  children.push(new Paragraph({
-    children: [new TextRun({ text: "Client Rep (if required): ", bold: true }), new TextRun({ text: "______________________" })],
-    spacing: { after: 200 },
-  }));
-
-  const doc = new Document({ sections: [{ children }] });
-  return Buffer.from(await Packer.toBuffer(doc));
+  return generateDailyLogDocPure(eventsWithRenders as any, day, project!, dives, risks);
 }
 
 interface DiveWithUser {
@@ -558,7 +427,7 @@ async function generateDailyLogDocPure(
   const children: Paragraph[] = [];
 
   children.push(
-    new Paragraph({ text: "PSG-TPL-0001 — Daily Shift Log", heading: HeadingLevel.HEADING_1 }),
+    new Paragraph({ text: "Daily Shift Log", heading: HeadingLevel.HEADING_1 }),
     new Paragraph({ text: `PRECISION SUBSEA GROUP LLC`, spacing: { after: 200 }, alignment: AlignmentType.CENTER,
       children: [new TextRun({ text: "PRECISION SUBSEA GROUP LLC", bold: true, size: 28 })] }),
   );
@@ -600,15 +469,59 @@ async function generateDailyLogDocPure(
 
   eventsWithRenders.forEach((event) => {
     const internalRender = event.renders?.find((r: { renderType: string }) => r.renderType === "internal_canvas_line");
-    const displayText = internalRender?.renderText || event.rawText;
+    const masterRender = event.renders?.find((r: { renderType: string }) => r.renderType === "master_log_line");
+    const displayText = internalRender?.renderText || masterRender?.renderText || event.rawText;
+    const categoryTag = event.category ? event.category.toUpperCase().replace("_", " ") : "";
+    const stationTag = (event as any).station ? ` [${(event as any).station}]` : "";
     children.push(new Paragraph({
       children: [
         new TextRun({ text: `[${formatTime(event.eventTime)}] `, bold: true }),
+        ...(categoryTag ? [new TextRun({ text: `${categoryTag}${stationTag} — `, bold: true, italics: true })] : []),
         new TextRun({ text: displayText }),
       ],
       spacing: { after: 120 },
     }));
   });
+
+  if (dives.length > 0) {
+    children.push(new Paragraph({ text: "", spacing: { after: 200 } }));
+    children.push(new Paragraph({ text: "Dive Records", heading: HeadingLevel.HEADING_2, spacing: { before: 300 } }));
+    for (const dive of dives) {
+      const diverName = dive.diverDisplayName || "Unknown";
+      children.push(new Paragraph({
+        children: [new TextRun({ text: `Dive #${dive.diveNumber} — ${diverName}`, bold: true })],
+        spacing: { before: 200, after: 80 },
+      }));
+      const diveFields = [
+        ["Leave Surface", formatTime(dive.lsTime)],
+        ["Reach Bottom", formatTime(dive.rbTime)],
+        ["Leave Bottom", formatTime(dive.lbTime)],
+        ["Reach Surface", formatTime(dive.rsTime)],
+        ["Depth (FSW)", String(dive.maxDepthFsw || "-")],
+        ["Task", dive.taskSummary || "-"],
+      ];
+      diveFields.forEach(([label, value]) => {
+        children.push(new Paragraph({
+          children: [new TextRun({ text: `  ${label}: `, bold: true }), new TextRun({ text: value })],
+          spacing: { after: 40 },
+        }));
+      });
+    }
+  }
+
+  if (risks.length > 0) {
+    children.push(new Paragraph({ text: "", spacing: { after: 200 } }));
+    children.push(new Paragraph({ text: "Risk Register Summary", heading: HeadingLevel.HEADING_2, spacing: { before: 300 } }));
+    for (const risk of risks) {
+      children.push(new Paragraph({
+        children: [
+          new TextRun({ text: `${risk.riskId}`, bold: true }),
+          new TextRun({ text: ` [${risk.status.toUpperCase()}] — ${risk.description}` }),
+        ],
+        spacing: { after: 60 },
+      }));
+    }
+  }
 
   if (closeout) {
     children.push(new Paragraph({ text: "", spacing: { after: 200 } }));
@@ -633,7 +546,7 @@ async function generateDailyLogDocPure(
 
     children.push(new Paragraph({ text: "", spacing: { after: 100 } }));
     children.push(new Paragraph({
-      children: [new TextRun({ text: "SEI Advisories", bold: true, underline: {} })],
+      children: [new TextRun({ text: "Items Advised to the Client", bold: true, underline: {} })],
       spacing: { before: 200, after: 80 },
     }));
     children.push(new Paragraph({
@@ -696,11 +609,13 @@ async function generateMasterLogDocPure(
   usersByDiverId: Map<string, User>
 ): Promise<Buffer> {
   const directiveEvents = eventsWithRenders.filter((e) => e.category === "directive" || e.category === "safety");
-  const productionEvents = eventsWithRenders.filter((e) => e.category !== "directive" && e.category !== "safety");
+  const diveOpEvents = eventsWithRenders.filter((e) => e.category === "dive_op");
+  const opsEvents = eventsWithRenders.filter((e) => e.category === "ops" || e.category === "general" || (!e.category));
+  const safetyEvents = eventsWithRenders.filter((e) => e.category === "safety");
 
   const children: Paragraph[] = [
     new Paragraph({
-      text: `Master Log - ${projectName}`,
+      text: `Master Log — ${projectName}`,
       heading: HeadingLevel.HEADING_1,
     }),
     new Paragraph({
@@ -708,6 +623,35 @@ async function generateMasterLogDocPure(
       spacing: { after: 400 },
     }),
   ];
+
+  children.push(
+    new Paragraph({
+      text: "Chronological Event Log",
+      heading: HeadingLevel.HEADING_2,
+      spacing: { before: 400 },
+    })
+  );
+
+  const allSorted = [...eventsWithRenders].sort((a, b) =>
+    new Date(a.eventTime).getTime() - new Date(b.eventTime).getTime()
+  );
+
+  allSorted.forEach((event) => {
+    const masterRender = event.renders?.find((r: { renderType: string }) => r.renderType === "master_log_line");
+    const displayText = masterRender?.renderText || event.rawText;
+    const categoryLabel = event.category ? event.category.toUpperCase().replace("_", " ") : "OPS";
+    const stationTag = (event as any).station ? ` [${(event as any).station}]` : "";
+    children.push(
+      new Paragraph({
+        children: [
+          new TextRun({ text: `[${formatTime(event.eventTime)}] `, bold: true }),
+          new TextRun({ text: `${categoryLabel}${stationTag} — `, bold: true, italics: true }),
+          new TextRun({ text: displayText }),
+        ],
+        spacing: { after: 150 },
+      })
+    );
+  });
 
   if (directiveEvents.length > 0) {
     children.push(
@@ -724,10 +668,7 @@ async function generateMasterLogDocPure(
       children.push(
         new Paragraph({
           children: [
-            new TextRun({
-              text: `[${formatTime(event.eventTime)}] `,
-              bold: true,
-            }),
+            new TextRun({ text: `[${formatTime(event.eventTime)}] `, bold: true }),
             new TextRun({ text: displayText }),
           ],
           spacing: { after: 200 },
@@ -735,25 +676,6 @@ async function generateMasterLogDocPure(
       );
     });
   }
-
-  children.push(
-    new Paragraph({
-      text: "Station Log (Non-Timestamped)",
-      heading: HeadingLevel.HEADING_2,
-      spacing: { before: 400 },
-    })
-  );
-
-  productionEvents.forEach((event) => {
-    const masterRender = event.renders?.find((r: { renderType: string }) => r.renderType === "master_log_line");
-    const displayText = masterRender?.renderText || event.rawText;
-    children.push(
-      new Paragraph({
-        children: [new TextRun({ text: `• ${displayText}` })],
-        spacing: { after: 100 },
-      })
-    );
-  });
 
   if (dives.length > 0) {
     children.push(
@@ -766,6 +688,7 @@ async function generateMasterLogDocPure(
 
     for (const dive of dives) {
       const diver = dive.diverId ? usersByDiverId.get(dive.diverId) : undefined;
+      const diverName = dive.diverDisplayName || diver?.fullName || "Unknown";
       const initials = diver?.initials
         || diver?.username?.substring(0, 2).toUpperCase()
         || deriveInitialsFromDisplayName(dive.diverDisplayName)
@@ -773,17 +696,25 @@ async function generateMasterLogDocPure(
       children.push(
         new Paragraph({
           children: [
-            new TextRun({
-              text: `${initials}: `,
-              bold: true,
-            }),
-            new TextRun({
-              text: `L/S ${formatTime(dive.lsTime)} | R/B ${formatTime(dive.rbTime)} | L/B ${formatTime(dive.lbTime)} | R/S ${formatTime(dive.rsTime)} | Depth: ${dive.maxDepthFsw || "-"} FSW | Task: ${dive.taskSummary || "-"}`,
-            }),
+            new TextRun({ text: `Dive #${dive.diveNumber} — ${diverName} (${initials})`, bold: true }),
           ],
-          spacing: { after: 100 },
+          spacing: { before: 200, after: 80 },
         })
       );
+      const diveFields = [
+        ["Leave Surface", formatTime(dive.lsTime)],
+        ["Reach Bottom", formatTime(dive.rbTime)],
+        ["Leave Bottom", formatTime(dive.lbTime)],
+        ["Reach Surface", formatTime(dive.rsTime)],
+        ["Depth (FSW)", String(dive.maxDepthFsw || "-")],
+        ["Task", dive.taskSummary || "-"],
+      ];
+      diveFields.forEach(([label, value]) => {
+        children.push(new Paragraph({
+          children: [new TextRun({ text: `  ${label}: `, bold: true }), new TextRun({ text: value })],
+          spacing: { after: 40 },
+        }));
+      });
     }
   }
 
@@ -807,103 +738,14 @@ async function generateMasterLogDoc(
     })
   );
 
-  const directiveEvents = eventsWithRenders.filter((e) => e.category === "directive" || e.category === "safety");
-  const productionEvents = eventsWithRenders.filter((e) => e.category !== "directive" && e.category !== "safety");
-
-  const children: Paragraph[] = [
-    new Paragraph({
-      text: `Master Log - ${projectName}`,
-      heading: HeadingLevel.HEADING_1,
-    }),
-    new Paragraph({
-      text: `Date: ${day.date} | Shift: ${day.shift || "Day"}`,
-      spacing: { after: 400 },
-    }),
-  ];
-
-  if (directiveEvents.length > 0) {
-    children.push(
-      new Paragraph({
-        text: "Client Directives and Changes",
-        heading: HeadingLevel.HEADING_2,
-        spacing: { before: 400 },
-      })
-    );
-
-    directiveEvents.forEach((event) => {
-      const masterRender = event.renders?.find((r: { renderType: string }) => r.renderType === "master_log_line");
-      const displayText = masterRender?.renderText || event.rawText;
-      children.push(
-        new Paragraph({
-          children: [
-            new TextRun({
-              text: `[${formatTime(event.eventTime)}] `,
-              bold: true,
-            }),
-            new TextRun({ text: displayText }),
-          ],
-          spacing: { after: 200 },
-        })
-      );
-    });
+  const usersByDiverId = new Map<string, User>();
+  const uniqueDiverIds = Array.from(new Set(dives.map(d => d.diverId).filter(Boolean))) as string[];
+  for (const diverId of uniqueDiverIds) {
+    const user = await storage.getUser(diverId);
+    if (user) usersByDiverId.set(diverId, user);
   }
 
-  children.push(
-    new Paragraph({
-      text: "Station Log (Non-Timestamped)",
-      heading: HeadingLevel.HEADING_2,
-      spacing: { before: 400 },
-    })
-  );
-
-  productionEvents.forEach((event) => {
-    const masterRender = event.renders?.find((r: { renderType: string }) => r.renderType === "master_log_line");
-    const displayText = masterRender?.renderText || event.rawText;
-    children.push(
-      new Paragraph({
-        children: [new TextRun({ text: `• ${displayText}` })],
-        spacing: { after: 100 },
-      })
-    );
-  });
-
-  if (dives.length > 0) {
-    children.push(
-      new Paragraph({
-        text: "Dive Operations Summary",
-        heading: HeadingLevel.HEADING_2,
-        spacing: { before: 400 },
-      })
-    );
-
-    for (const dive of dives) {
-      const diver = dive.diverId ? await storage.getUser(dive.diverId) : undefined;
-      const initials = diver?.initials 
-        || diver?.username?.substring(0, 2).toUpperCase() 
-        || deriveInitialsFromDisplayName(dive.diverDisplayName)
-        || "UNK";
-      children.push(
-        new Paragraph({
-          children: [
-            new TextRun({
-              text: `${initials}: `,
-              bold: true,
-            }),
-            new TextRun({
-              text: `L/S ${formatTime(dive.lsTime)} | R/B ${formatTime(dive.rbTime)} | L/B ${formatTime(dive.lbTime)} | R/S ${formatTime(dive.rsTime)} | Depth: ${dive.maxDepthFsw || "-"} FSW | Task: ${dive.taskSummary || "-"}`,
-            }),
-          ],
-          spacing: { after: 100 },
-        })
-      );
-    }
-  }
-
-  const doc = new Document({
-    sections: [{ children }],
-  });
-
-  return Buffer.from(await Packer.toBuffer(doc));
+  return generateMasterLogDocPure(eventsWithRenders as any, day, projectName, dives, usersByDiverId);
 }
 
 async function generateDiveLogDoc(

@@ -1306,10 +1306,11 @@ export function DailyLogTab() {
                         ? "bg-green-600 hover:bg-green-700 animate-pulse" 
                         : "bg-navy-600 hover:bg-navy-500 border border-navy-500"
                   }`}
-                  title={pttPendingSubmit ? "Click to submit" : "Hold to talk"}
+                  title={pttPendingSubmit ? "Click to submit" : "Hold to talk (Alt+M)"}
                 >
                   {isRecording ? <Square className="h-3.5 w-3.5" /> : pttPendingSubmit ? <CheckCircle className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
                 </Button>
+                <span className="text-[9px] text-navy-500 text-center leading-tight">Alt+M</span>
                 <Button
                   data-testid="button-send"
                   size="sm"
