@@ -19,6 +19,14 @@ process.on("unhandledRejection", (reason) => {
 const app = express();
 const httpServer = createServer(app);
 
+if (!process.env.SESSION_SECRET) {
+  if (process.env.NODE_ENV === "production") {
+    console.error("[FATAL] SESSION_SECRET environment variable is required in production. Exiting.");
+    process.exit(1);
+  }
+  console.warn("[WARN] SESSION_SECRET not set — using insecure default. Set SESSION_SECRET before deploying.");
+}
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
@@ -46,7 +54,7 @@ app.use(
       tableName: "session",
       createTableIfMissing: true,
     }),
-    secret: process.env.SESSION_SECRET || "navy-dive-console-secret-change-in-production",
+    secret: process.env.SESSION_SECRET || "dev-only-insecure-fallback",
     resave: false,
     saveUninitialized: false,
     cookie: {
