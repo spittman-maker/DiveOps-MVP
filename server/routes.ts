@@ -3280,9 +3280,41 @@ If you're not confident about specific facilities, say so in the notes field. Al
   // ──────────────────────────────────────────────────────────────────────────
 
   app.get("/api/admin/users", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
-    // For now, return users from projects the admin has access to
-    // In a full implementation, you'd have a proper users table query
-    res.json([]);
+    try {
+      const allUsers = await storage.listUsers();
+
+      const roleFilter = req.query.role as string | undefined;
+      const search = req.query.search as string | undefined;
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 50));
+
+      let filtered = allUsers;
+
+      if (roleFilter) {
+        filtered = filtered.filter(u => u.role === roleFilter.toUpperCase());
+      }
+
+      if (search) {
+        const q = search.toLowerCase();
+        filtered = filtered.filter(u =>
+          u.username.toLowerCase().includes(q) ||
+          (u.fullName && u.fullName.toLowerCase().includes(q)) ||
+          (u.initials && u.initials.toLowerCase().includes(q)) ||
+          (u.email && u.email.toLowerCase().includes(q))
+        );
+      }
+
+      const total = filtered.length;
+      const offset = (page - 1) * limit;
+      const paged = filtered.slice(offset, offset + limit);
+
+      const safe = paged.map(({ password, ...rest }) => rest);
+
+      res.json({ users: safe, total, page, limit, totalPages: Math.ceil(total / limit) });
+    } catch (error) {
+      console.error("[admin] Failed to list users:", error);
+      res.status(500).json({ message: "Failed to list users" });
+    }
   });
 
   app.get("/api/projects/:projectId/members", requireAuth, async (req: Request, res: Response) => {
