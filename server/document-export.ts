@@ -410,6 +410,17 @@ interface DiveWithUser {
   rsTime: Date | null;
   maxDepthFsw: number | null;
   taskSummary: string | null;
+  breathingGas?: string | null;
+  fo2Percent?: number | null;
+  tableUsed?: string | null;
+  scheduleUsed?: string | null;
+  decompRequired?: string | null;
+  decompStops?: string | null;
+  station?: string | null;
+  toolsEquipment?: string | null;
+  postDiveStatus?: string | null;
+  supervisorInitials?: string | null;
+  notes?: string | null;
 }
 
 type EventWithRenders = LogEvent & { renders: LogRender[] };
@@ -428,8 +439,10 @@ async function generateDailyLogDocPure(
 
   children.push(
     new Paragraph({ text: "Daily Shift Log", heading: HeadingLevel.HEADING_1 }),
-    new Paragraph({ text: `PRECISION SUBSEA GROUP LLC`, spacing: { after: 200 }, alignment: AlignmentType.CENTER,
-      children: [new TextRun({ text: "PRECISION SUBSEA GROUP LLC", bold: true, size: 28 })] }),
+    new Paragraph({ spacing: { after: 200 }, alignment: AlignmentType.CENTER,
+      children: [new TextRun({ text: projectName, bold: true, size: 28 })] }),
+    new Paragraph({ spacing: { after: 100 }, alignment: AlignmentType.CENTER,
+      children: [new TextRun({ text: "ADCI-Compliant Daily Dive Operations Log", italics: true, size: 20 })] }),
   );
 
   const headerFields = [
@@ -492,14 +505,28 @@ async function generateDailyLogDocPure(
         children: [new TextRun({ text: `Dive #${dive.diveNumber} — ${diverName}`, bold: true })],
         spacing: { before: 200, after: 80 },
       }));
-      const diveFields = [
+      const diveFields: [string, string][] = [
         ["Leave Surface", formatTime(dive.lsTime)],
         ["Reach Bottom", formatTime(dive.rbTime)],
         ["Leave Bottom", formatTime(dive.lbTime)],
         ["Reach Surface", formatTime(dive.rsTime)],
         ["Depth (FSW)", String(dive.maxDepthFsw || "-")],
-        ["Task", dive.taskSummary || "-"],
+        ["Breathing Gas", (dive as any).breathingGas || "-"],
       ];
+      if ((dive as any).breathingGas === "Nitrox" && (dive as any).fo2Percent) {
+        diveFields.push(["FO2%", String((dive as any).fo2Percent) + "%"]);
+      }
+      diveFields.push(
+        ["Table Used", (dive as any).tableUsed || "-"],
+        ["Schedule", (dive as any).scheduleUsed || "-"],
+        ["Decomp Required", (dive as any).decompRequired || "-"],
+        ["Task", dive.taskSummary || "-"],
+        ["Station", (dive as any).station || "-"],
+        ["Post-Dive Status", (dive as any).postDiveStatus || "-"],
+      );
+      if ((dive as any).notes) {
+        diveFields.push(["Notes", (dive as any).notes]);
+      }
       diveFields.forEach(([label, value]) => {
         children.push(new Paragraph({
           children: [new TextRun({ text: `  ${label}: `, bold: true }), new TextRun({ text: value })],
@@ -701,14 +728,21 @@ async function generateMasterLogDocPure(
           spacing: { before: 200, after: 80 },
         })
       );
-      const diveFields = [
+      const diveFields: [string, string][] = [
         ["Leave Surface", formatTime(dive.lsTime)],
         ["Reach Bottom", formatTime(dive.rbTime)],
         ["Leave Bottom", formatTime(dive.lbTime)],
         ["Reach Surface", formatTime(dive.rsTime)],
         ["Depth (FSW)", String(dive.maxDepthFsw || "-")],
+        ["Breathing Gas", dive.breathingGas || "-"],
+        ["Table Used", dive.tableUsed || "-"],
+        ["Decomp Required", dive.decompRequired || "-"],
         ["Task", dive.taskSummary || "-"],
+        ["Station", dive.station || "-"],
       ];
+      if (dive.notes) {
+        diveFields.push(["Notes", dive.notes]);
+      }
       diveFields.forEach(([label, value]) => {
         children.push(new Paragraph({
           children: [new TextRun({ text: `  ${label}: `, bold: true }), new TextRun({ text: value })],
@@ -754,83 +788,93 @@ async function generateDiveLogDoc(
   projectName: string,
   diverInitials: string
 ): Promise<Buffer> {
-  const doc = new Document({
-    sections: [
-      {
-        children: [
-          new Paragraph({
-            text: `Dive Log - ${diverInitials}`,
-            heading: HeadingLevel.HEADING_1,
-          }),
-          new Paragraph({
-            text: `Project: ${projectName}`,
-            spacing: { after: 100 },
-          }),
-          new Paragraph({
-            text: `Date: ${day.date}`,
-            spacing: { after: 400 },
-          }),
-          new Paragraph({
-            children: [
-              new TextRun({ text: "Diver: ", bold: true }),
-              new TextRun({ text: diverInitials }),
-            ],
-            spacing: { after: 100 },
-          }),
-          new Paragraph({
-            children: [
-              new TextRun({ text: "Dive Number: ", bold: true }),
-              new TextRun({ text: String(dive.diveNumber || 1) }),
-            ],
-            spacing: { after: 100 },
-          }),
-          new Paragraph({
-            children: [
-              new TextRun({ text: "Leave Surface: ", bold: true }),
-              new TextRun({ text: formatTime(dive.lsTime) }),
-            ],
-            spacing: { after: 100 },
-          }),
-          new Paragraph({
-            children: [
-              new TextRun({ text: "Reach Bottom: ", bold: true }),
-              new TextRun({ text: formatTime(dive.rbTime) }),
-            ],
-            spacing: { after: 100 },
-          }),
-          new Paragraph({
-            children: [
-              new TextRun({ text: "Leave Bottom: ", bold: true }),
-              new TextRun({ text: formatTime(dive.lbTime) }),
-            ],
-            spacing: { after: 100 },
-          }),
-          new Paragraph({
-            children: [
-              new TextRun({ text: "Reach Surface: ", bold: true }),
-              new TextRun({ text: formatTime(dive.rsTime) }),
-            ],
-            spacing: { after: 100 },
-          }),
-          new Paragraph({
-            children: [
-              new TextRun({ text: "Depth (FSW): ", bold: true }),
-              new TextRun({ text: String(dive.maxDepthFsw || "-") }),
-            ],
-            spacing: { after: 100 },
-          }),
-          new Paragraph({
-            children: [
-              new TextRun({ text: "Task: ", bold: true }),
-              new TextRun({ text: dive.taskSummary || "-" }),
-            ],
-            spacing: { after: 100 },
-          }),
-        ],
-      },
-    ],
-  });
+  const diveFields: { label: string; value: string }[] = [
+    { label: "Diver", value: dive.diverDisplayName || diverInitials },
+    { label: "Dive Number", value: String(dive.diveNumber || 1) },
+    { label: "Leave Surface", value: formatTime(dive.lsTime) },
+    { label: "Reach Bottom", value: formatTime(dive.rbTime) },
+    { label: "Leave Bottom", value: formatTime(dive.lbTime) },
+    { label: "Reach Surface", value: formatTime(dive.rsTime) },
+    { label: "Depth (FSW)", value: String(dive.maxDepthFsw || "-") },
+    { label: "Breathing Gas", value: dive.breathingGas || "-" },
+  ];
 
+  if (dive.breathingGas === "Nitrox" && dive.fo2Percent) {
+    diveFields.push({ label: "FO2%", value: String(dive.fo2Percent) + "%" });
+  }
+
+  diveFields.push(
+    { label: "Table Used", value: dive.tableUsed || "-" },
+    { label: "Schedule", value: dive.scheduleUsed || "-" },
+    { label: "Decomp Required", value: dive.decompRequired || "-" },
+  );
+
+  if (dive.decompStops) {
+    diveFields.push({ label: "Decomp Stops", value: dive.decompStops });
+  }
+
+  diveFields.push(
+    { label: "Station", value: dive.station || "-" },
+    { label: "Task", value: dive.taskSummary || "-" },
+  );
+
+  if (dive.toolsEquipment) {
+    diveFields.push({ label: "Tools/Equipment", value: dive.toolsEquipment });
+  }
+
+  diveFields.push({ label: "Post-Dive Status", value: dive.postDiveStatus || "-" });
+
+  if (dive.supervisorInitials) {
+    diveFields.push({ label: "Supervisor", value: dive.supervisorInitials });
+  }
+
+  if (dive.notes) {
+    diveFields.push({ label: "Notes", value: dive.notes });
+  }
+
+  const children: Paragraph[] = [
+    new Paragraph({
+      text: `Dive Log - ${diverInitials}`,
+      heading: HeadingLevel.HEADING_1,
+    }),
+    new Paragraph({
+      spacing: { after: 80 }, alignment: AlignmentType.CENTER,
+      children: [new TextRun({ text: "ADCI-Compliant Dive Log", italics: true, size: 20 })],
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: "Project: ", bold: true }), new TextRun({ text: projectName })],
+      spacing: { after: 100 },
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: "Date: ", bold: true }), new TextRun({ text: day.date })],
+      spacing: { after: 100 },
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: "Shift: ", bold: true }), new TextRun({ text: day.shift || "Day" })],
+      spacing: { after: 200 },
+    }),
+  ];
+
+  for (const field of diveFields) {
+    children.push(new Paragraph({
+      children: [new TextRun({ text: `${field.label}: `, bold: true }), new TextRun({ text: field.value })],
+      spacing: { after: 100 },
+    }));
+  }
+
+  children.push(
+    new Paragraph({ text: "", spacing: { after: 300 } }),
+    new Paragraph({
+      children: [new TextRun({ text: "Dive Supervisor: ", bold: true }), new TextRun({ text: "______________________" })],
+      spacing: { after: 200 },
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: "Diver Signature: ", bold: true }), new TextRun({ text: "______________________" })],
+      spacing: { after: 200 },
+    }),
+  );
+
+  const doc = new Document({ sections: [{ children }] });
   return Buffer.from(await Packer.toBuffer(doc));
 }
 

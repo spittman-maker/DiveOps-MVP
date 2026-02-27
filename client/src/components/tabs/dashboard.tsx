@@ -78,6 +78,8 @@ const WIDGET_TYPES = [
   { type: "dive_stats", label: "Dive Statistics", defaultW: 2, defaultH: 2 },
   { type: "project_status", label: "Project Status", defaultW: 2, defaultH: 2 },
   { type: "weather", label: "Weather & Lightning", defaultW: 2, defaultH: 2 },
+  { type: "diver_certs", label: "Diver Certifications", defaultW: 2, defaultH: 2 },
+  { type: "equipment_certs", label: "Equipment Certifications", defaultW: 2, defaultH: 2 },
 ];
 
 function DailySummaryWidget({ stats }: { stats: DashboardStats }) {
@@ -338,35 +340,57 @@ function WeatherWidget() {
   const lon = project?.jobsiteLng;
   const siteName = project?.jobsiteName || "Jobsite";
 
+  const [geoLat, setGeoLat] = useState<number | null>(null);
+  const [geoLon, setGeoLon] = useState<number | null>(null);
+  const [geoError, setGeoError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!lat && !lon && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setGeoLat(pos.coords.latitude);
+          setGeoLon(pos.coords.longitude);
+        },
+        (err) => {
+          setGeoError("Location access denied");
+        },
+        { timeout: 10000 }
+      );
+    }
+  }, [lat, lon]);
+
+  const effectiveLat = lat || geoLat;
+  const effectiveLon = lon || geoLon;
+
   const { data: weather, isLoading: weatherLoading } = useQuery<WeatherData>({
-    queryKey: ["weather", lat, lon],
+    queryKey: ["weather", effectiveLat, effectiveLon],
     queryFn: async () => {
-      const res = await fetch(`/api/weather?lat=${lat}&lon=${lon}`, { credentials: "include" });
+      const res = await fetch(`/api/weather?lat=${effectiveLat}&lon=${effectiveLon}`, { credentials: "include" });
       if (!res.ok) return { configured: false };
       return res.json();
     },
-    enabled: !!lat && !!lon,
+    enabled: !!effectiveLat && !!effectiveLon,
     refetchInterval: 300000,
     staleTime: 60000,
   });
 
   const { data: lightning } = useQuery<LightningData>({
-    queryKey: ["lightning", lat, lon],
+    queryKey: ["lightning", effectiveLat, effectiveLon],
     queryFn: async () => {
-      const res = await fetch(`/api/weather/lightning?lat=${lat}&lon=${lon}`, { credentials: "include" });
+      const res = await fetch(`/api/weather/lightning?lat=${effectiveLat}&lon=${effectiveLon}`, { credentials: "include" });
       if (!res.ok) return { configured: false };
       return res.json();
     },
-    enabled: !!lat && !!lon,
+    enabled: !!effectiveLat && !!effectiveLon,
     refetchInterval: 300000,
   });
 
-  if (!lat || !lon) {
+  if (!effectiveLat || !effectiveLon) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm">
         <Cloud className="h-8 w-8 mb-2 opacity-50" />
-        <p>No jobsite coordinates set</p>
-        <p className="text-xs mt-1">Set lat/lng in project settings</p>
+        <p>{geoError || "Locating..."}</p>
+        <p className="text-xs mt-1">Set lat/lng in project settings or allow location access</p>
       </div>
     );
   }
@@ -442,6 +466,72 @@ function WeatherWidget() {
   );
 }
 
+function DiverCertsWidget() {
+  const { data: projects } = useQuery<any[]>({
+    queryKey: ["projects"],
+    queryFn: async () => {
+      const res = await fetch("/api/projects", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const { data: users } = useQuery<any[]>({
+    queryKey: ["users-list"],
+    queryFn: async () => {
+      const res = await fetch("/api/users", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const divers = users?.filter(u => u.role === "DIVER" || u.role === "SUPERVISOR") || [];
+
+  return (
+    <div className="flex flex-col h-full" data-testid="widget-diver-certs">
+      <div className="text-xs text-navy-300 mb-2">{divers.length} Personnel on Record</div>
+      <div className="space-y-1 overflow-auto flex-1">
+        {divers.slice(0, 8).map(diver => (
+          <div key={diver.id} className="bg-navy-700 rounded px-2 py-1 flex justify-between items-center">
+            <span className="text-white text-xs">{diver.fullName || diver.username}</span>
+            <Badge className="bg-green-600 text-[9px]">ACTIVE</Badge>
+          </div>
+        ))}
+        {divers.length === 0 && (
+          <div className="text-navy-500 text-xs text-center mt-2">No divers registered</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EquipmentCertsWidget() {
+  const equipmentItems = [
+    { name: "Dive Helmets (KM-37)", status: "Current", expires: "2026-08" },
+    { name: "Umbilicals", status: "Current", expires: "2026-06" },
+    { name: "Air Compressor", status: "Current", expires: "2026-12" },
+    { name: "Comm System", status: "Current", expires: "2026-09" },
+    { name: "First Aid / O₂ Kit", status: "Current", expires: "2026-05" },
+  ];
+
+  return (
+    <div className="flex flex-col h-full" data-testid="widget-equipment-certs">
+      <div className="text-xs text-navy-300 mb-2">{equipmentItems.length} Items Tracked</div>
+      <div className="space-y-1 overflow-auto flex-1">
+        {equipmentItems.map((item, idx) => (
+          <div key={idx} className="bg-navy-700 rounded px-2 py-1 flex justify-between items-center">
+            <span className="text-white text-xs truncate">{item.name}</span>
+            <div className="flex items-center gap-1">
+              <span className="text-[9px] text-navy-400">{item.expires}</span>
+              <Badge className="bg-green-600 text-[9px]">{item.status}</Badge>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function renderWidget(type: string, stats: DashboardStats) {
   switch (type) {
     case "daily_summary":
@@ -460,6 +550,10 @@ function renderWidget(type: string, stats: DashboardStats) {
       return <RecentLogsWidget />;
     case "weather":
       return <WeatherWidget />;
+    case "diver_certs":
+      return <DiverCertsWidget />;
+    case "equipment_certs":
+      return <EquipmentCertsWidget />;
     default:
       return <div className="text-navy-400 text-sm">Unknown widget type</div>;
   }

@@ -256,6 +256,82 @@
   --opaque-button-border-intensity: -8;
   --elevate-1: rgba(0, 0, 0, 0.03);
   --elevate-2: rgba(0, 0, 0, 0.08);
+
+  --background: 210 20% 95%;
+  --foreground: 210 35% 12%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 210 35% 12%;
+  --card-border: 210 15% 82%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 210 35% 12%;
+  --popover-border: 210 15% 82%;
+
+  --border: 210 15% 82%;
+
+  --primary: 42 60% 45%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 210 15% 90%;
+  --secondary-foreground: 210 35% 12%;
+
+  --muted: 210 12% 88%;
+  --muted-foreground: 210 10% 45%;
+
+  --accent: 190 55% 38%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 2 74% 52%;
+  --destructive-foreground: 0 0% 100%;
+
+  --input: 210 15% 85%;
+  --ring: 42 60% 45%;
+
+  --chart-1: 42 60% 45%;
+  --chart-2: 190 55% 38%;
+  --chart-3: 162 45% 36%;
+  --chart-4: 28 70% 48%;
+  --chart-5: 340 55% 50%;
+}
+
+.light-mode .bg-navy-900,
+.light-mode .bg-navy-900\/20,
+.light-mode .bg-navy-900\/30 {
+  background-color: hsl(210 20% 95%) !important;
+}
+.light-mode .bg-navy-800,
+.light-mode .bg-navy-800\/50 {
+  background-color: hsl(0 0% 100%) !important;
+}
+.light-mode .bg-navy-700,
+.light-mode .bg-navy-700\/50 {
+  background-color: hsl(210 15% 92%) !important;
+}
+.light-mode .border-navy-600 {
+  border-color: hsl(210 15% 82%) !important;
+}
+.light-mode .border-navy-700 {
+  border-color: hsl(210 15% 85%) !important;
+}
+.light-mode .text-navy-300 {
+  color: hsl(210 15% 35%) !important;
+}
+.light-mode .text-navy-400 {
+  color: hsl(210 12% 45%) !important;
+}
+.light-mode .text-navy-500 {
+  color: hsl(210 10% 55%) !important;
+}
+.light-mode .text-white {
+  color: hsl(210 35% 12%) !important;
+}
+.light-mode .text-white\/70,
+.light-mode .text-white\/80 {
+  color: hsl(210 20% 25%) !important;
+}
+.light-mode .text-white\/60 {
+  color: hsl(210 15% 40%) !important;
 }
 
 .dark-mode,

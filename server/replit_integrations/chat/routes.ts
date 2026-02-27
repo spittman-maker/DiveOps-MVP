@@ -1,11 +1,72 @@
 import type { Express, Request, Response } from "express";
 import OpenAI from "openai";
 import { chatStorage } from "./storage";
+import { storage } from "../../storage";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
+
+async function buildOperationalContext(activeProjectId?: string): Promise<string> {
+  try {
+    const projects = await storage.getAllProjects();
+    if (!projects || projects.length === 0) return "\n## CURRENT OPERATIONAL CONTEXT\nNo active projects found.";
+
+    const project = (activeProjectId ? projects.find(p => p.id === activeProjectId) : null) || projects[0];
+    const days = await storage.getDaysByProject(project.id);
+    const activeDay = days.find(d => d.status === "ACTIVE") || days[0];
+    if (!activeDay) return `\n## CURRENT OPERATIONAL CONTEXT\nProject: ${project.name}\nNo active operational day.`;
+
+    const events = await storage.getLogEventsByDay(activeDay.id);
+    const dives = await storage.getDivesByDay(activeDay.id);
+    const risks = await storage.getRiskItemsByDay(activeDay.id);
+
+    const recentEvents = events
+      .sort((a, b) => new Date(b.eventTime).getTime() - new Date(a.eventTime).getTime())
+      .slice(0, 50);
+
+    let context = `\n## CURRENT OPERATIONAL CONTEXT (LIVE DATA — READ-ONLY)
+Project: ${project.name}
+Client: ${(project as any).clientName || "—"}
+Jobsite: ${(project as any).jobsiteName || "—"}
+Date: ${activeDay.date}
+Shift: ${activeDay.shift || "Day"}
+Day Status: ${activeDay.status}
+
+### Today's Log Entries (${events.length} total, showing last ${recentEvents.length}):
+`;
+
+    for (const event of recentEvents) {
+      const time = event.eventTime ? new Date(event.eventTime).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }) : "??:??";
+      const cat = event.category ? event.category.toUpperCase() : "OPS";
+      context += `[${time}] ${cat}: ${event.rawText}\n`;
+    }
+
+    if (dives.length > 0) {
+      context += `\n### Dive Records (${dives.length} dives):\n`;
+      for (const dive of dives) {
+        const ls = dive.lsTime ? new Date(dive.lsTime).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }) : "-";
+        const rs = dive.rsTime ? new Date(dive.rsTime).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }) : "-";
+        context += `Dive #${dive.diveNumber}: ${dive.diverDisplayName || "Unknown"} | L/S: ${ls} | R/S: ${rs} | Depth: ${dive.maxDepthFsw || "-"} FSW | Task: ${dive.taskSummary || "-"}\n`;
+      }
+    }
+
+    if (risks.length > 0) {
+      context += `\n### Risk Register (${risks.length} items):\n`;
+      for (const risk of risks) {
+        context += `${risk.riskId} [${risk.status.toUpperCase()}]: ${risk.description}\n`;
+      }
+    }
+
+    context += `\nYou have access to today's operational data above. Answer questions using this data. When asked about log entries, dives, risks, or operations — reference the actual data.`;
+
+    return context;
+  } catch (error) {
+    console.error("[Chat] Error building operational context:", error);
+    return "\n## CURRENT OPERATIONAL CONTEXT\nUnable to load operational data at this time.";
+  }
+}
 
 export function registerChatRoutes(app: Express): void {
   // Get all conversations
@@ -234,12 +295,15 @@ If dive table information is requested:
 - Offer to append additional station blocks if user has more notes
 - Always use "Client" instead of "JV" or "OICC" in outputs`;
 
+      const { activeProjectId } = req.body;
+      const operationalContext = await buildOperationalContext(activeProjectId);
+
       const systemPrompt = isGod
-        ? basePrompt + `
+        ? basePrompt + operationalContext + `
 
 ## GOD MODE
 As a GOD user, you may also discuss app changes and development requests.`
-        : basePrompt + `
+        : basePrompt + operationalContext + `
 
 ## ACCESS RESTRICTION
 You cannot make changes to the app or discuss development features. If asked to change the app, politely explain that only administrators with GOD access can request app modifications.`;

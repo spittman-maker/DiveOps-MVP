@@ -71,6 +71,7 @@ export interface IStorage {
   getDay(id: string): Promise<Day | undefined>;
   getDayByProjectAndDate(projectId: string, date: string): Promise<Day | undefined>;
   getMostRecentDayByProject(projectId: string): Promise<Day | undefined>;
+  getDaysByProject(projectId: string): Promise<Day[]>;
   getShiftCountForDate(projectId: string, date: string): Promise<number>;
   updateDay(id: string, updates: Partial<InsertDay>): Promise<Day | undefined>;
   closeDay(id: string, closedBy: string, closeoutData?: schema.QCCloseoutData): Promise<Day | undefined>;
@@ -351,6 +352,12 @@ export class DbStorage implements IStorage {
       .orderBy(desc(schema.days.createdAt))
       .limit(1);
     return day;
+  }
+
+  async getDaysByProject(projectId: string): Promise<Day[]> {
+    return await db.select().from(schema.days)
+      .where(eq(schema.days.projectId, projectId))
+      .orderBy(desc(schema.days.createdAt));
   }
 
   async getShiftCountForDate(projectId: string, date: string): Promise<number> {

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { useProject } from "@/hooks/use-project";
 import { Button } from "@/components/ui/button";
 
 interface Message {
@@ -28,6 +29,7 @@ function getSavedConversationId(): number | null {
 
 export function ChatAssistant({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const { user } = useAuth();
+  const { activeProject } = useProject();
   const [input, setInput] = useState("");
   const [streamingContent, setStreamingContent] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -115,7 +117,7 @@ export function ChatAssistant({ isOpen, onClose }: { isOpen: boolean; onClose: (
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ content: userMessage, userRole: user?.role }),
+        body: JSON.stringify({ content: userMessage, userRole: user?.role, activeProjectId: activeProject?.id }),
       });
 
       if (!response.ok) throw new Error("Failed to send message");

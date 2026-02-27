@@ -231,6 +231,7 @@ function PlanCanvas({ planData, isGenerating }: { planData: AIDivePlanData | nul
             <div className="space-y-2">
               <LockedSection number="2.5" title="Applicable Codes & Standards" description="OSHA 29 CFR 1910 Subpart T, ADCI Consensus Standards, USCG regulations, EM385-1-1" />
               <LockedSection number="2.12" title="Emergency Procedures" description="Emergency action plan, evacuation routes, chamber procedures, emergency contacts, nearest hyperbaric facility" />
+              <ChamberSearchButton />
               <LockedSection number="4.9" title="Pre-Dive Checklist" description="Equipment checks, communications test, gas analysis, dive supervisor briefing" />
               <LockedSection number="4.10" title="In-Water Procedures" description="Descent/ascent rates, bottom time management, decompression obligations, abort criteria" />
               <LockedSection number="4.11" title="Post-Dive Procedures" description="Diver debrief, equipment inspection, log completion, surface interval tracking" />
@@ -256,6 +257,87 @@ function LockedSection({ number, title, description }: { number: string; title: 
         <p className="text-[10px] text-navy-500 mt-0.5 leading-relaxed">{description}</p>
       </div>
       <svg className="w-3 h-3 text-navy-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+    </div>
+  );
+}
+
+interface ChamberResult {
+  name: string;
+  address: string;
+  phone: string;
+  travelTime: string;
+  type: string;
+  notes?: string;
+}
+
+function ChamberSearchButton() {
+  const [searching, setSearching] = useState(false);
+  const [results, setResults] = useState<ChamberResult[] | null>(null);
+  const { activeProject } = useProject();
+
+  const handleSearch = async () => {
+    setSearching(true);
+    try {
+      const res = await fetch("/api/dive-plan/chamber-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          location: activeProject?.jobsiteAddress || activeProject?.jobsiteName || activeProject?.name,
+          lat: activeProject?.jobsiteLat,
+          lng: activeProject?.jobsiteLng,
+        }),
+      });
+      if (!res.ok) throw new Error("Search failed");
+      const data = await res.json();
+      setResults(data.chambers || []);
+    } catch {
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  return (
+    <div className="ml-8 space-y-2">
+      <Button
+        size="sm"
+        variant="outline"
+        data-testid="btn-chamber-search"
+        onClick={handleSearch}
+        disabled={searching}
+        className="border-amber-600/50 text-amber-400 hover:bg-amber-600/20 text-xs h-7"
+      >
+        {searching ? (
+          <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Searching...</>
+        ) : (
+          <><Sparkles className="w-3 h-3 mr-1" /> Find Nearest Recompression Chambers</>
+        )}
+      </Button>
+      {results !== null && (
+        <div className="space-y-1.5">
+          {results.length === 0 ? (
+            <p className="text-[10px] text-navy-500">No chamber data found. Contact DAN at +1-919-684-9111 for assistance.</p>
+          ) : (
+            results.map((chamber, i) => (
+              <div key={i} className="bg-navy-800/60 border border-navy-700/50 rounded px-3 py-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-white">{chamber.name}</span>
+                  <Badge className="text-[9px] bg-navy-700">{chamber.type}</Badge>
+                </div>
+                <p className="text-[10px] text-navy-400 mt-0.5">{chamber.address}</p>
+                <div className="flex items-center gap-3 mt-1 text-[10px]">
+                  {chamber.phone && <span className="text-cyan-400">{chamber.phone}</span>}
+                  {chamber.travelTime && <span className="text-amber-400">~{chamber.travelTime}</span>}
+                </div>
+                {chamber.notes && <p className="text-[9px] text-navy-500 mt-1">{chamber.notes}</p>}
+              </div>
+            ))
+          )}
+          <p className="text-[9px] text-red-400/80">DAN Emergency: +1-919-684-9111 | NEDU: 850-230-3100</p>
+          <p className="text-[9px] text-navy-500">Always verify chamber availability before starting dive operations.</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -648,15 +730,36 @@ export function DivePlanTab() {
             <div className="text-center py-8">
               <Sparkles className="w-10 h-10 mx-auto text-amber-400/40 mb-3" />
               <p className="text-navy-400 text-sm">Start typing to build your dive plan</p>
+              <div className="mt-3 flex flex-wrap gap-1.5 justify-center">
+                {[
+                  "Surface supplied, KM-37",
+                  "SCUBA operation",
+                  "Max depth 60 FSW",
+                  "3 divers, 2 tenders",
+                  "Hull inspection",
+                  "Underwater welding",
+                  "Pier repair",
+                  "Cathodic protection survey",
+                ].map((phrase) => (
+                  <button
+                    key={phrase}
+                    data-testid={`quick-phrase-${phrase.replace(/\s+/g, "-").toLowerCase()}`}
+                    onClick={() => {
+                      setInputText(prev => prev ? prev + " " + phrase : phrase);
+                      textareaRef.current?.focus();
+                    }}
+                    className="px-2 py-1 text-[10px] bg-navy-800/60 border border-navy-600 rounded text-navy-300 hover:text-white hover:border-amber-500/50 transition-colors"
+                  >
+                    {phrase}
+                  </button>
+                ))}
+              </div>
               <div className="mt-4 space-y-2 text-xs text-navy-500">
                 <p className="bg-navy-800/50 rounded p-2 text-left">
                   "We're doing underwater welding on pier bravo at pearl harbor, 3 divers, max depth 45 feet, surface supplied"
                 </p>
                 <p className="bg-navy-800/50 rounded p-2 text-left">
                   "Client is NAVFAC Pacific, prime contractor is pacific shipyard. Add John Doe as safety officer 808-555-1234"
-                </p>
-                <p className="bg-navy-800/50 rounded p-2 text-left">
-                  "We'll also be doing hull cleaning and cathodic protection survey"
                 </p>
               </div>
             </div>

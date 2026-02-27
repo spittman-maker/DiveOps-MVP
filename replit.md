@@ -51,7 +51,9 @@ Preferred communication style: Simple, everyday language.
 - **PSG-TPL-0001 Export**: Daily Shift Log export follows standardized template with Header, Team & Manning, Rolling Event Log, Deviations, End-of-Shift Closeout, SEI Advisories, Standing Risks, and Sign-off blocks.
 - **Cross-Tab Data Flow**: Utilizes TanStack React Query for real-time synchronization of data across different application tabs.
 - **Dive Extraction**: Automatically creates dive records from log entries, preserving raw text and handling diver identification.
-- **Library & Document Management**: Supports storage of reference documents and exporting daily logs, dive records, and compliance documents.
+- **Library & Document Management**: Supports storage of reference documents and exporting daily logs, dive records, and compliance documents. Includes document preview modal for .docx files before downloading.
+- **Chamber Search**: AI-powered lookup of nearest recompression/hyperbaric chambers based on project location, integrated into dive plan emergency procedures section.
+- **AI Chat Context**: Live operational data (log events, dives, risk register) injected into AI assistant system prompt for real-time operational awareness.
 
 ## External Dependencies
 

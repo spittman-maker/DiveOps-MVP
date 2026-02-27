@@ -5,9 +5,10 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useState } from "react";
 import { useProject } from "@/hooks/use-project";
-import { Download, FileText, FileSpreadsheet, FolderOpen, Archive, Eye, EyeOff } from "lucide-react";
+import { Download, FileText, FileSpreadsheet, FolderOpen, Archive, Eye, EyeOff, X, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -47,8 +48,19 @@ export function LibraryTab() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("exports");
   const [showArchived, setShowArchived] = useState(false);
+  const [previewId, setPreviewId] = useState<string | null>(null);
   const { activeProject } = useProject();
   const { toast } = useToast();
+
+  const { data: previewData, error: previewError, isLoading: previewLoading } = useQuery<{ content: string; lines: string[]; fileName: string; fileType: string }>({
+    queryKey: ["library-preview", previewId],
+    queryFn: async () => {
+      const res = await fetch(`/api/library-exports/${previewId}/preview`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load preview");
+      return res.json();
+    },
+    enabled: !!previewId,
+  });
 
   const archiveKey = `diveops_archived_exports_${activeProject?.id || "default"}`;
 
@@ -163,6 +175,10 @@ export function LibraryTab() {
 
   const handleDownload = (id: string, fileName: string) => {
     window.open(`/api/library-exports/${id}/download`, "_blank");
+  };
+
+  const handlePreview = (id: string) => {
+    setPreviewId(id);
   };
 
   return (
@@ -310,6 +326,18 @@ export function LibraryTab() {
                                   <Badge className={getDocCategoryColor(exp.docCategory)}>
                                     {getDocCategoryLabel(exp.docCategory)}
                                   </Badge>
+                                  {exp.fileType === "docx" && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      data-testid={`preview-${exp.id}`}
+                                      onClick={() => handlePreview(exp.id)}
+                                      className="border-navy-600 text-white hover:bg-navy-600"
+                                      title="Preview"
+                                    >
+                                      <Eye className="w-4 h-4" />
+                                    </Button>
+                                  )}
                                   <Button
                                     size="sm"
                                     variant="outline"
@@ -381,6 +409,56 @@ export function LibraryTab() {
           </ScrollArea>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={!!previewId} onOpenChange={(open) => { if (!open) setPreviewId(null); }}>
+        <DialogContent className="bg-navy-900 border-navy-600 text-white max-w-4xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-amber-400 flex items-center justify-between">
+              <span data-testid="preview-title">{previewData?.fileName || "Document Preview"}</span>
+              <div className="flex items-center gap-2">
+                {previewId && (
+                  <Button
+                    size="sm"
+                    data-testid="preview-download"
+                    onClick={() => handleDownload(previewId, previewData?.fileName || "")}
+                    className="btn-gold-metallic"
+                  >
+                    <Download className="w-4 h-4 mr-1" /> Download
+                  </Button>
+                )}
+              </div>
+            </DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="flex-1 min-h-0 max-h-[70vh]">
+            {previewError ? (
+              <div className="flex items-center justify-center py-12">
+                <span className="text-red-400">Failed to load preview. Try downloading instead.</span>
+              </div>
+            ) : previewLoading || !previewData ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-6 h-6 animate-spin text-amber-400" />
+                <span className="ml-2 text-navy-400">Loading preview...</span>
+              </div>
+            ) : (
+              <div className="bg-navy-800/50 rounded-lg p-6 font-mono text-sm leading-relaxed whitespace-pre-wrap" data-testid="preview-content">
+                {previewData.lines && previewData.lines.length > 0 ? (
+                  previewData.lines.map((line, i) => {
+                    const isBold = line === line.toUpperCase() && line.length > 3 && !/^\d/.test(line);
+                    const isHeader = line.includes("—") || line.startsWith("Dive #") || line.includes("DAILY") || line.includes("MASTER") || line.includes("RISK") || line.includes("LOG");
+                    return (
+                      <div key={i} className={`${isBold ? "text-amber-400 font-bold mt-3" : isHeader ? "text-cyan-400 font-semibold mt-2" : "text-white/80"}`}>
+                        {line}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="text-navy-400">{previewData.content}</div>
+                )}
+              </div>
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

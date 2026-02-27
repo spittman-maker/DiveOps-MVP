@@ -2955,6 +2955,8 @@ ${projectContext ? JSON.stringify(projectContext) : "No project context availabl
 ## CURRENT PLAN STATE
 ${currentPlan ? JSON.stringify(currentPlan) : "Empty - starting fresh"}
 
+IMPORTANT: Always respond in English only. Never translate to any other language.
+
 Respond with ONLY the updated JSON object. No other text.`;
 
       const chatMessages = [
@@ -3007,6 +3009,64 @@ Respond with ONLY the updated JSON object. No other text.`;
         res.write(`data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`);
         res.end();
       }
+    }
+  });
+
+  app.post("/api/dive-plan/chamber-search", requireRole("SUPERVISOR", "GOD", "ADMIN"), async (req: Request, res: Response) => {
+    try {
+      const { location, lat, lng } = req.body;
+      
+      const openai = new (await import("openai")).default({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      });
+
+      const locationDesc = location || (lat && lng ? `coordinates ${lat}, ${lng}` : "unknown location");
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `You are a diving safety assistant. The user needs to find the closest recompression/hyperbaric chambers near a work location. Provide your best knowledge of known recompression chamber facilities near the specified location.
+
+For each facility, provide:
+- Name of the facility
+- Address
+- Phone number (if known)
+- Estimated travel time from the work location
+- Type (military, civilian hospital, private)
+
+IMPORTANT: Include the standard emergency numbers:
+- DAN Emergency Hotline: +1-919-684-9111
+- NEDU: 850-230-3100
+
+Format your response as a JSON array:
+[{"name": "...", "address": "...", "phone": "...", "travelTime": "...", "type": "...", "notes": "..."}]
+
+If you're not confident about specific facilities, say so in the notes field. Always recommend verifying chamber availability and operational status before starting dive operations.`
+          },
+          {
+            role: "user",
+            content: `Find the closest recompression/hyperbaric chambers near: ${locationDesc}`
+          }
+        ],
+        temperature: 0.3,
+      });
+
+      let content = response.choices[0]?.message?.content || "[]";
+      try {
+        if (content.includes("```")) {
+          content = content.replace(/```(?:json)?\n?/g, "").replace(/```/g, "").trim();
+        }
+        const chambers = JSON.parse(content);
+        res.json({ chambers, location: locationDesc });
+      } catch {
+        res.json({ chambers: [], rawResponse: content, location: locationDesc });
+      }
+    } catch (error: any) {
+      console.error("Chamber search failed:", error);
+      res.status(500).json({ message: error.message });
     }
   });
 
@@ -3172,6 +3232,40 @@ Respond with ONLY the updated JSON object. No other text.`;
     res.setHeader("Content-Type", mimeType);
     res.setHeader("Content-Disposition", `attachment; filename="${exportDoc.fileName}"`);
     res.send(buffer);
+  });
+
+  app.get("/api/library-exports/:id/preview", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const exportDoc = await storage.getLibraryExport(req.params.id);
+      if (!exportDoc) return res.status(404).json({ message: "Export not found" });
+
+      const buffer = Buffer.from(exportDoc.fileData, "base64");
+
+      if (exportDoc.fileType === "docx") {
+        const JSZip = (await import("jszip")).default;
+        const zip = await JSZip.loadAsync(buffer);
+        const xml = await zip.file("word/document.xml")?.async("string");
+        if (!xml) return res.json({ content: "Unable to extract document content", lines: [] });
+
+        const lines: string[] = [];
+        const paragraphs = xml.split(/<w:p[ >]/);
+        for (const para of paragraphs) {
+          const texts: string[] = [];
+          const textMatches = para.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g);
+          for (const m of textMatches) {
+            texts.push(m[1]);
+          }
+          const line = texts.join("");
+          if (line.trim()) lines.push(line.trim());
+        }
+
+        res.json({ content: lines.join("\n"), lines, fileName: exportDoc.fileName, fileType: exportDoc.fileType });
+      } else {
+        res.json({ content: "Preview not available for spreadsheet files. Please download to view.", lines: [], fileName: exportDoc.fileName, fileType: exportDoc.fileType });
+      }
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
   });
 
   // ──────────────────────────────────────────────────────────────────────────
