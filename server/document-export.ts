@@ -334,7 +334,7 @@ function buildMasterLogPayload(
     dives: dives.map(d => ({
       id: d.id,
       diveNumber: d.diveNumber,
-      diverId: d.diverId,
+      diverId: d.diverId ?? "",
       diverName: undefined,
       lsTime: d.lsTime ? formatTime(d.lsTime) : undefined,
       rbTime: d.rbTime ? formatTime(d.rbTime) : undefined,
