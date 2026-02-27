@@ -1,7 +1,7 @@
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import { storage } from "./storage";
-import type { User, UserRole } from "@shared/schema";
+import type { User as AppUser, UserRole } from "@shared/schema";
 import type { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
 
@@ -68,7 +68,7 @@ export { passport, hashPassword };
 
 declare global {
   namespace Express {
-    interface User extends User {}
+    interface User extends AppUser {}
   }
 }
 
