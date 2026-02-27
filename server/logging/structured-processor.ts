@@ -24,7 +24,7 @@ const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
-const MODEL = "gpt-4o-mini";
+const MODEL = "gpt-5.2";
 
 const STRUCTURED_LOG_PROMPT = `You are a Commercial Diving Operations Documentation and Compliance System. Convert classified inputs into structured JSON output.
 

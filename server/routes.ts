@@ -2134,7 +2134,7 @@ export async function registerRoutes(
         });
         
         const response = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
+          model: "gpt-5.2",
           max_completion_tokens: 200,
           messages: [
             {
@@ -2979,7 +2979,7 @@ Respond with ONLY the updated JSON object. No other text.`;
       res.setHeader("Connection", "keep-alive");
 
       const stream = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: "gpt-5.2",
         max_completion_tokens: 2000,
         temperature: 0.3,
         messages: chatMessages,
