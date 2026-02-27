@@ -267,7 +267,7 @@ export function DiveLogsTab() {
       <div className="mb-4 flex items-start justify-between">
         <div>
           <h2 data-testid="text-dive-logs-title" className="text-lg font-semibold text-white">
-            PSG-LOG-01 — ADCI Dive Log
+            ADCI Dive Log
           </h2>
           <p className="text-sm text-navy-400">
             {activeDay

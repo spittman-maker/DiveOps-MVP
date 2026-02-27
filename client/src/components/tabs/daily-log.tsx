@@ -1351,7 +1351,7 @@ export function DailyLogTab() {
             <header className="text-center border-b border-navy-600 pb-4" data-testid="master-log-header">
               <h1 className="text-lg font-bold text-amber-400 mb-1">DAILY OPERATIONS MASTER LOG</h1>
               <p className="text-sm text-navy-300">{formatDate(masterLogData?.day?.date)}</p>
-              <p className="text-xs text-navy-400 mt-1">Precision Subsea Group LLC - DiveOps™</p>
+              <p className="text-xs text-navy-400 mt-1">DiveOps™ Daily Operations Log</p>
             </header>
 
             {/* 2. 24-Hour Summary */}
@@ -1739,7 +1739,7 @@ export function DailyLogTab() {
                         data-testid="input-advised-for"
                         className="w-full bg-navy-900 border border-navy-600 rounded px-2 py-1 text-xs text-white placeholder:text-navy-500 resize-none focus:border-amber-500/50 focus:outline-none"
                         rows={2}
-                        placeholder="Items PSG advised the client FOR..."
+                        placeholder="Items advised the client FOR..."
                         value={localCloseout.advisedFor || ""}
                         onChange={e => handleCloseoutFieldChange("advisedFor", e.target.value)}
                       />
@@ -1750,7 +1750,7 @@ export function DailyLogTab() {
                         data-testid="input-advised-against"
                         className="w-full bg-navy-900 border border-navy-600 rounded px-2 py-1 text-xs text-white placeholder:text-navy-500 resize-none focus:border-amber-500/50 focus:outline-none"
                         rows={2}
-                        placeholder="Items PSG advised the client AGAINST..."
+                        placeholder="Items advised the client AGAINST..."
                         value={localCloseout.advisedAgainst || ""}
                         onChange={e => handleCloseoutFieldChange("advisedAgainst", e.target.value)}
                       />

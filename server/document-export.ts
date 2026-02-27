@@ -704,6 +704,36 @@ async function generateMasterLogDocPure(
     });
   }
 
+  const uniqueDiverNames = dives.length > 0
+    ? Array.from(new Set(dives.map(d => d.diverDisplayName || "Unknown")))
+    : [];
+  const maxDepth = Math.max(0, ...dives.map(d => d.maxDepthFsw || 0));
+
+  children.push(
+    new Paragraph({
+      text: "24-Hour Summary",
+      heading: HeadingLevel.HEADING_2,
+      spacing: { before: 400 },
+    })
+  );
+  const summaryParts: string[] = [];
+  if (dives.length > 0) {
+    summaryParts.push(`${dives.length} dive evolution(s) completed by ${uniqueDiverNames.length} diver(s) (${uniqueDiverNames.join(", ")}).`);
+    if (maxDepth > 0) summaryParts.push(`Maximum depth: ${maxDepth} fsw.`);
+  } else {
+    summaryParts.push("0 dives, 0 divers.");
+  }
+  if (directiveEvents.length > 0) {
+    summaryParts.push(`${directiveEvents.length} client directive(s) received and actioned.`);
+  }
+  if (safetyEvents.length > 0) {
+    summaryParts.push(`${safetyEvents.length} safety event(s) logged.`);
+  } else {
+    summaryParts.push("No safety incidents reported.");
+  }
+  summaryParts.push(`Total log entries: ${eventsWithRenders.length}.`);
+  children.push(new Paragraph({ text: summaryParts.join(" "), spacing: { after: 200 } }));
+
   if (dives.length > 0) {
     children.push(
       new Paragraph({
@@ -739,6 +769,7 @@ async function generateMasterLogDocPure(
         ["Decomp Required", dive.decompRequired || "-"],
         ["Task", dive.taskSummary || "-"],
         ["Station", dive.station || "-"],
+        ["Post-Dive Status", dive.postDiveStatus || "-"],
       ];
       if (dive.notes) {
         diveFields.push(["Notes", dive.notes]);
@@ -838,19 +869,11 @@ async function generateDiveLogDoc(
       heading: HeadingLevel.HEADING_1,
     }),
     new Paragraph({
-      spacing: { after: 80 }, alignment: AlignmentType.CENTER,
-      children: [new TextRun({ text: "ADCI-Compliant Dive Log", italics: true, size: 20 })],
-    }),
-    new Paragraph({
       children: [new TextRun({ text: "Project: ", bold: true }), new TextRun({ text: projectName })],
       spacing: { after: 100 },
     }),
     new Paragraph({
       children: [new TextRun({ text: "Date: ", bold: true }), new TextRun({ text: day.date })],
-      spacing: { after: 100 },
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: "Shift: ", bold: true }), new TextRun({ text: day.shift || "Day" })],
       spacing: { after: 200 },
     }),
   ];

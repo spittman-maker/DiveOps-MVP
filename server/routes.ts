@@ -2132,7 +2132,7 @@ export async function registerRoutes(
           messages: [
             {
               role: "system",
-              content: `You summarize dive tasks for PSG-LOG-01 forms. Create a concise "Task / Work Accomplished" summary from raw log entries for a single diver. Include specific tasks, equipment, and locations. Do NOT calculate dive times or decompression data. Keep it factual and brief (1-3 sentences).`
+              content: `You summarize dive tasks for ADCI dive log forms. Create a concise "Task / Work Accomplished" summary from raw log entries for a single diver. Include specific tasks, equipment, and locations. Do NOT calculate dive times or decompression data. Keep it factual and brief (1-3 sentences).`
             },
             {
               role: "user",
@@ -2487,7 +2487,7 @@ export async function registerRoutes(
       ...dives.map(d => d.maxDepthFsw || 0)
     );
     const totalDives = dives.length > 0 ? dives.length : Math.max(diveStartCount, sections.dive.length);
-    const totalDivers = dives.length > 0 ? uniqueDivers.size : allDiverNames.size;
+    const totalDivers = totalDives === 0 ? 0 : (dives.length > 0 ? uniqueDivers.size : allDiverNames.size);
 
     // Get risk items for this day
     const risks = await storage.getRiskItemsByDay(req.params.dayId);

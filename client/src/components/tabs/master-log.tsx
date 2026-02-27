@@ -133,7 +133,7 @@ export function MasterLogTab() {
           <header className="text-center border-b border-navy-600 pb-6">
             <h1 className="text-2xl font-bold text-amber-400 mb-2">DAILY OPERATIONS MASTER LOG</h1>
             <p className="text-lg text-navy-300">{formatDate(data?.day?.date)}</p>
-            <p className="text-sm text-navy-400 mt-1">Precision Subsea Group LLC - DiveOps™</p>
+            <p className="text-sm text-navy-400 mt-1">DiveOps™ Daily Operations Log</p>
           </header>
 
           {/* 1. 24-Hour Summary */}
