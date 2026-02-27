@@ -7,6 +7,9 @@ interface Project {
   name: string;
   clientName: string;
   jobsiteName: string;
+  jobsiteAddress?: string;
+  jobsiteLat?: string;
+  jobsiteLng?: string;
   timezone?: string;
 }
 
