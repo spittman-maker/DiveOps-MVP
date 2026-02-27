@@ -455,6 +455,7 @@ export function AdminTab() {
   const { isAdmin, isGod } = useAuth();
   const { activeProject } = useProject();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [activeSection, setActiveSection] = useState("projects");
 
   const [editProjectOpen, setEditProjectOpen] = useState(false);
