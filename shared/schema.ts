@@ -788,7 +788,7 @@ export const projectDivePlans = pgTable("project_dive_plans", {
   submittedAt: timestamp("submitted_at"),
   approvedBy: varchar("approved_by").references(() => users.id),
   approvedAt: timestamp("approved_at"),
-  supersededBy: varchar("superseded_by").references(() => projectDivePlans.id),
+  supersededBy: varchar("superseded_by"),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
