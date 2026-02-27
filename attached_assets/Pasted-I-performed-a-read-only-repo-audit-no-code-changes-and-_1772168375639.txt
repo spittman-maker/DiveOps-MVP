@@ -1,0 +1,155 @@
+I performed a read-only repo audit (no code changes) and focused on correctness, security, type safety, and maintainability across client/server/shared code.
+
+Bugs Found (with exact locations + what to fix)
+Unauthenticated public registration can self-assign privileged roles (GOD, ADMIN).
+
+registerSchema allows all roles, including GOD.
+
+/api/auth/register is public and directly uses client-provided role.
+
+Fix: Restrict self-registration to lowest privilege or disable route post-setup; enforce role assignment only through admin-only endpoints.
+
+/api/seed is unauthenticated and creates privileged users with known passwords.
+
+Route is open (no requireAuth/requireRole).
+
+Hardcoded credentials include a GOD account and weak test passwords.
+
+Fix: Gate this endpoint behind NODE_ENV !== "production" + admin auth + feature flag, or remove entirely in deployed builds.
+
+Sensitive API response body logging in production path can leak data.
+
+Middleware appends full JSON response bodies to logs for all /api requests.
+
+Fix: Redact sensitive fields and log metadata only (status, path, latency, correlation ID).
+
+Insecure default session secret fallback is hardcoded.
+
+Uses fallback string if SESSION_SECRET is missing.
+
+Fix: Fail fast at startup if SESSION_SECRET is undefined in non-dev environments.
+
+Password verification supports plaintext legacy passwords (password === stored).
+
+Plaintext fallback branch in auth verification.
+
+Fix: Remove plaintext acceptance; migrate all stored passwords to hashed format.
+
+Type-level recursive declaration bug in Express User augmentation.
+
+interface User extends User {} recursively references itself.
+
+Fix: Alias imported type (e.g., import type { User as AppUser }) and extend AppUser.
+
+Admin tab has toast usage out of scope in AdminTab.
+
+toast is defined in MLDataExportSection, not in AdminTab.
+
+AdminTab later calls toast(...) in SOP mutations without local hook binding.
+
+Fix: Add const { toast } = useToast(); inside AdminTab.
+
+Project type mismatch in useProject vs consumers causes compile/runtime drift.
+
+Hook Project type omits jobsiteAddress/jobsiteLat/jobsiteLng.
+
+Consumer uses those fields in chamber search payload.
+
+Fix: Extend shared front-end project type in use-project.tsx to match API/schema.
+
+/api/admin/users endpoint is stubbed and returns empty list.
+
+Always res.json([]) with TODO comment.
+
+Fix: Implement actual query + role-based filtering + pagination.
+
+TS config missing explicit target, causing iterable errors on Set spread/iteration.
+
+tsconfig lacks target; defaults break Set iteration checks in strict TS contexts.
+
+Affected patterns in library/audit use spread/for-of on Sets.
+
+Fix: Set target: "ES2020" (or at least ES2015) in compilerOptions.
+
+Self-referential table declaration triggers implicit any cycle in schema.
+
+projectDivePlans.supersededBy references projectDivePlans.id inline, causing TS7022/TS7024 errors.
+
+Fix: Use deferred relation pattern or explicit type annotations to avoid self-init inference cycle.
+
+Build is broken by unresolved Replit Vite plugin imports.
+
+vite.config.ts imports Replit plugins directly.
+
+Build relies on this config via script/build.ts from package script.
+
+Fix: Guard optional plugins behind conditional dynamic imports with fallback/no-op and ensure dev deps installed in CI image.
+
+Potential nullability mismatch in export payload for dives (diverId nullable).
+
+Mapping emits diverId: d.diverId where DB field can be null, conflicting with strict DiveEntry type expectation from compiler output.
+
+Fix: Normalize to empty string or make exported type explicitly nullable and handle in rendering.
+
+Improvement Opportunities (what + where to put it)
+Centralized authorization checks for project/day ownership
+
+Current project/day routes often only check authentication/role, not membership constraints per resource access path.
+
+Where to put: add shared guard middleware in server/routes.ts (or new server/authz.ts) and apply on project/day/member routes.
+
+Harden auth logging policy
+
+Login logs currently include usernames and password lengths.
+
+Where: replace in server/auth.ts strategy callback with minimal structured logs (attempt id + success/fail reason code).
+
+Fail-fast env validation module
+
+Session and other critical config are read inline with fallback behavior.
+
+Where: create server/config.ts with zod/env validation and import in server/index.ts, server/db.ts, integrations.
+
+Use shared types between backend schema and frontend hooks
+
+Duplicated local interfaces drift from schema/API responses (Project mismatch already visible).
+
+Where: export API DTO types in shared/ and import across client/src/hooks/* and tabs.
+
+Formalize “dev-only” routes
+
+Seed/setup helpers can be dangerous if accidentally exposed.
+
+Where: wrap route registration in env guard block in registerRoutes or separate registerDevRoutes(app) module.
+
+Reduce any use in JSON fields and route helpers
+
+Multiple schema fields use Record<string, any>, weakening compile guarantees.
+
+Where: define concrete zod-backed types in shared/schema.ts and reuse in service layers.
+
+Add CI quality gates (tsc + build + smoke test)
+
+Project currently has scripts, but no evidence of enforced pre-merge checks in repo-level config.
+
+Where: add CI workflow (e.g., .github/workflows/ci.yml) running npm ci && npm run check && npm run build.
+
+Implement pagination/filtering for admin user/project listings
+
+Current admin/users implementation is incomplete or broad fetch patterns likely to scale poorly.
+
+Where: server/storage.ts new query methods + route query params (limit, cursor, search).
+
+Commands I used
+rg --files -g 'AGENTS.md'
+
+find . -maxdepth 3 -type f | sed 's#^./##'
+
+rg -n --hidden --glob '!node_modules/**' --glob '!.git/**' "TODO|FIXME|..."
+
+npm run check
+
+npm run build
+
+Multiple targeted nl -ba <file> | sed -n ... and rg -n ... inspections for exact locations.
+

@@ -150,6 +150,10 @@ export async function registerRoutes(
     try {
       const data = registerSchema.parse(req.body);
       
+      if (data.role !== "DIVER") {
+        return res.status(403).json({ message: "Public registration is restricted to DIVER role. Contact an administrator for elevated access." });
+      }
+
       const existing = await storage.getUserByUsername(data.username);
       if (existing) {
         return res.status(400).json({ message: "Username already exists" });
@@ -158,7 +162,7 @@ export async function registerRoutes(
       const user = await storage.createUser({
         username: data.username,
         password: hashPassword(data.password),
-        role: data.role,
+        role: "DIVER",
         fullName: data.fullName || null,
         initials: data.initials || null,
         email: data.email || null,
