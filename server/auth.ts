@@ -7,7 +7,7 @@ import crypto from "crypto";
 
 function verifyPassword(password: string, stored: string): boolean {
   if (!stored.includes(".")) {
-    return password === stored;
+    return false;
   }
   const [salt, hash] = stored.split(".");
   const derived = crypto.scryptSync(password, salt, 64).toString("hex");
@@ -32,7 +32,7 @@ passport.use(
         return done(null, false, { message: "Invalid username or password" });
       }
 
-      console.log(`[auth] Found user ${trimmedUsername}, stored password length: ${user.password.length}, provided password length: ${trimmedPassword.length}`);
+      console.log(`[auth] Found user ${trimmedUsername}, verifying credentials`);
       if (!verifyPassword(trimmedPassword, user.password)) {
         console.log(`[auth] Password mismatch for ${trimmedUsername}`);
         return done(null, false, { message: "Invalid username or password" });
