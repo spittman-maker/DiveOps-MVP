@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import express from "express";
 import { storage } from "./storage";
 import { passport, hashPassword, requireAuth, requireRole, canWriteLogEvents, isGod, isAdminOrHigher } from "./auth";
+import { requireProjectAccess, requireDayAccess } from "./authz";
 import { classifyEvent, extractData, parseEventTime, generateRiskId, getMasterLogSection, renderInternalCanvasLine, detectDirectiveTag, hasRiskKeywords, isStopWork, detectHazards } from "./extraction";
 import { processStructuredLog } from "./logging";
 import { generateAIRenders, type SOPContext } from "./ai-drafting";
@@ -669,7 +670,7 @@ export async function registerRoutes(
   // DAYS
   // ──────────────────────────────────────────────────────────────────────────
 
-  app.get("/api/projects/:projectId/days", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/projects/:projectId/days", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
     // Get the most recent day/shift for the project
     let day = await storage.getMostRecentDayByProject(req.params.projectId);
     
@@ -697,7 +698,7 @@ export async function registerRoutes(
     res.json(day);
   });
 
-  app.post("/api/projects/:projectId/days", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+  app.post("/api/projects/:projectId/days", requireRole("SUPERVISOR", "ADMIN", "GOD"), requireProjectAccess(), async (req: Request, res: Response) => {
     const user = getUser(req);
     const date = req.body.date || getTodayDate();
     
@@ -1537,7 +1538,7 @@ export async function registerRoutes(
   });
 
   // Re-extract dives from existing log events for a day (admin only)
-  app.post("/api/days/:dayId/re-extract-dives", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+  app.post("/api/days/:dayId/re-extract-dives", requireRole("ADMIN", "GOD"), requireDayAccess(), async (req: Request, res: Response) => {
     try {
       const dayId = req.params.dayId;
       const day = await storage.getDay(dayId);
@@ -1690,7 +1691,7 @@ export async function registerRoutes(
   });
 
   // Get all log events for a day (ordered by eventTime then captureTime)
-  app.get("/api/days/:dayId/log-events", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/days/:dayId/log-events", requireAuth, requireDayAccess(), async (req: Request, res: Response) => {
     const events = await storage.getLogEventsByDay(req.params.dayId);
     
     // Fetch renders for each event
@@ -1871,7 +1872,7 @@ export async function registerRoutes(
   // DIVES (Derived from LogEvents)
   // ──────────────────────────────────────────────────────────────────────────
 
-  app.get("/api/days/:dayId/dives", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/days/:dayId/dives", requireAuth, requireDayAccess(), async (req: Request, res: Response) => {
     const dives = await storage.getDivesByDay(req.params.dayId);
     const logEvents = await storage.getLogEventsByDay(req.params.dayId);
     
@@ -2197,12 +2198,12 @@ export async function registerRoutes(
   // RISK ITEMS
   // ──────────────────────────────────────────────────────────────────────────
 
-  app.get("/api/days/:dayId/risks", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/days/:dayId/risks", requireAuth, requireDayAccess(), async (req: Request, res: Response) => {
     const risks = await storage.getRiskItemsByDay(req.params.dayId);
     res.json(risks);
   });
 
-  app.get("/api/projects/:projectId/risks", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/projects/:projectId/risks", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
     const risks = await storage.getRiskItemsByProject(req.params.projectId);
     const enriched = await Promise.all(risks.map(async (risk) => {
       if (risk.triggerEventId) {
@@ -2373,7 +2374,7 @@ export async function registerRoutes(
   // MASTER LOG (Client-facing derived view)
   // ──────────────────────────────────────────────────────────────────────────
 
-  app.get("/api/days/:dayId/master-log", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/days/:dayId/master-log", requireAuth, requireDayAccess(), async (req: Request, res: Response) => {
     const day = await storage.getDay(req.params.dayId);
     if (!day) return res.status(404).json({ message: "Day not found" });
     
@@ -2526,7 +2527,7 @@ export async function registerRoutes(
   // DIVE PLANS
   // ──────────────────────────────────────────────────────────────────────────
 
-  app.get("/api/projects/:projectId/dive-plans", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/projects/:projectId/dive-plans", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
     const plans = await storage.getDivePlansByProject(req.params.projectId);
     res.json(plans);
   });
@@ -2537,7 +2538,7 @@ export async function registerRoutes(
     res.json(plan);
   });
 
-  app.post("/api/projects/:projectId/dive-plans", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+  app.post("/api/projects/:projectId/dive-plans", requireRole("SUPERVISOR", "ADMIN", "GOD"), requireProjectAccess(), async (req: Request, res: Response) => {
     const user = getUser(req);
     
     const plan = await storage.createDivePlan({
@@ -2670,13 +2671,13 @@ export async function registerRoutes(
   // DAILY SUMMARIES
   // ──────────────────────────────────────────────────────────────────────────
 
-  app.get("/api/days/:dayId/summary", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/days/:dayId/summary", requireAuth, requireDayAccess(), async (req: Request, res: Response) => {
     const summary = await storage.getDailySummary(req.params.dayId);
     if (!summary) return res.status(404).json({ message: "Daily summary not found" });
     res.json(summary);
   });
 
-  app.post("/api/days/:dayId/summary", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+  app.post("/api/days/:dayId/summary", requireRole("SUPERVISOR", "ADMIN", "GOD"), requireDayAccess(), async (req: Request, res: Response) => {
     const day = await storage.getDay(req.params.dayId);
     if (!day) return res.status(404).json({ message: "Day not found" });
     
@@ -2713,24 +2714,24 @@ export async function registerRoutes(
     res.json(defaults);
   });
 
-  app.get("/api/projects/:projectId/work-selections", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/projects/:projectId/work-selections", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
     const selections = await storage.getProjectWorkSelections(req.params.projectId as string);
     res.json(selections);
   });
 
-  app.put("/api/projects/:projectId/work-selections", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+  app.put("/api/projects/:projectId/work-selections", requireRole("SUPERVISOR", "ADMIN", "GOD"), requireProjectAccess(), async (req: Request, res: Response) => {
     const { workItemIds } = req.body;
     await storage.setProjectWorkSelections(req.params.projectId as string, workItemIds || []);
     const selections = await storage.getProjectWorkSelections(req.params.projectId as string);
     res.json(selections);
   });
 
-  app.get("/api/projects/:projectId/contacts", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/projects/:projectId/contacts", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
     const contacts = await storage.getProjectContacts(req.params.projectId as string);
     res.json(contacts);
   });
 
-  app.put("/api/projects/:projectId/contacts/:roleId", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+  app.put("/api/projects/:projectId/contacts/:roleId", requireRole("SUPERVISOR", "ADMIN", "GOD"), requireProjectAccess(), async (req: Request, res: Response) => {
     const { name, phone, email } = req.body;
     const contact = await storage.setProjectContact(
       req.params.projectId as string,
@@ -2764,12 +2765,12 @@ export async function registerRoutes(
   // PROJECT DIVE PLANS (Project-level document generator)
   // ──────────────────────────────────────────────────────────────────────────
 
-  app.get("/api/projects/:projectId/project-dive-plans", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/projects/:projectId/project-dive-plans", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
     const plans = await storage.getProjectDivePlansByProject(req.params.projectId);
     res.json(plans);
   });
 
-  app.get("/api/projects/:projectId/project-dive-plans/active", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/projects/:projectId/project-dive-plans/active", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
     const plan = await storage.getActiveProjectDivePlan(req.params.projectId);
     if (!plan) return res.status(404).json({ message: "No approved dive plan found" });
     res.json(plan);
@@ -2781,7 +2782,7 @@ export async function registerRoutes(
     res.json(plan);
   });
 
-  app.post("/api/projects/:projectId/project-dive-plans", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+  app.post("/api/projects/:projectId/project-dive-plans", requireRole("SUPERVISOR", "ADMIN", "GOD"), requireProjectAccess(), async (req: Request, res: Response) => {
     const user = getUser(req);
     const project = await storage.getProject(req.params.projectId);
     if (!project) return res.status(404).json({ message: "Project not found" });
@@ -3159,12 +3160,12 @@ If you're not confident about specific facilities, say so in the notes field. Al
   // PROJECT DIRECTORY
   // ──────────────────────────────────────────────────────────────────────────
 
-  app.get("/api/projects/:projectId/directory", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/projects/:projectId/directory", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
     const directory = await storage.getProjectDirectory(req.params.projectId);
     res.json(directory || { status: "NEEDS_VERIFICATION" });
   });
 
-  app.post("/api/projects/:projectId/directory/verify", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+  app.post("/api/projects/:projectId/directory/verify", requireRole("ADMIN", "GOD"), requireProjectAccess(), async (req: Request, res: Response) => {
     const user = getUser(req);
     
     let directory = await storage.getProjectDirectory(req.params.projectId);
@@ -3199,7 +3200,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
     res.json(globalDocs);
   });
 
-  app.get("/api/projects/:projectId/library", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/projects/:projectId/library", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
     const projectDocs = await storage.getLibraryDocuments(req.params.projectId);
     const globalDocs = await storage.getLibraryDocuments();
     res.json([...globalDocs, ...projectDocs]);
@@ -3217,12 +3218,12 @@ If you're not confident about specific facilities, say so in the notes field. Al
   });
 
   // Library Exports (generated shift documents)
-  app.get("/api/projects/:projectId/library-exports", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/projects/:projectId/library-exports", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
     const exports = await storage.getLibraryExports(req.params.projectId);
     res.json(exports);
   });
 
-  app.get("/api/days/:dayId/library-exports", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/days/:dayId/library-exports", requireAuth, requireDayAccess(), async (req: Request, res: Response) => {
     const exports = await storage.getLibraryExportsByDay(req.params.dayId);
     res.json(exports);
   });
@@ -3317,7 +3318,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
     }
   });
 
-  app.get("/api/projects/:projectId/members", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/projects/:projectId/members", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
     const members = await storage.getProjectMembers(req.params.projectId);
     
     // Fetch user details for each member
@@ -3334,7 +3335,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
     res.json(membersWithDetails);
   });
 
-  app.post("/api/projects/:projectId/members", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+  app.post("/api/projects/:projectId/members", requireRole("ADMIN", "GOD"), requireProjectAccess(), async (req: Request, res: Response) => {
     try {
       const member = await storage.addProjectMember({
         projectId: req.params.projectId,
@@ -3406,7 +3407,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
     }
   });
 
-  app.delete("/api/projects/:projectId/members/:userId", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+  app.delete("/api/projects/:projectId/members/:userId", requireRole("ADMIN", "GOD"), requireProjectAccess(), async (req: Request, res: Response) => {
     try {
       const removed = await storage.removeProjectMember(req.params.projectId, req.params.userId);
       if (!removed) return res.status(404).json({ message: "Member not found" });
@@ -3946,7 +3947,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
   // PROJECT SOPs (Standard Operating Procedures)
   // ────────────────────────────────────────────────────────────────────────────
 
-  app.get("/api/projects/:projectId/sops", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/projects/:projectId/sops", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
     try {
       const sops = await storage.getProjectSops(req.params.projectId);
       res.json(sops);
@@ -3956,7 +3957,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
     }
   });
 
-  app.post("/api/projects/:projectId/sops", requireRole("ADMIN", "GOD", "SUPERVISOR"), async (req: Request, res: Response) => {
+  app.post("/api/projects/:projectId/sops", requireRole("ADMIN", "GOD", "SUPERVISOR"), requireProjectAccess(), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       const sop = await storage.createProjectSop({
