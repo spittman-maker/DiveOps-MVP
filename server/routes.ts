@@ -263,10 +263,13 @@ export async function registerRoutes(
   });
 
   // ──────────────────────────────────────────────────────────────────────────
-  // SEED (Development/Testing Only - hidden from production UI)
+  // SEED (Development/Testing Only — blocked in production)
   // ──────────────────────────────────────────────────────────────────────────
 
   app.post("/api/seed", async (req: Request, res: Response) => {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(403).json({ message: "Seed endpoint is disabled in production" });
+    }
     try {
       let god = await storage.getUserByUsername("spittman@precisionsubsea.com");
       if (!god) {
