@@ -315,7 +315,7 @@ You cannot make changes to the app or discuss development features. If asked to 
 
       // Stream response from OpenAI
       const stream = await openai.chat.completions.create({
-        model: "gpt-5.2",
+        model: "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt },
           ...chatMessages
