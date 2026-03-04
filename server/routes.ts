@@ -4091,5 +4091,57 @@ If you're not confident about specific facilities, say so in the notes field. Al
     }
   });
 
+  // Bootstrap endpoint - create/promote GOD user using a secret token
+  // Protected by BOOTSTRAP_SECRET env var. Remove after initial setup.
+  app.post("/api/bootstrap", async (req: Request, res: Response) => {
+    const secret = process.env.BOOTSTRAP_SECRET;
+    if (!secret) {
+      return res.status(404).json({ message: "Not found" });
+    }
+    if (req.body.secret !== secret) {
+      return res.status(403).json({ message: "Invalid secret" });
+    }
+    try {
+      const { username, password, fullName, initials, email, role } = req.body;
+      if (!username || !password) {
+        return res.status(400).json({ message: "username and password required" });
+      }
+      const validRole = role || "GOD";
+      
+      // Check if user exists
+      let user = await storage.getUserByUsername(username);
+      if (user) {
+        // Update existing user's role via direct DB update
+        const { db } = await import("./db");
+        const { users } = await import("@shared/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.update(users).set({ 
+          role: validRole,
+          password: hashPassword(password),
+          ...(fullName ? { fullName } : {}),
+          ...(initials ? { initials: initials.toUpperCase() } : {}),
+          ...(email ? { email } : {}),
+        }).where(eq(users.id, user.id));
+        user = await storage.getUser(user.id);
+        return res.json({ message: `User ${username} updated to ${validRole}`, user: { id: user!.id, username: user!.username, role: user!.role } });
+      }
+      
+      // Create new user
+      user = await storage.createUser({
+        username,
+        password: hashPassword(password),
+        role: validRole as any,
+        fullName: fullName || username,
+        initials: initials?.toUpperCase() || username.substring(0, 2).toUpperCase(),
+        email: email || "",
+      });
+      
+      res.status(201).json({ message: `User ${username} created as ${validRole}`, user: { id: user.id, username: user.username, role: user.role } });
+    } catch (error) {
+      console.error("Bootstrap error:", error);
+      res.status(500).json({ message: "Bootstrap failed" });
+    }
+  });
+
   return httpServer;
 }
