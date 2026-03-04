@@ -2137,12 +2137,12 @@ export async function registerRoutes(
       
       try {
         const openai = new (await import("openai")).default({
-          apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-          baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+          apiKey: process.env.OPENAI_API_KEY,
+          baseURL: process.env.OPENAI_BASE_URL || undefined,
         });
         
         const response = await openai.chat.completions.create({
-          model: "gpt-5.2",
+          model: "gpt-4o",
           max_completion_tokens: 200,
           messages: [
             {
@@ -2904,8 +2904,8 @@ export async function registerRoutes(
       const { messages, currentPlan, projectContext } = req.body;
       
       const openai = new (await import("openai")).default({
-        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+        apiKey: process.env.OPENAI_API_KEY,
+        baseURL: process.env.OPENAI_BASE_URL || undefined,
       });
 
       const taskLibrary = (await import("@shared/schema")).DD5_CONTROLLED_TASK_LIBRARY;
@@ -2987,7 +2987,7 @@ Respond with ONLY the updated JSON object. No other text.`;
       res.setHeader("Connection", "keep-alive");
 
       const stream = await openai.chat.completions.create({
-        model: "gpt-5.2",
+        model: "gpt-4o",
         max_completion_tokens: 2000,
         temperature: 0.3,
         messages: chatMessages,
@@ -3032,8 +3032,8 @@ Respond with ONLY the updated JSON object. No other text.`;
       const { location, lat, lng } = req.body;
       
       const openai = new (await import("openai")).default({
-        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+        apiKey: process.env.OPENAI_API_KEY,
+        baseURL: process.env.OPENAI_BASE_URL || undefined,
       });
 
       const locationDesc = location || (lat && lng ? `coordinates ${lat}, ${lng}` : "unknown location");
@@ -3523,8 +3523,8 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
       try {
         const openai = new (await import("openai")).default({
-          apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-          baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+          apiKey: process.env.OPENAI_API_KEY,
+          baseURL: process.env.OPENAI_BASE_URL || undefined,
         });
 
         const chatMessages = [
@@ -4132,6 +4132,21 @@ If you're not confident about specific facilities, say so in the notes field. Al
       res.status(500).json({ message: "Bootstrap failed" });
     }
   });
+
+  // Dynamically register new route modules (ML, Analytics, Knowledge Base)
+  (async () => {
+    try {
+      const { registerKnowledgeBaseRoutes } = await import("./routes/knowledge-base.routes");
+      const { registerAnalyticsRoutes } = await import("./routes/analytics.routes");
+      const { registerMlRoutes } = await import("./routes/ml.routes");
+      
+      registerKnowledgeBaseRoutes(app);
+      registerAnalyticsRoutes(app);
+      registerMlRoutes(app);
+    } catch (error) {
+      console.error("[Routes] Failed to register route modules:", error);
+    }
+  })();
 
   return httpServer;
 }
