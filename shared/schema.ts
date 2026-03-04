@@ -906,3 +906,137 @@ export const idempotencyKeys = pgTable("idempotency_keys", {
   responseBody: jsonb("response_body"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ════════════════════════════════════════════════════════════════════
+// PARSED DOCUMENTS (Document ingestion pipeline)
+// ════════════════════════════════════════════════════════════════════
+
+export type ParseStatus = "pending" | "processing" | "completed" | "failed";
+
+export const parsedDocuments = pgTable("parsed_documents", {
+  id: serial("id").primaryKey(),
+  projectId: varchar("project_id").references(() => projects.id),
+  fileName: text("file_name").notNull(),
+  fileType: text("file_type").notNull(),
+  blobUrl: text("blob_url"),
+  status: text("status").notNull().$type<ParseStatus>().default("pending"),
+  extractedText: text("extracted_text"),
+  structuredData: jsonb("structured_data"),
+  pageCount: integer("page_count"),
+  errorMessage: text("error_message"),
+  uploadedBy: varchar("uploaded_by").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  projectIdx: index("parsed_docs_project_idx").on(t.projectId),
+  statusIdx: index("parsed_docs_status_idx").on(t.status),
+}));
+
+export const insertParsedDocumentSchema = createInsertSchema(parsedDocuments).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertParsedDocument = z.infer<typeof insertParsedDocumentSchema>;
+export type ParsedDocument = typeof parsedDocuments.$inferSelect;
+
+// ════════════════════════════════════════════════════════════════════
+// ANALYTICS SNAPSHOTS (Daily aggregated metrics)
+// ════════════════════════════════════════════════════════════════════
+
+export interface AnalyticsMetrics {
+  totalDives: number;
+  avgBottomTimeMin: number | null;
+  maxDepthFsw: number | null;
+  avgDepthFsw: number | null;
+  decompDivesCount: number;
+  uniqueDivers: number;
+  totalLogEvents: number;
+  safetyEventCount: number;
+  directiveCount: number;
+  riskItemsOpened: number;
+  riskItemsClosed: number;
+  riskItemsOpen: number;
+  hoursWorked: number | null;
+  personnelCount: number | null;
+  divesPerDiver: Record<string, number>;
+  weatherSummary: string | null;
+}
+
+export const analyticsSnapshots = pgTable("analytics_snapshots", {
+  id: serial("id").primaryKey(),
+  projectId: varchar("project_id").notNull().references(() => projects.id),
+  dayId: varchar("day_id").references(() => days.id),
+  snapshotDate: text("snapshot_date").notNull(),
+  metrics: jsonb("metrics").notNull().$type<AnalyticsMetrics>(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  projectDateIdx: index("analytics_project_date_idx").on(t.projectId, t.snapshotDate),
+}));
+
+export const insertAnalyticsSnapshotSchema = createInsertSchema(analyticsSnapshots).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAnalyticsSnapshot = z.infer<typeof insertAnalyticsSnapshotSchema>;
+export type AnalyticsSnapshot = typeof analyticsSnapshots.$inferSelect;
+
+// ════════════════════════════════════════════════════════════════════
+// ANOMALY FLAGS (Statistical anomaly detection)
+// ════════════════════════════════════════════════════════════════════
+
+export type AnomalySourceType = "dive" | "log_event" | "risk" | "analytics";
+export type AnomalyType = "depth_spike" | "dive_count_anomaly" | "risk_density" | "safety_escalation" | "missing_data" | "equipment_issue";
+export type AnomalySeverity = "low" | "medium" | "high" | "critical";
+export type AnomalyStatus = "open" | "acknowledged" | "resolved" | "false_positive";
+
+export const anomalyFlags = pgTable("anomaly_flags", {
+  id: serial("id").primaryKey(),
+  projectId: varchar("project_id").notNull().references(() => projects.id),
+  dayId: varchar("day_id").references(() => days.id),
+  sourceType: text("source_type").notNull().$type<AnomalySourceType>(),
+  anomalyType: text("anomaly_type").notNull().$type<AnomalyType>(),
+  severity: text("severity").notNull().$type<AnomalySeverity>(),
+  status: text("status").notNull().$type<AnomalyStatus>().default("open"),
+  description: text("description").notNull(),
+  details: jsonb("details"),
+  detectedAt: timestamp("detected_at", { withTimezone: true }).notNull().defaultNow(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  resolvedBy: varchar("resolved_by").references(() => users.id),
+}, (t) => ({
+  projectIdx: index("anomaly_project_idx").on(t.projectId),
+  statusIdx: index("anomaly_status_idx").on(t.status),
+  severityIdx: index("anomaly_severity_idx").on(t.severity),
+}));
+
+export const insertAnomalyFlagSchema = createInsertSchema(anomalyFlags).omit({ id: true, detectedAt: true });
+export type InsertAnomalyFlag = z.infer<typeof insertAnomalyFlagSchema>;
+export type AnomalyFlag = typeof anomalyFlags.$inferSelect;
+
+// ════════════════════════════════════════════════════════════════════
+// ML PREDICTIONS (AI-powered risk & delay predictions)
+// ════════════════════════════════════════════════════════════════════
+
+export type PredictionType = "risk" | "delay" | "crew_utilization" | "safety";
+
+export interface MlPredictionResult {
+  riskLevel?: string;
+  confidence?: number;
+  factors?: string[];
+  recommendations?: string[];
+  predictedDelay?: number;
+  delayReasons?: string[];
+  crewUtilization?: number;
+  rawResponse?: string;
+}
+
+export const mlPredictions = pgTable("ml_predictions", {
+  id: serial("id").primaryKey(),
+  projectId: varchar("project_id").notNull().references(() => projects.id),
+  predictionType: text("prediction_type").notNull().$type<PredictionType>(),
+  result: jsonb("result").notNull().$type<MlPredictionResult>(),
+  modelVersion: text("model_version"),
+  inputHash: text("input_hash"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+}, (t) => ({
+  projectTypeIdx: index("ml_pred_project_type_idx").on(t.projectId, t.predictionType),
+}));
+
+export const insertMlPredictionSchema = createInsertSchema(mlPredictions).omit({ id: true, createdAt: true });
+export type InsertMlPrediction = z.infer<typeof insertMlPredictionSchema>;
+export type MlPrediction = typeof mlPredictions.$inferSelect;

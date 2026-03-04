@@ -34,6 +34,9 @@ import type {
   ProjectContact, InsertProjectContact,
   DiverRoster, InsertDiverRoster,
   ProjectSop, InsertProjectSop,
+  AnalyticsSnapshot, InsertAnalyticsSnapshot,
+  AnomalyFlag, InsertAnomalyFlag,
+  MlPrediction, InsertMlPrediction,
 } from "@shared/schema";
 
 const pool = new Pool({
@@ -212,6 +215,19 @@ export interface IStorage {
   // Admin
   listUsers(): Promise<User[]>;
   removeProjectMember(projectId: string, userId: string): Promise<boolean>;
+
+  // Analytics Snapshots
+  getAnalyticsSnapshot(projectId: string, snapshotDate: string): Promise<AnalyticsSnapshot | undefined>;
+  getAnalyticsSnapshots(projectId: string, startDate?: string, endDate?: string): Promise<AnalyticsSnapshot[]>;
+
+  // Anomaly Flags
+  createAnomalyFlag(flag: InsertAnomalyFlag): Promise<AnomalyFlag>;
+  getAnomalyFlagsByProject(projectId: string): Promise<AnomalyFlag[]>;
+  updateAnomalyFlag(id: number, updates: Partial<InsertAnomalyFlag>): Promise<AnomalyFlag | undefined>;
+
+  // ML Predictions
+  createMlPrediction(prediction: InsertMlPrediction): Promise<MlPrediction>;
+  getLatestMlPrediction(projectId: string, predictionType?: string): Promise<MlPrediction | undefined>;
 }
 
 export class DbStorage implements IStorage {
@@ -1300,6 +1316,95 @@ export class DbStorage implements IStorage {
       return await (query as any).where(and(...conditions));
     }
     return await query;
+  }
+
+  // Analytics Snapshots
+  async getAnalyticsSnapshot(projectId: string, snapshotDate: string): Promise<AnalyticsSnapshot | undefined> {
+    const [snapshot] = await db
+      .select()
+      .from(schema.analyticsSnapshots)
+      .where(
+        and(
+          eq(schema.analyticsSnapshots.projectId, projectId),
+          eq(schema.analyticsSnapshots.snapshotDate, snapshotDate)
+        )
+      )
+      .limit(1);
+    return snapshot;
+  }
+
+  async getAnalyticsSnapshots(projectId: string, startDate?: string, endDate?: string): Promise<AnalyticsSnapshot[]> {
+    if (startDate && endDate) {
+      return db
+        .select()
+        .from(schema.analyticsSnapshots)
+        .where(
+          and(
+            eq(schema.analyticsSnapshots.projectId, projectId),
+            sql`${schema.analyticsSnapshots.snapshotDate} >= ${startDate}`,
+            sql`${schema.analyticsSnapshots.snapshotDate} <= ${endDate}`
+          )
+        )
+        .orderBy(desc(schema.analyticsSnapshots.snapshotDate));
+    }
+    return db
+      .select()
+      .from(schema.analyticsSnapshots)
+      .where(eq(schema.analyticsSnapshots.projectId, projectId))
+      .orderBy(desc(schema.analyticsSnapshots.snapshotDate));
+  }
+
+  // Anomaly Flags
+  async createAnomalyFlag(flag: InsertAnomalyFlag): Promise<AnomalyFlag> {
+    const [created] = await db.insert(schema.anomalyFlags).values(flag).returning();
+    return created!;
+  }
+
+  async getAnomalyFlagsByProject(projectId: string): Promise<AnomalyFlag[]> {
+    return db
+      .select()
+      .from(schema.anomalyFlags)
+      .where(eq(schema.anomalyFlags.projectId, projectId))
+      .orderBy(desc(schema.anomalyFlags.detectedAt));
+  }
+
+  async updateAnomalyFlag(id: number, updates: Partial<InsertAnomalyFlag>): Promise<AnomalyFlag | undefined> {
+    const [updated] = await db
+      .update(schema.anomalyFlags)
+      .set(updates)
+      .where(eq(schema.anomalyFlags.id, id))
+      .returning();
+    return updated;
+  }
+
+  // ML Predictions
+  async createMlPrediction(prediction: InsertMlPrediction): Promise<MlPrediction> {
+    const [created] = await db.insert(schema.mlPredictions).values(prediction).returning();
+    return created!;
+  }
+
+  async getLatestMlPrediction(projectId: string, predictionType?: string): Promise<MlPrediction | undefined> {
+    if (predictionType) {
+      const [row] = await db
+        .select()
+        .from(schema.mlPredictions)
+        .where(
+          and(
+            eq(schema.mlPredictions.projectId, projectId),
+            eq(schema.mlPredictions.predictionType, predictionType)
+          )
+        )
+        .orderBy(desc(schema.mlPredictions.createdAt))
+        .limit(1);
+      return row;
+    }
+    const [row] = await db
+      .select()
+      .from(schema.mlPredictions)
+      .where(eq(schema.mlPredictions.projectId, projectId))
+      .orderBy(desc(schema.mlPredictions.createdAt))
+      .limit(1);
+    return row;
   }
 }
 

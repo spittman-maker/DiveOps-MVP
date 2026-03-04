@@ -2,10 +2,11 @@ import type { Express, Request, Response } from "express";
 import OpenAI from "openai";
 import { chatStorage } from "./storage";
 import { storage } from "../../storage";
+import { getRAGContext } from "../../services/azure-search";
 
 const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+  apiKey: process.env.OPENAI_API_KEY,
+  baseURL: process.env.OPENAI_BASE_URL || undefined,
 });
 
 async function buildOperationalContext(activeProjectId?: string): Promise<string> {
@@ -298,12 +299,23 @@ If dive table information is requested:
       const { activeProjectId } = req.body;
       const operationalContext = await buildOperationalContext(activeProjectId);
 
+      // Retrieve RAG context from Azure AI Search (Navy Dive Manual, uploaded docs)
+      let ragContext = "";
+      try {
+        ragContext = await getRAGContext(content, { topK: 5 });
+        if (ragContext) {
+          ragContext = `\n\n## KNOWLEDGE BASE REFERENCE (from Navy Dive Manual & uploaded documents)\n${ragContext}\n\nUse the above reference material to answer questions about dive tables, procedures, and regulations. Always cite the source when referencing this material.`;
+        }
+      } catch (err) {
+        console.error("[Chat] RAG context retrieval failed (non-fatal):", err);
+      }
+
       const systemPrompt = isGod
-        ? basePrompt + operationalContext + `
+        ? basePrompt + operationalContext + ragContext + `
 
 ## GOD MODE
 As a GOD user, you may also discuss app changes and development requests.`
-        : basePrompt + operationalContext + `
+        : basePrompt + operationalContext + ragContext + `
 
 ## ACCESS RESTRICTION
 You cannot make changes to the app or discuss development features. If asked to change the app, politely explain that only administrators with GOD access can request app modifications.`;
@@ -315,7 +327,7 @@ You cannot make changes to the app or discuss development features. If asked to 
 
       // Stream response from OpenAI
       const stream = await openai.chat.completions.create({
-        model: "gpt-5.2",
+        model: "gpt-4o",
         messages: [
           { role: "system", content: systemPrompt },
           ...chatMessages
