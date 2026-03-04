@@ -62,9 +62,8 @@ sessionStore.on("error", (error: any) => {
   console.error("[SESSION STORE ERROR]", error);
 });
 
-// Log cookie security settings at startup
+// Allow runtime override of cookie secure flag via COOKIE_SECURE env var
 const cookieSecure = process.env.COOKIE_SECURE === "false" ? false : process.env.NODE_ENV === "production";
-console.log(`[SESSION] Cookie secure: ${cookieSecure}, NODE_ENV: ${process.env.NODE_ENV}, trust proxy: 1`);
 
 // Session middleware - stored in PostgreSQL so sessions survive restarts
 app.use(

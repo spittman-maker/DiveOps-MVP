@@ -1,141 +1,70 @@
-# DiveOps MVP - Fixes Applied
+# DiveOps MVP — Fixes Applied
 
-## Summary of Issues Found & Fixed
+## Issue #1: Missing OpenAI API Key (App Crash on Start)
+**Status:** ✅ RESOLVED  
+**Root Cause:** The `server/ai-drafting.ts` module initializes the OpenAI client at module load time. If `AI_INTEGRATIONS_OPENAI_API_KEY` is missing, the app crashes immediately with `Missing credentials. Please pass an apiKey`.  
+**Fix:** Added `AI_INTEGRATIONS_OPENAI_API_KEY` environment variable to the Azure Container App. Currently set to a placeholder — needs to be updated with a real key for AI features to work.
 
-### Issue 1: App Wouldn't Start - Missing OpenAI API Key
-**Root Cause:** The OpenAI client in `server/ai-drafting.ts` is initialized at module load time with `new OpenAI({ apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY })`. The production build (`npm start`) runs `NODE_ENV=production node dist/index.cjs` which does NOT auto-load `.env` files.
+## Issue #2: Missing `table.sql` for Session Store
+**Status:** ✅ RESOLVED  
+**Root Cause:** `connect-pg-simple` needs `table.sql` to create the session table. The Dockerfile's multi-stage build didn't copy this file to the `dist/` directory.  
+**Fix:** Added `RUN cp node_modules/connect-pg-simple/table.sql dist/table.sql` to the Dockerfile builder stage.
 
-**Fix:** Run the app with environment variables explicitly exported:
-```bash
-export $(grep -v '^#' .env | xargs) && NODE_ENV=development PORT=3000 node dist/index.cjs
-```
+## Issue #3: Session Cookie Not Being Set (Login Broken in Production)
+**Status:** ✅ RESOLVED  
+**Root Cause:** Three compounding issues:
+1. **esbuild inlines `process.env.NODE_ENV`** — The build script uses `define: { "process.env.NODE_ENV": '"production"' }`, which causes `secure: process.env.NODE_ENV === "production"` to become `secure: true` (hardcoded) in the compiled output.
+2. **Missing `trust proxy`** — Azure Container Apps terminates TLS at the load balancer and forwards HTTP to the container. Without `app.set("trust proxy", 1)`, Express doesn't recognize the connection as HTTPS and refuses to set `secure` cookies.
+3. **CI/CD not creating new revisions** — The GitHub Actions workflow used the `latest` tag for Docker images. Azure Container Apps doesn't create a new revision when the image tag is unchanged, so code changes weren't being deployed.
 
----
+**Fixes Applied:**
+- Added `app.set("trust proxy", 1)` to `server/index.ts` before session middleware
+- Added `sameSite: "lax"` to cookie config for cross-site compatibility
+- Added explicit `req.session.save()` in login route for reliable cookie setting
+- Added `COOKIE_SECURE` env var override (set `COOKIE_SECURE=false` to disable secure cookies if needed)
+- Added session store error event listener for debugging
+- Fixed CI/CD workflow to use git SHA-based image tags to force new revisions on every deploy
 
-### Issue 2: Login Failed - Missing `table.sql` for Session Store
-**Root Cause:** The app uses `connect-pg-simple` for PostgreSQL session storage with `createTableIfMissing: true`. The built `dist/index.cjs` looks for `table.sql` at `dist/table.sql` (relative to `__dirname`), but the build process doesn't copy this file from `node_modules/connect-pg-simple/`.
+## Issue #4: Login Only Accepted Username, Not Email
+**Status:** ✅ RESOLVED (previously fixed)  
+**Root Cause:** `getUserByUsername()` only matched on the `username` column.  
+**Fix:** Updated `storage.ts` to also check the `email` column, allowing login with either username or email.
 
-**Error:** `ENOENT: no such file or directory, open '/workspace/DiveOps-MVP/dist/table.sql'`
+## Issue #5: No Users in Production Database
+**Status:** ✅ RESOLVED  
+**Root Cause:** The `/api/seed` endpoint is blocked in production. The `/api/setup/init` endpoint only works when `userCount === 0`. The `/api/auth/register` only creates DIVER users.  
+**Fix:** Added a secure `/api/bootstrap` endpoint protected by `BOOTSTRAP_SECRET` environment variable. Used it to:
+- Create GOD user: `spittman` (login with `spittman@precisionsubsea.com`)
+- Create SUPERVISOR user: `supervisor`
+- Existing DIVER users: `diver2`, `goduser`, `testuser`, `testuser2`
+The `BOOTSTRAP_SECRET` env var has been removed after setup, disabling the endpoint.
 
-**Fix:** Copy the file after each build:
-```bash
-cp node_modules/connect-pg-simple/table.sql dist/table.sql
-```
+## Issue #6: CI/CD Pipeline
+**Status:** ✅ RESOLVED  
+**Root Cause:** No CI/CD pipeline existed.  
+**Fix:** Created `.github/workflows/deploy.yml` that:
+- Triggers on push to `main` branch or manual dispatch
+- Builds Docker image and pushes to Azure Container Registry (ACR)
+- Uses git SHA-based tags to ensure new revisions are created
+- Updates Azure Container App with the new image
 
----
+## Environment Configuration (Azure Container App)
+- `DATABASE_URL` — PostgreSQL connection string
+- `SESSION_SECRET` — Session encryption secret
+- `NODE_ENV=production`
+- `PORT=5000`
+- `AI_INTEGRATIONS_OPENAI_API_KEY` — OpenAI API key (placeholder, needs real key)
+- `AZURE_STORAGE_ACCOUNT`, `AZURE_STORAGE_KEY`, `AZURE_STORAGE_CONTAINER` — Blob storage
+- `AZURE_SEARCH_ENDPOINT`, `AZURE_SEARCH_ADMIN_KEY` — Azure AI Search
 
-### Issue 3: Session Cookie Not Sent - `secure: true` Hardcoded in Build
-**Root Cause:** The session cookie configuration uses `secure: process.env.NODE_ENV === "production"`. During the Vite build, this expression is evaluated at build time and inlined as `secure: true` (hardcoded). This means the cookie is always set as `secure: true`, requiring HTTPS. Over HTTP (localhost), browsers/curl won't send secure cookies.
+## Users in Production
+| Username | Role | Login With |
+|----------|------|------------|
+| spittman | GOD | `spittman@precisionsubsea.com` / `Whisky9954!` |
+| supervisor | SUPERVISOR | `supervisor` / `supervisor123` |
+| diver2 | DIVER | `diver2` / `diver123` |
 
-**Fix:** Patch the built `dist/index.cjs` after each build:
-```bash
-sed -i 's/saveUninitialized:!1,cookie:{maxAge:1e3\*60\*60\*24\*7,httpOnly:!0,secure:!0}/saveUninitialized:!1,cookie:{maxAge:1e3*60*60*24*7,httpOnly:!0,secure:!1}/g' dist/index.cjs
-```
-
-**Permanent Fix (recommended):** In `server/index.ts`, change:
-```typescript
-secure: process.env.NODE_ENV === "production",
-```
-To:
-```typescript
-secure: process.env.COOKIE_SECURE === "true",
-```
-Then set `COOKIE_SECURE=true` in production environment variables.
-
----
-
-### Issue 4: Login Only Accepted Username, Not Email
-**Root Cause:** The `getUserByUsername()` method in `server/storage.ts` only queried by `username` field, not `email`. Users trying to log in with their email address (`spittman@precisionsubsea.com`) would get "Invalid username or password".
-
-**Fix Applied:** Updated `server/storage.ts` to fall back to email lookup:
-```typescript
-async getUserByUsername(username: string): Promise<User | undefined> {
-  // Support login by username OR email
-  const [user] = await db.select().from(schema.users).where(eq(schema.users.username, username));
-  if (user) return user;
-  // Try email lookup
-  const [userByEmail] = await db.select().from(schema.users).where(eq(schema.users.email, username));
-  return userByEmail;
-}
-```
-
----
-
-### Issue 5: Database Not Seeded / No Users
-**Root Cause:** The `/api/seed` endpoint is blocked in production (`NODE_ENV === "production"`). The database was empty with no users.
-
-**Fix:** Used the `/api/setup/init` endpoint (works when `userCount === 0`) to create the initial GOD user:
-```bash
-curl -X POST http://localhost:3000/api/setup/init \
-  -H "Content-Type: application/json" \
-  -d '{
-    "username": "spittman",
-    "password": "Inlanddiver9954!",
-    "fullName": "S Pittman",
-    "initials": "SP",
-    "email": "spittman@precisionsubsea.com"
-  }'
-```
-
----
-
-## Login Credentials (Local)
-
-| Field | Value |
-|-------|-------|
-| Email | spittman@precisionsubsea.com |
-| Username | spittman |
-| Password | Inlanddiver9954! |
-| Role | GOD (full access) |
-
----
-
-## Azure Deployment Fixes Needed
-
-For the deployed Azure version, the following environment variables must be set correctly:
-
-| Variable | Required | Notes |
-|----------|----------|-------|
-| `DATABASE_URL` | ✅ | PostgreSQL connection string |
-| `SESSION_SECRET` | ✅ | Must be set - app exits if missing in production |
-| `OPENWEATHER_API_KEY` | ✅ | For weather features |
-| `AI_INTEGRATIONS_OPENAI_API_KEY` | ✅ | OpenAI API key |
-| `AI_INTEGRATIONS_OPENAI_BASE_URL` | Optional | Defaults to OpenAI API |
-| `COOKIE_SECURE` | Recommended | Set to `true` for HTTPS deployments |
-
-**Critical:** The `SESSION_SECRET` must be set in Azure App Service environment variables, or the app will exit with a fatal error.
-
-**Database Initialization:** If the Azure database is empty, POST to `/api/setup/init` with the admin user details.
-
----
-
-## Local Development Setup
-
-```bash
-# 1. Install dependencies
-npm install
-
-# 2. Set up PostgreSQL
-sudo -u postgres createuser -P diveops  # password: diveops123
-sudo -u postgres createdb -O diveops diveops
-sudo -u postgres psql -c "GRANT ALL ON SCHEMA public TO diveops;"
-
-# 3. Create .env file
-cat > .env << EOF
-DATABASE_URL=postgresql://diveops:diveops123@localhost:5432/diveops
-SESSION_SECRET=your-secret-key-here-minimum-32-chars
-OPENWEATHER_API_KEY=your-key-here
-AI_INTEGRATIONS_OPENAI_API_KEY=sk-your-key-here
-NODE_ENV=development
-PORT=3000
-EOF
-
-# 4. Push database schema
-npm run db:push
-
-# 5. Build
-npm run build
-
-# 6. Start (using the fix script)
-./start-local.sh
-```
+## Remaining Items
+- [ ] Update `AI_INTEGRATIONS_OPENAI_API_KEY` with a real OpenAI API key for AI drafting features
+- [ ] Create a real project and test dive logging end-to-end
+- [ ] Consider removing the `/api/bootstrap` endpoint code after initial setup is complete
