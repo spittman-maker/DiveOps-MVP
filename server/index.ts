@@ -17,6 +17,11 @@ process.on("unhandledRejection", (reason) => {
 });
 
 const app = express();
+
+// Trust first proxy (Azure Container Apps, AWS ALB, etc.)
+// Required for secure cookies to work behind a reverse proxy
+app.set("trust proxy", 1);
+
 const httpServer = createServer(app);
 
 if (!process.env.SESSION_SECRET) {
