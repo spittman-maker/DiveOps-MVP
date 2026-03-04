@@ -184,7 +184,24 @@ export async function registerRoutes(
 
   app.post("/api/auth/login", passport.authenticate("local"), (req: Request, res: Response) => {
     const user = getUser(req);
-    res.json({ id: user.id, username: user.username, role: user.role, fullName: user.fullName });
+    console.log(`[SESSION DEBUG] Session ID: ${req.sessionID}`);
+    console.log(`[SESSION DEBUG] Session exists: ${!!req.session}`);
+    console.log(`[SESSION DEBUG] User in session: ${!!(req.session as any)?.passport?.user}`);
+    console.log(`[SESSION DEBUG] req.isAuthenticated(): ${req.isAuthenticated()}`);
+    console.log(`[SESSION DEBUG] Cookie secure: ${req.session?.cookie?.secure}`);
+    console.log(`[SESSION DEBUG] Protocol: ${req.protocol}`);
+    console.log(`[SESSION DEBUG] X-Forwarded-Proto: ${req.headers['x-forwarded-proto']}`);
+    console.log(`[SESSION DEBUG] req.secure: ${req.secure}`);
+    
+    // Force session save and log any errors
+    req.session.save((err) => {
+      if (err) {
+        console.error(`[SESSION DEBUG] Session save error:`, err);
+        return res.status(500).json({ message: "Session save failed" });
+      }
+      console.log(`[SESSION DEBUG] Session saved successfully, ID: ${req.sessionID}`);
+      res.json({ id: user.id, username: user.username, role: user.role, fullName: user.fullName });
+    });
   });
 
   app.post("/api/auth/logout", (req: Request, res: Response) => {

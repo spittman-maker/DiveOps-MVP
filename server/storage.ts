@@ -222,8 +222,12 @@ export class DbStorage implements IStorage {
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
+    // Support login by username OR email
     const [user] = await db.select().from(schema.users).where(eq(schema.users.username, username));
-    return user;
+    if (user) return user;
+    // Try email lookup
+    const [userByEmail] = await db.select().from(schema.users).where(eq(schema.users.email, username));
+    return userByEmail;
   }
 
   async getUserByInitials(initials: string, projectId: string): Promise<User | undefined> {

@@ -51,21 +51,33 @@ app.use(express.urlencoded({ extended: false }));
 
 const PgSession = connectPgSimple(session);
 
+// Session store with error logging
+const sessionStore = new PgSession({
+  conString: process.env.DATABASE_URL,
+  tableName: "session",
+  createTableIfMissing: true,
+});
+
+sessionStore.on("error", (error: any) => {
+  console.error("[SESSION STORE ERROR]", error);
+});
+
+// Log cookie security settings at startup
+const cookieSecure = process.env.COOKIE_SECURE === "false" ? false : process.env.NODE_ENV === "production";
+console.log(`[SESSION] Cookie secure: ${cookieSecure}, NODE_ENV: ${process.env.NODE_ENV}, trust proxy: 1`);
+
 // Session middleware - stored in PostgreSQL so sessions survive restarts
 app.use(
   session({
-    store: new PgSession({
-      conString: process.env.DATABASE_URL,
-      tableName: "session",
-      createTableIfMissing: true,
-    }),
+    store: sessionStore,
     secret: process.env.SESSION_SECRET || "dev-only-insecure-fallback",
     resave: false,
     saveUninitialized: false,
     cookie: {
       maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: cookieSecure,
+      sameSite: "lax",
     },
   })
 );
