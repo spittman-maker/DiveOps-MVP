@@ -11,8 +11,8 @@
  *   - openai (npm install openai)
  * 
  * Environment Variables:
- *   - AI_INTEGRATIONS_OPENAI_API_KEY: OpenAI API key
- *   - AI_INTEGRATIONS_OPENAI_BASE_URL: OpenAI base URL (optional)
+ *   - OPENAI_API_KEY: OpenAI API key
+ *   - OPENAI_BASE_URL: OpenAI base URL (optional)
  */
 
 import OpenAI from "openai";
@@ -292,8 +292,8 @@ export async function processStructuredLog(
   }
 ): Promise<ProcessedLogResult> {
   const openai = new OpenAI({
-    apiKey: options?.apiKey || process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-    baseURL: options?.baseURL || process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+    apiKey: options?.apiKey || process.env.OPENAI_API_KEY,
+    baseURL: options?.baseURL || process.env.OPENAI_BASE_URL,
   });
   
   const model = options?.model || "gpt-4.1-mini";

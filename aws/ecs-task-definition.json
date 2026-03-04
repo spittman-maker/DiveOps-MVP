@@ -20,7 +20,7 @@
       "environment": [
         { "name": "NODE_ENV", "value": "production" },
         { "name": "PORT", "value": "5000" },
-        { "name": "AI_INTEGRATIONS_OPENAI_BASE_URL", "value": "https://api.openai.com/v1" }
+        { "name": "OPENAI_BASE_URL", "value": "https://api.openai.com/v1" }
       ],
       "secrets": [
         {
@@ -36,8 +36,8 @@
           "valueFrom": "arn:aws:secretsmanager:us-east-1:YOUR_ACCOUNT_ID:secret:diveops/env:OPENWEATHER_API_KEY::"
         },
         {
-          "name": "AI_INTEGRATIONS_OPENAI_API_KEY",
-          "valueFrom": "arn:aws:secretsmanager:us-east-1:YOUR_ACCOUNT_ID:secret:diveops/env:AI_INTEGRATIONS_OPENAI_API_KEY::"
+          "name": "OPENAI_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:YOUR_ACCOUNT_ID:secret:diveops/env:OPENAI_API_KEY::"
         }
       ],
       "logConfiguration": {
