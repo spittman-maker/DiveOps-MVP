@@ -8,6 +8,9 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
+# Copy table.sql from node_modules to dist
+RUN cp node_modules/connect-pg-simple/table.sql dist/table.sql
+
 FROM node:20-alpine
 
 WORKDIR /app
