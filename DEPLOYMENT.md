@@ -19,8 +19,8 @@ SESSION_SECRET=your-random-secret-at-least-32-chars
 OPENWEATHER_API_KEY=your-openweather-key
 
 # OpenAI — use standard OpenAI URL when not on Replit
-AI_INTEGRATIONS_OPENAI_API_KEY=sk-your-openai-key
-AI_INTEGRATIONS_OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_API_KEY=sk-your-openai-key
+OPENAI_BASE_URL=https://api.openai.com/v1
 ```
 
 ## Option 1: Direct Deploy (VPS, bare metal)
@@ -54,8 +54,8 @@ docker run -d \
   -e DATABASE_URL="postgresql://user:password@host:5432/diveops" \
   -e SESSION_SECRET="your-secret" \
   -e OPENWEATHER_API_KEY="your-key" \
-  -e AI_INTEGRATIONS_OPENAI_API_KEY="sk-your-key" \
-  -e AI_INTEGRATIONS_OPENAI_BASE_URL="https://api.openai.com/v1" \
+  -e OPENAI_API_KEY="sk-your-key" \
+  -e OPENAI_BASE_URL="https://api.openai.com/v1" \
   diveops
 ```
 
@@ -96,8 +96,8 @@ aws secretsmanager create-secret \
     "DATABASE_URL": "postgresql://diveops:YOUR_DB_PASSWORD@your-rds-endpoint:5432/diveops",
     "SESSION_SECRET": "your-random-secret",
     "OPENWEATHER_API_KEY": "your-key",
-    "AI_INTEGRATIONS_OPENAI_API_KEY": "sk-your-key",
-    "AI_INTEGRATIONS_OPENAI_BASE_URL": "https://api.openai.com/v1"
+    "OPENAI_API_KEY": "sk-your-key",
+    "OPENAI_BASE_URL": "https://api.openai.com/v1"
   }'
 ```
 
@@ -145,8 +145,8 @@ cat > /opt/diveops/.env << 'EOF'
 DATABASE_URL=postgresql://user:password@your-rds-endpoint:5432/diveops
 SESSION_SECRET=your-random-secret
 OPENWEATHER_API_KEY=your-key
-AI_INTEGRATIONS_OPENAI_API_KEY=sk-your-key
-AI_INTEGRATIONS_OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_API_KEY=sk-your-key
+OPENAI_BASE_URL=https://api.openai.com/v1
 EOF
 
 # Initialize database
