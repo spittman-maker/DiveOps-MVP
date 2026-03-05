@@ -174,7 +174,8 @@ describe('Document Export Unit Tests', () => {
     function generateDocumentFilename(projectId: string, date: string, shift: string, type: string): string {
       const sanitizedProjectId = projectId.replace(/[^a-zA-Z0-9_-]/g, '_');
       const sanitizedDate = date.replace(/[^a-zA-Z0-9_-]/g, '_');
-      return `${sanitizedProjectId}_${sanitizedDate}_${shift}_${type}.pdf`;
+      const sanitizedType = type.replace(/[^a-zA-Z0-9_-]/g, '_');
+      return `${sanitizedProjectId}_${sanitizedDate}_${shift}_${sanitizedType}.pdf`;
     }
 
     it('should generate valid filename', () => {

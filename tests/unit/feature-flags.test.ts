@@ -21,12 +21,12 @@ const DEFAULT_FEATURE_FLAGS = {
 
   // Risk Management
   riskTrackingEnabled: true,
-  automaticRiskDetection: true,
+  automaticRiskDetectionEnabled: true,
   riskNotificationEnabled: true,
 
   // Dive Management
   diveConfirmationEnabled: true,
-  automaticDiveDetection: true,
+  automaticDiveDetectionEnabled: true,
 
   // User Management
   userPreferencesEnabled: true,
@@ -34,8 +34,8 @@ const DEFAULT_FEATURE_FLAGS = {
   companyManagementEnabled: true,
 
   // Analytics
-  analyticsEnabled: false,
-  reportingEnabled: true,
+  analyticsDashboardEnabled: false,
+  reportingSystemEnabled: true,
 };
 
 describe('Feature Flags Unit Tests', () => {
@@ -58,7 +58,7 @@ describe('Feature Flags Unit Tests', () => {
     });
 
     it('should retrieve analytics flag', () => {
-      expect(DEFAULT_FEATURE_FLAGS.analyticsEnabled).toBe(false);
+      expect(DEFAULT_FEATURE_FLAGS.analyticsDashboardEnabled).toBe(false);
     });
   });
 
@@ -99,7 +99,7 @@ describe('Feature Flags Unit Tests', () => {
     });
 
     it('should have automatic risk detection enabled', () => {
-      expect(DEFAULT_FEATURE_FLAGS.automaticRiskDetection).toBe(true);
+      expect(DEFAULT_FEATURE_FLAGS.automaticRiskDetectionEnabled).toBe(true);
     });
 
     it('should have risk notification enabled', () => {
@@ -114,7 +114,7 @@ describe('Feature Flags Unit Tests', () => {
     });
 
     it('should have automatic dive detection enabled', () => {
-      expect(DEFAULT_FEATURE_FLAGS.automaticDiveDetection).toBe(true);
+      expect(DEFAULT_FEATURE_FLAGS.automaticDiveDetectionEnabled).toBe(true);
     });
   });
 
@@ -136,11 +136,11 @@ describe('Feature Flags Unit Tests', () => {
   // ==================== ANALYTICS FLAGS TESTS ====================
   describe('Analytics Flags', () => {
     it('should have analytics disabled by default', () => {
-      expect(DEFAULT_FEATURE_FLAGS.analyticsEnabled).toBe(false);
+      expect(DEFAULT_FEATURE_FLAGS.analyticsDashboardEnabled).toBe(false);
     });
 
     it('should have reporting enabled', () => {
-      expect(DEFAULT_FEATURE_FLAGS.reportingEnabled).toBe(true);
+      expect(DEFAULT_FEATURE_FLAGS.reportingSystemEnabled).toBe(true);
     });
   });
 
@@ -177,7 +177,7 @@ describe('Feature Flags Unit Tests', () => {
     });
 
     it('should have analytics disabled for performance', () => {
-      expect(DEFAULT_FEATURE_FLAGS.analyticsEnabled).toBe(false);
+      expect(DEFAULT_FEATURE_FLAGS.analyticsDashboardEnabled).toBe(false);
     });
 
     it('should have AI auto review disabled for safety', () => {
@@ -201,13 +201,13 @@ describe('Feature Flags Unit Tests', () => {
 
     it('should have complete risk management feature set', () => {
       expect(DEFAULT_FEATURE_FLAGS.riskTrackingEnabled).toBeDefined();
-      expect(DEFAULT_FEATURE_FLAGS.automaticRiskDetection).toBeDefined();
+      expect(DEFAULT_FEATURE_FLAGS.automaticRiskDetectionEnabled).toBeDefined();
       expect(DEFAULT_FEATURE_FLAGS.riskNotificationEnabled).toBeDefined();
     });
 
     it('should have complete dive management feature set', () => {
       expect(DEFAULT_FEATURE_FLAGS.diveConfirmationEnabled).toBeDefined();
-      expect(DEFAULT_FEATURE_FLAGS.automaticDiveDetection).toBeDefined();
+      expect(DEFAULT_FEATURE_FLAGS.automaticDiveDetectionEnabled).toBeDefined();
     });
 
     it('should have complete user management feature set', () => {
@@ -217,8 +217,8 @@ describe('Feature Flags Unit Tests', () => {
     });
 
     it('should have complete analytics feature set', () => {
-      expect(DEFAULT_FEATURE_FLAGS.analyticsEnabled).toBeDefined();
-      expect(DEFAULT_FEATURE_FLAGS.reportingEnabled).toBeDefined();
+      expect(DEFAULT_FEATURE_FLAGS.analyticsDashboardEnabled).toBeDefined();
+      expect(DEFAULT_FEATURE_FLAGS.reportingSystemEnabled).toBeDefined();
     });
   });
 });

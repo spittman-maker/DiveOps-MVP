@@ -261,21 +261,84 @@ export function sanitizeForMasterLog(content: string): string {
   let sanitized = content;
 
   // Replace JV/OICC with Client
+  // Bug fix #6: Escape special regex characters and handle compound terms first
   for (const term of TERMINOLOGY.clientTerms.alternatives) {
-    const regex = new RegExp(term, "gi");
+    const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escapedTerm, 'gi');
     sanitized = sanitized.replace(regex, TERMINOLOGY.clientTerms.preferred);
   }
+  
+  // Fix multiple "Client" replacements (e.g., "JV/OICC" -> "Client/Client")
+  sanitized = sanitized.replace(/Client\/Client/g, 'Client');
 
-  // Convert 12-hour to 24-hour time (basic conversion)
+  // Convert 12-hour to 24-hour time
+  // Bug fix #7 & #9: Handle AM/PM, a.m./p.m., and proper conversion
   sanitized = sanitized.replace(
-    /(\d{1,2}):(\d{2})\s*(AM|PM)/gi,
+    /(\d{1,2}):(\d{2})\s*(AM|PM|a\.m\.|p\.m\.)/gi,
     (match, hour, min, ampm) => {
       let h = parseInt(hour, 10);
-      if (ampm.toUpperCase() === "PM" && h !== 12) h += 12;
-      if (ampm.toUpperCase() === "AM" && h === 12) h = 0;
-      return `${h.toString().padStart(2, "0")}${min}`;
+      const upperAmpm = ampm.toUpperCase().replace(/\./g, '');
+      if (upperAmpm === 'PM' && h !== 12) h += 12;
+      if (upperAmpm === 'AM' && h === 12) h = 0;
+      return `${h.toString().padStart(2, '0')}${min}`;
     }
   );
 
   return sanitized;
+}
+
+/**
+ * Validates a timestamp string in ISO 8601 format
+ * @param timestamp - Timestamp string to validate
+ * @returns true if valid ISO 8601 timestamp, false otherwise
+ */
+export function validateTimestamp(timestamp: any): boolean {
+  if (typeof timestamp !== 'string') return false;
+  if (!timestamp || timestamp.trim() === '') return false;
+
+  const iso8601Regex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+  if (!iso8601Regex.test(timestamp)) return false;
+
+  const date = new Date(timestamp);
+  if (isNaN(date.getTime())) return false;
+
+  // Validate month and day ranges
+  const [year, month, day] = timestamp.split('T')[0].split('-').map(Number);
+  const [hour, minute, second] = timestamp.split('T')[1].split(':').map(Number);
+
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  if (hour < 0 || hour > 23) return false;
+  if (minute < 0 || minute > 59) return false;
+  if (second < 0 || second > 59) return false;
+
+  return true;
+}
+
+/**
+ * Formats a 12-hour time string to 24-hour format
+ * @param time12 - Time in 12-hour format (e.g., "10:30 AM", "02:45 p.m.")
+ * @returns Time in 24-hour format (e.g., "10:30", "14:45") or original if invalid
+ */
+export function formatTimeTo24Hour(time12: string): string {
+  if (!time12 || typeof time12 !== 'string') return time12;
+  if (time12.trim() === '') return time12;
+
+  const time12Regex = /^(\d{1,2}):(\d{2})\s*(AM|PM|a\.m\.|p\.m\.)$/i;
+  const match = time12.match(time12Regex);
+
+  if (!match) return time12;
+
+  let [, hourStr, minuteStr, ampm] = match;
+  let hour = parseInt(hourStr, 10);
+  const minute = minuteStr;
+  const upperAmpm = ampm.toUpperCase().replace(/\./g, '');
+
+  if (upperAmpm === 'PM' && hour !== 12) {
+    hour += 12;
+  } else if (upperAmpm === 'AM' && hour === 12) {
+    hour = 0;
+  }
+
+  return `${hour.toString().padStart(2, '0')}:${minute}`;
 }
