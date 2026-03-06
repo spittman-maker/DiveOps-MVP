@@ -4092,6 +4092,22 @@ If you're not confident about specific facilities, say so in the notes field. Al
     }
   });
 
+  // PATCH alias for SOP edit
+  app.patch("/api/sops/:id", requireRole("ADMIN", "GOD", "SUPERVISOR"), async (req: Request, res: Response) => {
+    try {
+      const updates: any = {};
+      if (req.body.title !== undefined) updates.title = req.body.title;
+      if (req.body.content !== undefined) updates.content = req.body.content;
+      if (req.body.isActive !== undefined) updates.isActive = req.body.isActive;
+      const sop = await storage.updateProjectSop(req.params.id, updates);
+      if (!sop) return res.status(404).json({ message: "SOP not found" });
+      res.json(sop);
+    } catch (error) {
+      console.error("PATCH SOP error:", error);
+      res.status(500).json({ message: "Failed to update SOP" });
+    }
+  });
+
   app.get("/api/sops", requireAuth, async (req: Request, res: Response) => {
     try {
       const projectId = req.query.projectId as string;
