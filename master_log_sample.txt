@@ -1,0 +1,92 @@
+=== MASTER LOG SAMPLE ===
+
+24-HOUR DAILY OPERATIONS LOG
+Wednesday, March 5, 2026
+DiveOps Automated Operations Record
+
+--- EXECUTIVE SUMMARY ---
+On Wednesday, March 5, 2026, diving operations were conducted with 4 dive(s) completed by 3 diver(s). Maximum depth reached was 40 FSW. 5 client directive(s) were received and actioned. No safety incidents were reported. All operations conducted in accordance with applicable standards.
+
+--- 1. DAY SHIFT OPERATIONS ---
+  0600 Day shift crew arrived on site. Safety briefing conducted.
+  0615 Toolbox talk completed. All personnel accounted for.
+  0630 Client directed reduction of crew sizes from 3 to 2 crews for the day.
+  0645 Dive Team 1 set up at Station A. Dive Team 2 set up at Station B.
+  0700 Tower clearance received for diving operations.
+  0715 JM L/S 0715 40 fsw Station A - pile inspection
+  0720 JM R/B 0720 40 fsw
+  0750 JM L/B 0750
+  0755 JM R/S 0755
+  0800 BW L/S 0800 35 fsw Station B - riser weld inspection
+  0805 BW R/B 0805 35 fsw
+  0830 Completed 7ft of riser installation progress
+  0845 BW L/B 0845
+  0850 BW R/S 0850
+  0900 CN L/S 0900 40 fsw Station A - cathodic protection survey
+  0905 CN R/B 0905 40 fsw
+  0930 Client email received: reduce shift to 8 hours only today.
+  0945 CN L/B 0945
+  0950 CN R/S 0950
+  1000 Client directed stop work on Station B pending engineering review.
+  1030 Dive Team 2 standing by at Station B.
+  1100 DHO pull all divers from the water for vessel transit.
+  1130 All divers clear. Vessel transit in progress.
+  1200 Vessel transit complete. Resuming operations.
+  1230 JM L/S 1230 40 fsw Station A - continue pile inspection
+  1235 JM R/B 1235 40 fsw
+  1300 JM L/B 1300
+  1305 JM R/S 1305
+  1400 End of day breakdown of equipment - compressor out of service at closeout.
+  1430 Secured dive operations for the day.
+  1500 Day shift crew departed.
+
+--- 2. EMAIL COORDINATION / CLIENT DIRECTIVES ---
+  CD-001  06:30  Client directed reduction of crew sizes from 3 to 2 crews
+  CD-002  09:30  Client email: reduce shift to 8 hours only today
+  CD-003  10:00  Client directed stop work on Station B pending engineering review
+  CD-004  11:00  DHO pull all divers from the water for vessel transit
+
+--- 3. NIGHT SHIFT OPERATIONS ---
+  1800 Night shift crew arrived on site.
+  1815 Night shift safety briefing conducted.
+  1900 Night shift standby - no diving operations planned.
+  2100 Night shift crew monitoring equipment.
+  2200 Night shift secured.
+
+--- 4. DIVE STATION LOGS ---
+  Dive# | Diver | Station   | L/S   | R/B   | L/B   | R/S   | Depth   | Table                | Schedule | Group
+  ------|-------|-----------|-------|-------|-------|-------|---------|----------------------|----------|------
+  #1    | JM    | Station A | 07:15 | --:-- | 07:50 | 07:55 | 40 FSW  | --                   | --       | --
+  #2    | BW    | Station B | 08:00 | --:-- | 08:45 | 08:50 | 35 FSW  | --                   | --       | --
+  #3    | CN    | Station A | 09:00 | --:-- | 09:45 | 09:50 | 40 FSW  | --                   | --       | --
+  #4    | JM    | Station A | 12:30 | --:-- | 13:00 | 13:05 | 40 FSW  | --                   | --       | --
+
+  Station Activity Narrative:
+    Station A: JM, CN - Pile inspection, CP survey - 2 piles inspected
+    Station B: BW - Riser weld inspection - 1 riser inspected
+
+--- 5. NOTES ---
+  No safety incidents reported.
+
+--- 6. QC CLOSEOUT ---
+  Scope Complete: Yes - Day closed
+  Documentation Complete: Yes - All logs finalized
+  Exceptions: None
+
+--- 7. SEI ADVISORIES ---
+  Advised For: Continued diving operations. 4 dive(s) completed safely.
+  Advised Against: No adverse advisories
+
+--- 8. STANDING RISKS ---
+  [MED] RR-001 | Client-directed manpower reduction | Owner: Ops/PM | Status: Open
+    Impact: Reduced production capacity; schedule exposure and inefficiency (lost diver-hours / re-sequencing).
+  [LOW] RR-002 | Client-directed early release / reduced shift duration | Owner: Ops/PM | Status: Open
+    Impact: Loss of planned work window; standby inefficiency and schedule exposure.
+  [HIGH] RR-003 | Client-directed stop-work / hold / standdown | Owner: Ops/PM | Status: Open
+    Impact: Immediate production loss; remobilization and schedule exposure.
+  [HIGH] RR-004 | DHO/Client-directed diver recall / stoppage | Owner: Diving Superintendent | Status: Open
+    Impact: Interrupted bottom time and work sequence; productivity loss and potential rework/standby exposure.
+  [LOW] RR-005 | End-of-day equipment breakdown | Owner: Dive Supervisor | Status: Open
+    Impact: Equipment issue at shift end; repair can be scheduled for next shift with minimal operational impact.
+
+--- END OF LOG ---
