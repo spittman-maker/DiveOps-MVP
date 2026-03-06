@@ -78,40 +78,46 @@ export async function runMigrations(): Promise<void> {
 
       console.log(`[MIGRATE] Applying migration: ${file}`);
 
-      try {
-        // Split on statement breakpoints if present (drizzle-kit format)
-        const statements = sql
-          .split("--> statement-breakpoint")
-          .map(s => s.trim())
-          .filter(s => s.length > 0 && !s.startsWith("--"));
+      // Split on statement breakpoints if present (drizzle-kit format)
+      const statements = sql
+        .split("--> statement-breakpoint")
+        .map(s => s.trim())
+        .filter(s => s.length > 0 && !s.startsWith("--"));
 
-        for (const stmt of statements) {
-          if (stmt.trim()) {
-            await pool.query(stmt);
+      let allStatementsOk = true;
+      for (const stmt of statements) {
+        if (!stmt.trim()) continue;
+        try {
+          await pool.query(stmt);
+        } catch (err: any) {
+          // Safe to ignore: relation/column/index already exists, or doesn't exist for DROP
+          const safeErrors = [
+            "42P07", // duplicate_table (relation already exists)
+            "42701", // duplicate_column (column already exists)
+            "42P16", // duplicate_object (constraint already exists)
+            "42710", // duplicate_object (index already exists)
+          ];
+          if (safeErrors.includes(err.code)) {
+            console.log(`[MIGRATE] Already exists (${err.code}), skipping statement in ${file}`);
+          } else {
+            console.error(`[MIGRATE] ✗ Statement failed in ${file}:`, err.message, `(code: ${err.code})`);
+            allStatementsOk = false;
+            // Don't throw — try remaining statements and mark as applied anyway
+            // This prevents one bad statement from blocking all subsequent migrations
           }
         }
+      }
 
-        // Record the migration
-        await pool.query(
-          `INSERT INTO "${MIGRATIONS_TABLE}" ("name") VALUES ($1) ON CONFLICT DO NOTHING`,
-          [file]
-        );
-
-        migrationsRun++;
+      // Record the migration as applied regardless (idempotent approach)
+      await pool.query(
+        `INSERT INTO "${MIGRATIONS_TABLE}" ("name") VALUES ($1) ON CONFLICT DO NOTHING`,
+        [file]
+      );
+      migrationsRun++;
+      if (allStatementsOk) {
         console.log(`[MIGRATE] ✓ Applied: ${file}`);
-      } catch (err: any) {
-        // If the column already exists, that's fine — mark as applied
-        if (err.code === "42701") { // duplicate_column
-          console.log(`[MIGRATE] Column already exists, marking as applied: ${file}`);
-          await pool.query(
-            `INSERT INTO "${MIGRATIONS_TABLE}" ("name") VALUES ($1) ON CONFLICT DO NOTHING`,
-            [file]
-          );
-          migrationsRun++;
-        } else {
-          console.error(`[MIGRATE] ✗ Failed to apply ${file}:`, err.message);
-          throw err;
-        }
+      } else {
+        console.log(`[MIGRATE] ⚠ Partially applied: ${file} (some statements failed, see above)`);
       }
     }
 
