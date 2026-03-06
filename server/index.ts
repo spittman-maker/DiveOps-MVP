@@ -9,6 +9,7 @@ import { passport } from "./auth";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { apiLimiter } from "./rate-limit";
 import { startPeriodicSweep } from "./sweep";
+import { runMigrations } from "./migrate";
 
 process.on("uncaughtException", (err) => {
   console.error("[FATAL] Uncaught exception:", err);
@@ -136,6 +137,9 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Run pending database migrations before starting the app
+  await runMigrations();
+
   registerChatRoutes(app);
   await registerRoutes(httpServer, app);
 

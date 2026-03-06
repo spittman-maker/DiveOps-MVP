@@ -109,7 +109,7 @@ const adminCreateUserSchema = z.object({
 const logEventSchema = z.object({
   rawText: z.string().min(1),
   dayId: z.string(),
-  projectId: z.string(),
+  projectId: z.string().optional(), // Can be derived from dayId
   station: z.string().optional(),
   eventTimeOverride: z.string().optional(),
   clientTimezone: z.string().optional(),
@@ -1156,9 +1156,11 @@ export async function registerRoutes(
       const data = logEventSchema.parse(req.body);
       const user = getUser(req);
       
-      // Get day for date context
+      // Get day for date context and derive projectId if not provided
       const day = await storage.getDay(data.dayId);
       if (!day) return res.status(404).json({ message: "Day not found" });
+      const projectId = data.projectId || day.projectId;
+      if (!projectId) return res.status(400).json({ message: "Could not determine projectId" });
       
       // Check if day is closed
       if (day.status === "CLOSED" && !isGod(user.role)) {
@@ -1211,7 +1213,7 @@ export async function registerRoutes(
       if (stopWork) extractedWithTag.stopWork = true;
       if (hazards.length > 0) extractedWithTag.hazards = hazards;
 
-      const ctx: AuditContext = { ...req.auditCtx!, projectId: data.projectId, dayId: data.dayId };
+      const ctx: AuditContext = { ...req.auditCtx!, projectId, dayId: data.dayId };
 
       // Atomic idempotency guard: reserve key first, then process
       if (req.idempotencyKey) {
@@ -1228,7 +1230,7 @@ export async function registerRoutes(
       // Create the log event IMMEDIATELY (event sourcing)
       const logEvent = await storage.createLogEvent({
         dayId: data.dayId,
-        projectId: data.projectId,
+        projectId,
         authorId: user.id,
         station: data.station || null,
         captureTime,
@@ -1253,7 +1255,7 @@ export async function registerRoutes(
       }
       
       // Load active SOPs for this project
-      const activeSops = await storage.getProjectSops(data.projectId);
+      const activeSops = await storage.getProjectSops(projectId);
       const sopTexts = activeSops.filter(s => s.isActive).map(s => `### ${s.title}\n${s.content}`);
       
       // Process structured log asynchronously (normalize, classify, validate)
@@ -1268,7 +1270,7 @@ export async function registerRoutes(
             
             // Create risk items only from validated payload
             if (result.payload.risks && result.payload.risks.length > 0) {
-              const existingRisks = await storage.getRiskItemsByProject(data.projectId);
+              const existingRisks = await storage.getRiskItemsByProject(projectId);
               const dateStr = day.date.replace(/-/g, '');
               const riskPrefix = `RISK-${dateStr}-`;
               const maxRiskNum = existingRisks
@@ -1288,7 +1290,7 @@ export async function registerRoutes(
                   (risk as any).trigger?.toLowerCase().includes("directive");
                 await storage.createRiskItem({
                   dayId: day.id,
-                  projectId: data.projectId,
+                  projectId: projectId,
                   riskId,
                   triggerEventId: logEvent.id,
                   description: `${(risk as any).trigger || risk.description}. Impact: ${(risk as any).impact || ""}`.trim(),
@@ -1313,7 +1315,7 @@ export async function registerRoutes(
       
       // Generate AI renders asynchronously (don't block the response)
       // Load active SOPs for the project to include in AI prompts
-      storage.getActiveProjectSops(data.projectId).then(sops => {
+      storage.getActiveProjectSops(projectId).then(sops => {
         const sopCtx: SOPContext[] = sops.map(s => ({ title: s.title, content: s.content }));
         return generateAIRenders(data.rawText, eventTime, category, sopCtx);
       })
@@ -1358,12 +1360,12 @@ export async function registerRoutes(
         try {
           await createRiskWithRetry({
             dayId: day.id,
-            projectId: data.projectId,
+            projectId: projectId,
             triggerEventId: logEvent.id,
             category: "safety",
             description: data.rawText,
             status: "open",
-          }, data.projectId, day.date, 3, ctx);
+          }, projectId, day.date, 3, ctx);
         } catch (e: any) {
           console.error("Failed to create safety risk after retries:", e);
         }
@@ -1374,13 +1376,13 @@ export async function registerRoutes(
         try {
           await createRiskWithRetry({
             dayId: day.id,
-            projectId: data.projectId,
+            projectId: projectId,
             triggerEventId: logEvent.id,
             category: "operational",
             source: "client_directive",
             description: data.rawText,
             status: "open",
-          }, data.projectId, day.date, 3, ctx);
+          }, projectId, day.date, 3, ctx);
         } catch (e: any) {
           console.error("Failed to create directive risk after retries:", e);
         }
@@ -1391,13 +1393,13 @@ export async function registerRoutes(
         try {
           await createRiskWithRetry({
             dayId: day.id,
-            projectId: data.projectId,
+            projectId: projectId,
             triggerEventId: logEvent.id,
             category: "safety",
             source: "supervisor_entry",
             description: `STOP WORK: ${data.rawText}`,
             status: "open",
-          }, data.projectId, day.date, 3, ctx);
+          }, projectId, day.date, 3, ctx);
         } catch (e: any) {
           console.error("Failed to create stop-work risk after retries:", e);
         }
@@ -1418,13 +1420,13 @@ export async function registerRoutes(
         try {
           await createRiskWithRetry({
             dayId: day.id,
-            projectId: data.projectId,
+            projectId: projectId,
             triggerEventId: logEvent.id,
             category: "operational",
             source: "supervisor_entry",
             description: data.rawText,
             status: "open",
-          }, data.projectId, day.date, 3, ctx);
+          }, projectId, day.date, 3, ctx);
         } catch (e: any) {
           console.error("Failed to create keyword risk after retries:", e);
         }
@@ -1479,18 +1481,18 @@ export async function registerRoutes(
           let dive;
           
           if (initials) {
-            const diver = await storage.getUserByInitials(initials, data.projectId);
+            const diver = await storage.getUserByInitials(initials, projectId);
             if (diver) {
-              dive = await storage.getOrCreateDiveForDiver(day.id, data.projectId, diver.id, station || undefined);
+              dive = await storage.getOrCreateDiveForDiver(day.id, projectId, diver.id, station || undefined);
               const bestName = diver.fullName || diver.username;
               if (!dive.diverDisplayName || dive.diverDisplayName.trim().length <= 3) {
                 await storage.updateDive(dive.id, { diverDisplayName: bestName });
               }
             } else {
               // Always use initials for dive lookup/creation to avoid duplicates
-              dive = await storage.getOrCreateDiveByDisplayName(day.id, data.projectId, initials, station || undefined);
+              dive = await storage.getOrCreateDiveByDisplayName(day.id, projectId, initials, station || undefined);
               // Then check roster and upgrade display name if known
-              const rosterName = await storage.lookupDiverName(data.projectId, initials);
+              const rosterName = await storage.lookupDiverName(projectId, initials);
               if (rosterName && (!dive.diverDisplayName || dive.diverDisplayName.trim().length <= 3)) {
                 await storage.updateDive(dive.id, { diverDisplayName: rosterName });
               }
@@ -1501,18 +1503,18 @@ export async function registerRoutes(
             const lastName = nameParts[nameParts.length - 1] || "";
             const searchInitials = `${firstInitial}${lastName.charAt(0).toUpperCase()}`;
             
-            const diver = await storage.getUserByInitials(searchInitials, data.projectId);
+            const diver = await storage.getUserByInitials(searchInitials, projectId);
             if (diver) {
-              dive = await storage.getOrCreateDiveForDiver(day.id, data.projectId, diver.id, station || undefined);
+              dive = await storage.getOrCreateDiveForDiver(day.id, projectId, diver.id, station || undefined);
               const bestName = diver.fullName || identifier;
               if (!dive.diverDisplayName || dive.diverDisplayName.trim().length <= 3 || dive.diverDisplayName.trim().toLowerCase() !== bestName.toLowerCase()) {
                 await storage.updateDive(dive.id, { diverDisplayName: bestName });
               }
             } else {
               // Use initials for lookup to avoid duplicates between "B.Murphy" and "BM"
-              dive = await storage.getOrCreateDiveByDisplayName(day.id, data.projectId, searchInitials, station || undefined);
+              dive = await storage.getOrCreateDiveByDisplayName(day.id, projectId, searchInitials, station || undefined);
               // Check roster for full name, otherwise use the entered name
-              const rosterName = await storage.lookupDiverName(data.projectId, searchInitials);
+              const rosterName = await storage.lookupDiverName(projectId, searchInitials);
               const bestName = rosterName || identifier;
               if (!dive.diverDisplayName || dive.diverDisplayName.trim().length <= 3 || dive.diverDisplayName !== bestName) {
                 await storage.updateDive(dive.id, { diverDisplayName: bestName });
@@ -2301,13 +2303,15 @@ export async function registerRoutes(
       const user = req.user as any;
       if (!user?.id) return res.status(401).json({ message: "Not authenticated" });
       
-      const { dayId, projectId, description, category, initialRiskLevel, affectedTask, owner } = req.body;
-      if (!dayId || !projectId || !description) {
-        return res.status(400).json({ message: "dayId, projectId, and description are required" });
+      const { dayId, description, category, initialRiskLevel, affectedTask, owner } = req.body;
+      if (!dayId || !description) {
+        return res.status(400).json({ message: "dayId and description are required" });
       }
       
       const day = await storage.getDay(dayId);
       if (!day) return res.status(404).json({ message: "Day not found" });
+      const projectId = req.body.projectId || day.projectId;
+      if (!projectId) return res.status(400).json({ message: "Could not determine projectId" });
       
       const manualCtx: AuditContext = { ...req.auditCtx!, projectId, dayId };
       const risk = await createRiskWithRetry({
@@ -4066,6 +4070,71 @@ If you're not confident about specific facilities, say so in the notes field. Al
   });
 
   // ──────────────────────────────────────────────────────────────────────────
+  // ALIAS ROUTES (for clients that POST to /api/sops or /api/facilities directly)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  app.post("/api/sops", requireRole("ADMIN", "GOD", "SUPERVISOR"), async (req: Request, res: Response) => {
+    try {
+      const user = req.user as any;
+      const projectId = req.body.projectId;
+      if (!projectId) return res.status(400).json({ message: "projectId is required" });
+      const sop = await storage.createProjectSop({
+        projectId,
+        title: req.body.title,
+        content: req.body.content,
+        isActive: req.body.isActive ?? true,
+        createdBy: user.id,
+      });
+      res.status(201).json(sop);
+    } catch (error) {
+      console.error("Create SOP error:", error);
+      res.status(500).json({ message: "Failed to create SOP" });
+    }
+  });
+
+  app.get("/api/sops", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const projectId = req.query.projectId as string;
+      if (!projectId) return res.status(400).json({ message: "projectId query param is required" });
+      const sops = await storage.getProjectSops(projectId);
+      res.json(sops);
+    } catch (error) {
+      console.error("Get SOPs error:", error);
+      res.status(500).json({ message: "Failed to get SOPs" });
+    }
+  });
+
+  app.post("/api/facilities", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const { name, type, location, lat, lng, travelTimeMinutes, timezone } = req.body;
+      if (!name || !type) return res.status(400).json({ message: "name and type are required" });
+      const facility = await storage.createDirectoryFacility({
+        name,
+        type,
+        location: location || null,
+        lat: lat || "0",
+        lng: lng || "0",
+        travelTimeMinutes: travelTimeMinutes || null,
+        timezone: timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      });
+      res.status(201).json(facility);
+    } catch (error) {
+      console.error("Create facility error:", error);
+      res.status(500).json({ message: "Failed to create facility" });
+    }
+  });
+
+  app.get("/api/facilities", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const facilities = await storage.getDirectoryFacilities();
+      res.json(facilities);
+    } catch (error) {
+      console.error("Get facilities error:", error);
+      res.status(500).json({ message: "Failed to get facilities" });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
   // HEALTH CHECK & FEATURE FLAGS (Operations)
   // ──────────────────────────────────────────────────────────────────────────
 
@@ -4088,6 +4157,11 @@ If you're not confident about specific facilities, say so in the notes field. Al
         error: String(error),
       });
     }
+  });
+
+  // Public feature flags endpoint (read-only, any authenticated user)
+  app.get("/api/feature-flags", requireAuth, async (_req: Request, res: Response) => {
+    res.json(getFlagStatus());
   });
 
   app.get("/api/admin/feature-flags", requireRole("GOD"), async (_req: Request, res: Response) => {

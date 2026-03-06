@@ -8,6 +8,13 @@
       "when": 1772579358237,
       "tag": "0000_dark_guardsmen",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1741305600000,
+      "tag": "0001_add_table_citation",
+      "breakpoints": true
     }
   ]
 }
