@@ -18,6 +18,7 @@ import { isEnabled, setFlag, resetFlags, getFlagStatus } from "./feature-flags";
 import { pool, db } from "./storage";
 import { sql } from "drizzle-orm";
 import * as schema from "@shared/schema";
+import { authLimiter } from "./rate-limit";
 
 declare global {
   namespace Express {
@@ -147,7 +148,7 @@ export async function registerRoutes(
   // AUTH ROUTES
   // ──────────────────────────────────────────────────────────────────────────
 
-  app.post("/api/auth/register", async (req: Request, res: Response) => {
+  app.post("/api/auth/register", authLimiter, async (req: Request, res: Response) => {
     try {
       const data = registerSchema.parse(req.body);
       
@@ -182,7 +183,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/auth/login", passport.authenticate("local"), (req: Request, res: Response) => {
+  app.post("/api/auth/login", authLimiter, passport.authenticate("local"), (req: Request, res: Response) => {
     const user = getUser(req);
     // Explicit session save to ensure cookie is set reliably
     req.session.save((err) => {

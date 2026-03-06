@@ -2,8 +2,8 @@
 
 ## Issue #1: Missing OpenAI API Key (App Crash on Start)
 **Status:** ✅ RESOLVED  
-**Root Cause:** The `server/ai-drafting.ts` module initializes the OpenAI client at module load time. If `AI_INTEGRATIONS_OPENAI_API_KEY` is missing, the app crashes immediately with `Missing credentials. Please pass an apiKey`.  
-**Fix:** Added `AI_INTEGRATIONS_OPENAI_API_KEY` environment variable to the Azure Container App. Currently set to a placeholder — needs to be updated with a real key for AI features to work.
+**Root Cause:** The `server/ai-drafting.ts` module initializes the OpenAI client at module load time. If `OPENAI_API_KEY` is missing, the app crashes immediately with `Missing credentials. Please pass an apiKey`.  
+**Fix:** Added `OPENAI_API_KEY` environment variable to the Azure Container App.
 
 ## Issue #2: Missing `table.sql` for Session Store
 **Status:** ✅ RESOLVED  
@@ -53,7 +53,7 @@ The `BOOTSTRAP_SECRET` env var has been removed after setup, disabling the endpo
 - `SESSION_SECRET` — Session encryption secret
 - `NODE_ENV=production`
 - `PORT=5000`
-- `AI_INTEGRATIONS_OPENAI_API_KEY` — OpenAI API key (placeholder, needs real key)
+- `OPENAI_API_KEY` — OpenAI API key
 - `AZURE_STORAGE_ACCOUNT`, `AZURE_STORAGE_KEY`, `AZURE_STORAGE_CONTAINER` — Blob storage
 - `AZURE_SEARCH_ENDPOINT`, `AZURE_SEARCH_ADMIN_KEY` — Azure AI Search
 
@@ -65,6 +65,6 @@ The `BOOTSTRAP_SECRET` env var has been removed after setup, disabling the endpo
 | diver2 | DIVER | `diver2` / `diver123` |
 
 ## Remaining Items
-- [ ] Update `AI_INTEGRATIONS_OPENAI_API_KEY` with a real OpenAI API key for AI drafting features
+- [x] `OPENAI_API_KEY` is now the canonical env var for OpenAI (AI_INTEGRATIONS_OPENAI_API_KEY removed)
 - [ ] Create a real project and test dive logging end-to-end
 - [ ] Consider removing the `/api/bootstrap` endpoint code after initial setup is complete

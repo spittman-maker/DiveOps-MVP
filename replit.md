@@ -61,14 +61,14 @@ Preferred communication style: Simple, everyday language.
 - **PostgreSQL**: Primary data storage, configured via `DATABASE_URL`.
 
 ### AI Services
-- **OpenAI API**: Integrated for various AI functionalities through Replit AI Integrations.
-  - Environment Variables: `AI_INTEGRATIONS_OPENAI_API_KEY`, `AI_INTEGRATIONS_OPENAI_BASE_URL`.
+- **OpenAI API**: Integrated for various AI functionalities.
+  - Environment Variables: `OPENAI_API_KEY`, `OPENAI_BASE_URL`.
 
 ### Environment Variables
 - `DATABASE_URL`
 - `SESSION_SECRET`
-- `AI_INTEGRATIONS_OPENAI_API_KEY`
-- `AI_INTEGRATIONS_OPENAI_BASE_URL`
+- `OPENAI_API_KEY`
+- `OPENAI_BASE_URL`
 - `OPENWEATHER_API_KEY` (for weather data)
 
 ### Session Storage

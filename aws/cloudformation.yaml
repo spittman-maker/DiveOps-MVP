@@ -153,9 +153,9 @@ Resources:
               Value: !Ref SessionSecret
             - Name: OPENWEATHER_API_KEY
               Value: !Ref OpenWeatherApiKey
-            - Name: AI_INTEGRATIONS_OPENAI_API_KEY
+            - Name: OPENAI_API_KEY
               Value: !Ref OpenAIApiKey
-            - Name: AI_INTEGRATIONS_OPENAI_BASE_URL
+            - Name: OPENAI_BASE_URL
               Value: https://api.openai.com/v1
           LogConfiguration:
             LogDriver: awslogs

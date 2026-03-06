@@ -14,8 +14,8 @@ process.env.NODE_ENV = 'test';
 process.env.DATABASE_URL = process.env.TEST_DATABASE_URL || 'postgresql://test:test@localhost:5432/diveops_test';
 
 // Mock OpenAI API key for AI tests
-process.env.AI_INTEGRATIONS_OPENAI_API_KEY = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || 'test-api-key';
-process.env.AI_INTEGRATIONS_OPENAI_BASE_URL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || 'https://api.openai.com/v1';
+process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'test-api-key';
+process.env.OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
 
 // Increase timeout for integration tests
 vi.setConfig({

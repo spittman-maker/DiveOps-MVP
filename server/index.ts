@@ -1,11 +1,14 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
+import cookieParser from "cookie-parser";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { passport } from "./auth";
 import { registerChatRoutes } from "./replit_integrations/chat";
+import { csrfProtection } from "./csrf";
+import { apiLimiter } from "./rate-limit";
 import { startPeriodicSweep } from "./sweep";
 
 process.on("uncaughtException", (err) => {
@@ -48,6 +51,7 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+app.use(cookieParser());
 
 const PgSession = connectPgSimple(session);
 
@@ -84,6 +88,12 @@ app.use(
 // Passport middleware
 app.use(passport.initialize());
 app.use(passport.session());
+
+// Rate limiting on all API routes
+app.use("/api", apiLimiter);
+
+// CSRF protection for state-changing requests
+app.use("/api", csrfProtection);
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

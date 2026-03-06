@@ -71,8 +71,7 @@ Once you have a project and day, you can test:
 
 ### Environment Variables Configured
 - `OPENWEATHER_API_KEY`: ✅ Active
-- `AI_INTEGRATIONS_OPENAI_API_KEY`: ✅ Active
-- `OPENAI_API_KEY`: ✅ Active (backup)
+- `OPENAI_API_KEY`: ✅ Active
 
 ### Container Status
 - **Revision**: `diveops-mvp--v1772662590`
