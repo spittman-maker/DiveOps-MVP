@@ -47,7 +47,9 @@ const DIVE_OP_PATTERNS = [
   /\bleaving\s*bottom/i,
   /\bleft\s*bottom/i,
   /\breached?\s*bottom/i,
+  /\bbreached\s*bottom/i,
   /\breached?\s*surface/i,
+  /\bbreached\s*surface/i,
   /\bsurfaced?\b/i,
   /\bmark\s*time/i,
   /\bdiver\s*(up|down)/i,
@@ -75,6 +77,7 @@ const DIRECTIVE_PATTERNS = [
 ];
 
 const CONFLICTING_DIRECTION_PATTERNS = [
+  /\bcontradictory\b/i,  // Bug fix #3
   /\bconflict/i,
   /\bcontradicts?\b/i,
   /\bopposite\b/i,
@@ -345,10 +348,11 @@ function extractDiverNames(rawText: string): { names: string[]; initials: string
 
 function extractTaskDescription(rawText: string): string | undefined {
   let text = rawText
-    .replace(/^\d{3,4}\s*/, '')
-    .replace(/\b(?:L\/?S|R\/?S|R\/?B|L\/?B)\b\s*/gi, '')
-    .replace(/\b(?:Diver\s+)?(?:[A-Z]\.\s*[A-Z][a-z]+|[A-Z][a-z]+\s+[A-Z][a-z]+)\b/g, '')
-    .replace(/\b[A-Z]{2,3}\b/g, (m) => {
+    .replace(/^\d{3,4}\s*/, '')  // Remove leading time (e.g., "0830 ")
+    .replace(/\b\d{3,4}\s*/g, '')  // Remove time anywhere (e.g., "0830 ") - Bug fix #4
+    .replace(/\b(?:L\/?S|R\/?S|R\/?B|L\/?B)\b\s*/gi, '')  // Remove LS/LB/RS/RB
+    .replace(/\b(?:Diver\s+)?(?:[A-Z]\.\s*[A-Z][a-z]+|[A-Z][a-z]+\s+[A-Z][a-z]+)\b/g, '')  // Remove diver names
+    .replace(/\b[A-Z]{2,3}\b/g, (m) => {  // Remove initials (except certain abbreviations)
       const skip = new Set(["FSW","PSI","DCS","PFU","QC","QA","ID","OK","TBD","GDS","ATC","LWT","AIS","DRA"]);
       return skip.has(m) ? m : '';
     })

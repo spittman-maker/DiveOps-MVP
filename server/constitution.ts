@@ -30,6 +30,8 @@ export const DIVE_TABLE_PROHIBITION = {
 // TIMESTAMP RULES
 // ────────────────────────────────────────────────────────────────────────────
 
+// Bug fix #8: TIMESTAMP_REGEX matches standalone 24-hour timestamps (HHMM)
+// Word boundaries ensure we don't match timestamps embedded in words
 export const TIMESTAMP_REGEX = /\b([01]\d|2[0-3])[0-5]\d\b/;
 
 export const TIMESTAMP_RULES = {

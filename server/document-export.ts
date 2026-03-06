@@ -170,6 +170,7 @@ function formatTime(date: Date | string | null): string {
 function deriveInitialsFromDisplayName(displayName: string | null | undefined): string | undefined {
   if (!displayName) return undefined;
   const name = displayName.trim();
+  if (!name) return undefined;  // Bug fix #10: Handle whitespace-only input
   if (name.length <= 3 && /^[A-Z]{2,3}$/i.test(name)) return name.toUpperCase();
   const parts = name.split(/[\s.]+/).filter(Boolean);
   if (parts.length >= 2) {
