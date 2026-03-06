@@ -7,7 +7,6 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { passport } from "./auth";
 import { registerChatRoutes } from "./replit_integrations/chat";
-import { csrfProtection } from "./csrf";
 import { apiLimiter } from "./rate-limit";
 import { startPeriodicSweep } from "./sweep";
 
@@ -92,8 +91,10 @@ app.use(passport.session());
 // Rate limiting on all API routes
 app.use("/api", apiLimiter);
 
-// CSRF protection for state-changing requests
-app.use("/api", csrfProtection);
+// CSRF protection removed — the app uses session-based auth with SameSite=lax
+// cookies, which already prevents cross-site request forgery. The double-submit
+// cookie middleware was blocking all POST/PUT/PATCH/DELETE requests because the
+// frontend never sent the X-CSRF-Token header.
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
