@@ -417,6 +417,7 @@ interface DiveWithUser {
   scheduleUsed?: string | null;
   decompRequired?: string | null;
   decompStops?: string | null;
+  tableCitation?: string | null;
   station?: string | null;
   toolsEquipment?: string | null;
   postDiveStatus?: string | null;
@@ -525,6 +526,12 @@ async function generateDailyLogDocPure(
         ["Station", (dive as any).station || "-"],
         ["Post-Dive Status", (dive as any).postDiveStatus || "-"],
       );
+      if ((dive as any).tableCitation) {
+        try {
+          const cit = typeof (dive as any).tableCitation === 'string' ? JSON.parse((dive as any).tableCitation) : (dive as any).tableCitation;
+          diveFields.push(["Reference", `USN Diving Manual ${cit.manualRevision}, Table ${cit.tableNumber} (p. ${cit.chapterPage})`]);
+        } catch { /* skip */ }
+      }
       if ((dive as any).notes) {
         diveFields.push(["Notes", (dive as any).notes]);
       }
@@ -772,6 +779,12 @@ async function generateMasterLogDocPure(
         ["Station", dive.station || "-"],
         ["Post-Dive Status", dive.postDiveStatus || "-"],
       ];
+      if ((dive as any).tableCitation) {
+        try {
+          const cit = typeof (dive as any).tableCitation === 'string' ? JSON.parse((dive as any).tableCitation) : (dive as any).tableCitation;
+          diveFields.push(["Reference", `USN Diving Manual ${cit.manualRevision}, Table ${cit.tableNumber} (p. ${cit.chapterPage})`]);
+        } catch { /* skip */ }
+      }
       if (dive.notes) {
         diveFields.push(["Notes", dive.notes]);
       }
@@ -843,6 +856,14 @@ async function generateDiveLogDoc(
 
   if (dive.decompStops) {
     diveFields.push({ label: "Decomp Stops", value: dive.decompStops });
+  }
+
+  // Citation from USN Diving Manual
+  if (dive.tableCitation) {
+    try {
+      const cit = typeof dive.tableCitation === 'string' ? JSON.parse(dive.tableCitation) : dive.tableCitation;
+      diveFields.push({ label: "Reference", value: `USN Diving Manual ${cit.manualRevision}, Table ${cit.tableNumber} (p. ${cit.chapterPage})` });
+    } catch { /* skip if unparseable */ }
   }
 
   diveFields.push(

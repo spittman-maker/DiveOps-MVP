@@ -263,7 +263,7 @@ describe('Document Export Unit Tests', () => {
     }
 
     it('should format date correctly', () => {
-      const date = new Date('2024-01-15');
+      const date = new Date('2024-01-15T12:00:00');
       const formatted = formatDateForDocument(date);
       expect(formatted).toContain('January');
       expect(formatted).toContain('15');

@@ -46,6 +46,7 @@ interface Dive {
   decompRequired?: string;
   decompMethod?: string;
   decompStops?: string;
+  tableCitation?: string;
   postDiveStatus?: string;
   photoVideoRefs?: string;
   supervisorInitials?: string;
@@ -787,6 +788,17 @@ export function DiveLogsTab() {
                                 {dive.decompStops}
                               </div>
                             )}
+                            {/* Citation from USN Diving Manual */}
+                            {dive.tableCitation && (() => {
+                              try {
+                                const cit = typeof dive.tableCitation === 'string' ? JSON.parse(dive.tableCitation) : dive.tableCitation;
+                                return (
+                                  <div className="mt-1.5 text-[9px] text-navy-500 border-t border-navy-700/30 pt-1">
+                                    <span className="text-navy-400">Ref:</span> USN Diving Manual {cit.manualRevision}, Table {cit.tableNumber} (p. {cit.chapterPage})
+                                  </div>
+                                );
+                              } catch { return null; }
+                            })()}
                           </div>
                         ) : (
                           <Button

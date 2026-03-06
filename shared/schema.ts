@@ -359,6 +359,7 @@ export const dives = pgTable("dives", {
   decompRequired: text("decomp_required").$type<"Y" | "N" | "UNKNOWN">(),
   decompMethod: text("decomp_method"),
   decompStops: text("decomp_stops"),
+  tableCitation: text("table_citation"),
   postDiveStatus: text("post_dive_status"),
   photoVideoRefs: text("photo_video_refs"),
   supervisorInitials: text("supervisor_initials"),

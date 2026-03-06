@@ -1421,12 +1421,12 @@ export async function registerRoutes(
           const fo2 = d.fo2Percent ?? (d.breathingGas === "Air" ? 21 : null);
           const result = lookupDiveTable(d.maxDepthFsw, bottomTimeMinutes, d.breathingGas, fo2 ?? undefined);
           await storage.updateDive(diveId, {
-            eadFsw: result.eadFsw ?? null,
             tableUsed: result.tableUsed,
             scheduleUsed: result.scheduleUsed,
             repetitiveGroup: result.repetitiveGroup,
-            decompRequired: result.decompRequired,
-            decompStops: result.decompStops,
+            decompRequired: result.decompRequired === "YES" ? "Y" : "N",
+            decompStops: result.decompStops?.length ? JSON.stringify(result.decompStops) : null,
+            tableCitation: JSON.stringify(result.citation),
           });
         } catch (err) {
           console.error("Auto-compute table failed:", err);
@@ -1678,12 +1678,12 @@ export async function registerRoutes(
               const fo2 = d.fo2Percent ?? (d.breathingGas === "Air" ? 21 : null);
               const result = lookupDiveTable(d.maxDepthFsw, btMin, d.breathingGas, fo2 ?? undefined);
               await storage.updateDive(d.id, {
-                eadFsw: result.eadFsw ?? null,
                 tableUsed: result.tableUsed,
                 scheduleUsed: result.scheduleUsed,
                 repetitiveGroup: result.repetitiveGroup,
-                decompRequired: result.decompRequired,
-                decompStops: result.decompStops,
+                decompRequired: result.decompRequired === "YES" ? "Y" : "N",
+                decompStops: result.decompStops?.length ? JSON.stringify(result.decompStops) : null,
+                tableCitation: JSON.stringify(result.citation),
               });
             } catch {}
           }
@@ -1942,7 +1942,7 @@ export async function registerRoutes(
         "maxDepthFsw", "taskSummary", "toolsEquipment", "installMaterialIds",
         "qcDisposition", "verifier", "breathingGas", "fo2Percent", "eadFsw",
         "tableUsed", "scheduleUsed", "repetitiveGroup",
-        "decompRequired", "decompMethod", "decompStops",
+        "decompRequired", "decompMethod", "decompStops", "tableCitation",
         "postDiveStatus", "photoVideoRefs", "supervisorInitials", "notes",
         "lsTime", "rbTime", "lbTime", "rsTime",
       ];
@@ -2069,12 +2069,12 @@ export async function registerRoutes(
       const updates: Record<string, any> = {
         breathingGas,
         fo2Percent: fo2Percent ?? null,
-        eadFsw: result.eadFsw ?? null,
         tableUsed: result.tableUsed,
         scheduleUsed: result.scheduleUsed,
         repetitiveGroup: result.repetitiveGroup,
-        decompRequired: result.decompRequired,
-        decompStops: result.decompStops,
+        decompRequired: result.decompRequired === "YES" ? "Y" : "N",
+        decompStops: result.decompStops?.length ? JSON.stringify(result.decompStops) : null,
+        tableCitation: JSON.stringify(result.citation),
       };
 
       const updated = await storage.updateDive(req.params.id, updates);
