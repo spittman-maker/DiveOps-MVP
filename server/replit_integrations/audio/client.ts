@@ -6,9 +6,16 @@ import { randomUUID } from "crypto";
 import { tmpdir } from "os";
 import { join } from "path";
 
+// Primary client uses configured base URL (may be a proxy)
 export const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
   baseURL: process.env.OPENAI_BASE_URL || undefined,
+});
+
+// Direct OpenAI client for audio operations that may not be supported by proxy
+const directOpenai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  baseURL: "https://api.openai.com/v1",
 });
 
 export type AudioFormat = "wav" | "mp3" | "webm" | "mp4" | "ogg" | "unknown";
@@ -242,40 +249,63 @@ export async function textToSpeechStream(
 
 /**
  * Speech-to-Text: Transcribes audio using dedicated transcription model.
- * Uses gpt-4o-mini-transcribe for accurate transcription.
+ * Tries gpt-4o-mini-transcribe first, falls back to whisper-1.
  */
 export async function speechToText(
   audioBuffer: Buffer,
   format: "wav" | "mp3" | "webm" = "wav"
 ): Promise<string> {
   const file = await toFile(audioBuffer, `audio.${format}`);
-  const response = await openai.audio.transcriptions.create({
-    file,
-    model: "gpt-4o-mini-transcribe",
-  });
-  return response.text;
+  try {
+    const response = await directOpenai.audio.transcriptions.create({
+      file,
+      model: "gpt-4o-mini-transcribe",
+    });
+    return response.text;
+  } catch (err) {
+    console.warn("gpt-4o-mini-transcribe failed, falling back to whisper-1:", (err as Error).message);
+    const fallbackFile = await toFile(audioBuffer, `audio.${format}`);
+    const response = await directOpenai.audio.transcriptions.create({
+      file: fallbackFile,
+      model: "whisper-1",
+    });
+    return response.text;
+  }
 }
 
 /**
  * Streaming Speech-to-Text: Transcribes audio with real-time streaming.
- * Uses gpt-4o-mini-transcribe for accurate transcription.
+ * Tries streaming with gpt-4o-mini-transcribe, falls back to non-streaming whisper-1.
  */
 export async function speechToTextStream(
   audioBuffer: Buffer,
   format: "wav" | "mp3" | "webm" = "wav"
 ): Promise<AsyncIterable<string>> {
-  const file = await toFile(audioBuffer, `audio.${format}`);
-  const stream = await openai.audio.transcriptions.create({
-    file,
-    model: "gpt-4o-mini-transcribe",
-    stream: true,
-  });
+  try {
+    const file = await toFile(audioBuffer, `audio.${format}`);
+    const stream = await directOpenai.audio.transcriptions.create({
+      file,
+      model: "gpt-4o-mini-transcribe",
+      stream: true,
+    });
 
-  return (async function* () {
-    for await (const event of stream) {
-      if (event.type === "transcript.text.delta") {
-        yield event.delta;
+    return (async function* () {
+      for await (const event of stream) {
+        if (event.type === "transcript.text.delta") {
+          yield event.delta;
+        }
       }
-    }
-  })();
+    })();
+  } catch (err) {
+    console.warn("Streaming transcription failed, falling back to whisper-1:", (err as Error).message);
+    // Fallback: non-streaming whisper-1, yield entire result at once
+    const fallbackFile = await toFile(audioBuffer, `audio.${format}`);
+    const response = await directOpenai.audio.transcriptions.create({
+      file: fallbackFile,
+      model: "whisper-1",
+    });
+    return (async function* () {
+      yield response.text;
+    })();
+  }
 }

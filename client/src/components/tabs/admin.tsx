@@ -475,6 +475,26 @@ export function AdminTab() {
   const [editFacilityOpen, setEditFacilityOpen] = useState(false);
   const [selectedFacility, setSelectedFacility] = useState<DirectoryFacility | null>(null);
 
+  const [browserGeo, setBrowserGeo] = useState<{ lat: string; lng: string; tz: string }>({ lat: "", lng: "", tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York" });
+  
+  // Bug #8: Auto-populate lat/lng and timezone from browser
+  useEffect(() => {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York";
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setBrowserGeo({ lat: String(pos.coords.latitude), lng: String(pos.coords.longitude), tz });
+        },
+        () => {
+          setBrowserGeo((prev) => ({ ...prev, tz }));
+        },
+        { timeout: 5000 }
+      );
+    } else {
+      setBrowserGeo((prev) => ({ ...prev, tz }));
+    }
+  }, []);
+  
   const [projectForm, setProjectForm] = useState({
     name: "",
     clientName: "",
@@ -482,7 +502,7 @@ export function AdminTab() {
     jobsiteAddress: "",
     jobsiteLat: "",
     jobsiteLng: "",
-    timezone: "America/New_York",
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York",
   });
 
   const [userForm, setUserForm] = useState({
@@ -500,6 +520,8 @@ export function AdminTab() {
     address: "",
     phone: "",
     travelTimeMinutes: "",
+    lat: "",
+    lng: "",
   });
 
   const [addMemberUserId, setAddMemberUserId] = useState("");
@@ -551,13 +573,20 @@ export function AdminTab() {
         credentials: "include",
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to create project");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Failed to create project" }));
+        throw new Error(err.message || "Failed to create project");
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       setCreateProjectOpen(false);
       resetProjectForm();
+      toast({ title: "Project created successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error?.message || "Failed to create project", variant: "destructive" });
     },
   });
 
@@ -618,13 +647,20 @@ export function AdminTab() {
         credentials: "include",
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to create user");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Failed to create user" }));
+        throw new Error(err.message || "Failed to create user");
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       setCreateUserOpen(false);
       resetUserForm();
+      toast({ title: "User created successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error?.message || "Failed to create user", variant: "destructive" });
     },
   });
 
@@ -654,13 +690,20 @@ export function AdminTab() {
         credentials: "include",
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to create facility");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Failed to create facility" }));
+        throw new Error(err.message || "Failed to create facility");
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["directory-facilities"] });
       setCreateFacilityOpen(false);
       resetFacilityForm();
+      toast({ title: "Facility added successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error?.message || "Failed to create facility", variant: "destructive" });
     },
   });
 
@@ -702,7 +745,10 @@ export function AdminTab() {
         credentials: "include",
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to create SOP");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Failed to create SOP" }));
+        throw new Error(err.message || "Failed to create SOP");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -710,6 +756,9 @@ export function AdminTab() {
       setSopDialogOpen(false);
       setSopForm({ title: "", content: "" });
       toast({ title: "SOP created" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error?.message || "Failed to create SOP", variant: "destructive" });
     },
   });
 
@@ -721,7 +770,10 @@ export function AdminTab() {
         credentials: "include",
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to update SOP");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Failed to update SOP" }));
+        throw new Error(err.message || "Failed to update SOP");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -731,6 +783,9 @@ export function AdminTab() {
       setSopForm({ title: "", content: "" });
       toast({ title: "SOP updated" });
     },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error?.message || "Failed to update SOP", variant: "destructive" });
+    },
   });
 
   const deleteSopMutation = useMutation({
@@ -739,12 +794,18 @@ export function AdminTab() {
         method: "DELETE",
         credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to delete SOP");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Failed to delete SOP" }));
+        throw new Error(err.message || "Failed to delete SOP");
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["project-sops"] });
       toast({ title: "SOP deleted" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error?.message || "Failed to delete SOP", variant: "destructive" });
     },
   });
 
@@ -765,7 +826,7 @@ export function AdminTab() {
   });
 
   function resetProjectForm() {
-    setProjectForm({ name: "", clientName: "", jobsiteName: "", jobsiteAddress: "", jobsiteLat: "", jobsiteLng: "", timezone: "America/New_York" });
+    setProjectForm({ name: "", clientName: "", jobsiteName: "", jobsiteAddress: "", jobsiteLat: browserGeo.lat, jobsiteLng: browserGeo.lng, timezone: browserGeo.tz });
   }
 
   function resetUserForm() {
@@ -773,7 +834,7 @@ export function AdminTab() {
   }
 
   function resetFacilityForm() {
-    setFacilityForm({ name: "", facilityType: "chamber", address: "", phone: "", travelTimeMinutes: "" });
+    setFacilityForm({ name: "", facilityType: "chamber", address: "", phone: "", travelTimeMinutes: "", lat: browserGeo.lat, lng: browserGeo.lng });
   }
 
   function openEditProject(project: Project) {
@@ -842,6 +903,8 @@ export function AdminTab() {
     const payload: Record<string, any> = {
       ...facilityForm,
       travelTimeMinutes: facilityForm.travelTimeMinutes ? parseInt(facilityForm.travelTimeMinutes) : undefined,
+      lat: facilityForm.lat || browserGeo.lat || "0",
+      lng: facilityForm.lng || browserGeo.lng || "0",
     };
     if (isCreate) {
       createFacilityMutation.mutate(payload);

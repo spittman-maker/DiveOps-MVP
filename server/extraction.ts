@@ -376,60 +376,72 @@ export function extractData(rawText: string): ExtractedData {
   if (names.length > 0) extracted.diverNames = names;
   if (initials.length > 0) extracted.diverInitials = initials;
   
-  for (const pattern of LS_SYNONYMS) {
-    if (pattern.test(rawText)) {
-      extracted.diveOperation = "ls";
-      break;
-    }
-  }
-  if (!extracted.diveOperation) {
-    for (const pattern of RB_SYNONYMS) {
-      if (pattern.test(rawText)) {
-        extracted.diveOperation = "rb";
-        break;
-      }
-    }
-  }
-  if (!extracted.diveOperation) {
-    for (const pattern of LB_SYNONYMS) {
-      if (pattern.test(rawText)) {
-        extracted.diveOperation = "lb";
-        break;
-      }
-    }
-  }
-  if (!extracted.diveOperation) {
-    for (const pattern of RS_SYNONYMS) {
-      if (pattern.test(rawText)) {
-        extracted.diveOperation = "rs";
-        break;
-      }
-    }
-  }
+  // Bug 15: Detect ALL dive operations present in the text, not just the first one.
+  // This handles notes like "L/S 0830, R/B 0835, L/B 0910, R/S 0915"
+  const hasLS = LS_SYNONYMS.some(p => p.test(rawText));
+  const hasRB = RB_SYNONYMS.some(p => p.test(rawText));
+  const hasLB = LB_SYNONYMS.some(p => p.test(rawText));
+  const hasRS = RS_SYNONYMS.some(p => p.test(rawText));
   
-  if (/\bL\/?S\b/i.test(rawText) && !extracted.diveOperation) {
-    extracted.diveOperation = "ls";
-  }
-  if (/\bR\/?B\b/i.test(rawText) && !extracted.diveOperation) {
-    extracted.diveOperation = "rb";
-  }
-  if (/\bL\/?B\b/i.test(rawText) && !extracted.diveOperation) {
-    extracted.diveOperation = "lb";
-  }
-  if (/\bR\/?S\b/i.test(rawText) && !extracted.diveOperation) {
-    extracted.diveOperation = "rs";
-  }
+  // Determine the primary operation (last one mentioned for single-event classification)
+  if (hasRS) extracted.diveOperation = "rs";
+  else if (hasLB) extracted.diveOperation = "lb";
+  else if (hasRB) extracted.diveOperation = "rb";
+  else if (hasLS) extracted.diveOperation = "ls";
   
+  // Try to extract times associated with each operation keyword
+  // Look for time patterns near each keyword
   const timeMatches = Array.from(rawText.matchAll(TIME_PATTERN));
-  if (timeMatches.length > 0) {
-    const firstTime = timeMatches[0];
-    const timeStr = `${firstTime[1].padStart(2, '0')}:${firstTime[2]}`;
-    
+  
+  // Helper: find the time closest to a keyword match
+  const findTimeNearKeyword = (patterns: RegExp[]): string | undefined => {
+    for (const pattern of patterns) {
+      const kwMatch = rawText.match(pattern);
+      if (!kwMatch || kwMatch.index === undefined) continue;
+      const kwPos = kwMatch.index;
+      
+      // Find the closest time match to this keyword (within 20 chars)
+      let bestTime: string | undefined;
+      let bestDist = Infinity;
+      for (const tm of timeMatches) {
+        if (tm.index === undefined) continue;
+        const dist = Math.abs(tm.index - kwPos);
+        if (dist < bestDist && dist < 30) {
+          bestDist = dist;
+          bestTime = `${tm[1].padStart(2, '0')}:${tm[2]}`;
+        }
+      }
+      if (bestTime) return bestTime;
+    }
+    return undefined;
+  };
+  
+  // Extract times for each detected operation
+  if (hasLS) {
+    const t = findTimeNearKeyword(LS_SYNONYMS);
+    if (t) extracted.lsTime = t;
+  }
+  if (hasRB) {
+    const t = findTimeNearKeyword(RB_SYNONYMS);
+    if (t) extracted.rbTime = t;
+  }
+  if (hasLB) {
+    const t = findTimeNearKeyword(LB_SYNONYMS);
+    if (t) extracted.lbTime = t;
+  }
+  if (hasRS) {
+    const t = findTimeNearKeyword(RS_SYNONYMS);
+    if (t) extracted.rsTime = t;
+  }
+  
+  // Fallback: if only one operation and one time, assign it
+  if (timeMatches.length > 0 && extracted.diveOperation) {
+    const firstTimeStr = `${timeMatches[0][1].padStart(2, '0')}:${timeMatches[0][2]}`;
     switch (extracted.diveOperation) {
-      case "ls": extracted.lsTime = timeStr; break;
-      case "rb": extracted.rbTime = timeStr; break;
-      case "lb": extracted.lbTime = timeStr; break;
-      case "rs": extracted.rsTime = timeStr; break;
+      case "ls": if (!extracted.lsTime) extracted.lsTime = firstTimeStr; break;
+      case "rb": if (!extracted.rbTime) extracted.rbTime = firstTimeStr; break;
+      case "lb": if (!extracted.lbTime) extracted.lbTime = firstTimeStr; break;
+      case "rs": if (!extracted.rsTime) extracted.rsTime = firstTimeStr; break;
     }
   }
   

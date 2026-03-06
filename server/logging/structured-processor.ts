@@ -140,7 +140,15 @@ export async function processStructuredLog(
   
   // 2) Build deterministic LLM input
   const today = meta?.date || new Date().toISOString().split("T")[0];
-  const window = meta?.window || "0600–0559";
+  // Bug #9: Don't force a 6-6 / 24-hour schedule. Derive window from actual events.
+  let window = meta?.window || "";
+  if (!window && prep.directives.length > 0) {
+    const times = prep.directives.map(e => e.time).filter(Boolean).sort();
+    if (times.length > 0) {
+      window = `${times[0]}–${times[times.length - 1]}`;
+    }
+  }
+  if (!window) window = "0000–2359";
   const modelInput = buildModelInputPacket(prep, { date: today, window });
   
   let systemPrompt = STRUCTURED_LOG_PROMPT;

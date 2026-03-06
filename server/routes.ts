@@ -93,7 +93,17 @@ const registerSchema = z.object({
   role: z.enum(["GOD", "ADMIN", "SUPERVISOR", "DIVER"]),
   fullName: z.string().optional(),
   initials: z.string().max(3).optional(),
-  email: z.string().email().optional(),
+  email: z.string().email().optional().or(z.literal("")),
+});
+
+// More lenient schema for admin-created users
+const adminCreateUserSchema = z.object({
+  username: z.string().min(3).max(50),
+  password: z.string().min(1),
+  role: z.enum(["GOD", "ADMIN", "SUPERVISOR", "DIVER"]),
+  fullName: z.string().optional(),
+  initials: z.string().max(3).optional(),
+  email: z.string().email().optional().or(z.literal("")),
 });
 
 const logEventSchema = z.object({
@@ -370,6 +380,8 @@ export async function registerRoutes(
             { id: "w2", type: "active_dives", title: "Active Dives", x: 2, y: 0, w: 2, h: 2 },
             { id: "w3", type: "recent_logs", title: "Recent Log Entries", x: 0, y: 2, w: 2, h: 2 },
             { id: "w4", type: "safety_incidents", title: "Safety Status", x: 2, y: 2, w: 2, h: 1 },
+            { id: "w5", type: "diver_certs", title: "Diver Certifications", x: 0, y: 4, w: 2, h: 2 },
+            { id: "w6", type: "equipment_certs", title: "Equipment Certifications", x: 2, y: 4, w: 2, h: 2 },
           ],
           version: 1,
         });
@@ -654,10 +666,23 @@ export async function registerRoutes(
 
   app.post("/api/projects", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
-      const project = await storage.createProject(req.body);
+      const { name, clientName, jobsiteName, jobsiteAddress, jobsiteLat, jobsiteLng, timezone } = req.body;
+      if (!name || !name.trim()) {
+        return res.status(400).json({ message: "Project name is required" });
+      }
+      const project = await storage.createProject({
+        name: name.trim(),
+        clientName: clientName || null,
+        jobsiteName: jobsiteName || null,
+        jobsiteAddress: jobsiteAddress || null,
+        jobsiteLat: jobsiteLat || null,
+        jobsiteLng: jobsiteLng || null,
+        timezone: timezone || "America/New_York",
+      });
       res.status(201).json(project);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to create project" });
+    } catch (error: any) {
+      console.error("Create project error:", error);
+      res.status(500).json({ message: error?.message || "Failed to create project" });
     }
   });
 
@@ -707,21 +732,26 @@ export async function registerRoutes(
   });
 
   app.post("/api/projects/:projectId/days", requireRole("SUPERVISOR", "ADMIN", "GOD"), requireProjectAccess(), async (req: Request, res: Response) => {
-    const user = getUser(req);
-    const date = req.body.date || getTodayDate();
-    
-    // Auto-generate shift number for this date
-    const shiftCount = await storage.getShiftCountForDate(req.params.projectId, date);
-    const shiftNumber = String(shiftCount + 1);
-    
-    const day = await storage.createDay({
-      projectId: req.params.projectId,
-      date,
-      shift: shiftNumber,
-      status: "DRAFT",
-      createdBy: user.id,
-    });
-    res.status(201).json(day);
+    try {
+      const user = getUser(req);
+      const date = req.body.date || getTodayDate();
+      
+      // Auto-generate shift number for this date
+      const shiftCount = await storage.getShiftCountForDate(req.params.projectId, date);
+      const shiftNumber = String(shiftCount + 1);
+      
+      const day = await storage.createDay({
+        projectId: req.params.projectId,
+        date,
+        shift: shiftNumber,
+        status: "DRAFT",
+        createdBy: user.id,
+      });
+      res.status(201).json(day);
+    } catch (error: any) {
+      console.error("Create day error:", error);
+      res.status(500).json({ message: error?.message || "Failed to create new day" });
+    }
   });
 
   app.patch("/api/days/:id", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
@@ -961,6 +991,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/days/:id/reopen", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
     const user = getUser(req);
     const day = await storage.getDay(req.params.id);
     if (!day) return res.status(404).json({ message: "Day not found" });
@@ -1012,6 +1043,10 @@ export async function registerRoutes(
     });
     
     res.json(reopened);
+    } catch (error: any) {
+      console.error("Reopen day error:", error);
+      res.status(500).json({ message: error?.message || "Failed to reopen day" });
+    }
   });
 
   // Check midnight status
@@ -1260,7 +1295,7 @@ export async function registerRoutes(
                   category: "operational",
                   source: isDirective ? "client_directive" : "field_observation",
                   affectedTask: (risk as any).affected_task || null,
-                  initialRiskLevel: "med",
+                  initialRiskLevel: (risk as any).risk_level || "med",
                   status: "open",
                   owner: (risk as any).owner || null,
                 });
@@ -1399,8 +1434,9 @@ export async function registerRoutes(
       async function autoComputeDiveTable(diveId: string) {
         try {
           const d = await storage.getDive(diveId);
-          if (!d || !d.maxDepthFsw || !d.breathingGas || !d.lsTime) return;
-          if (d.tableUsed) return; // already computed
+          if (!d || !d.maxDepthFsw || !d.lsTime) return;
+          // Default to Air if no breathing gas set
+          const breathingGas = d.breathingGas || "Air";
           
           let bottomTimeMinutes: number | null = null;
           if (d.lbTime) {
@@ -1418,8 +1454,8 @@ export async function registerRoutes(
           }
           if (!bottomTimeMinutes || bottomTimeMinutes <= 0) return;
           
-          const fo2 = d.fo2Percent ?? (d.breathingGas === "Air" ? 21 : null);
-          const result = lookupDiveTable(d.maxDepthFsw, bottomTimeMinutes, d.breathingGas, fo2 ?? undefined);
+          const fo2 = d.fo2Percent ?? (breathingGas === "Air" ? 21 : null);
+          const result = lookupDiveTable(d.maxDepthFsw, bottomTimeMinutes, breathingGas, fo2 ?? undefined);
           await storage.updateDive(diveId, {
             tableUsed: result.tableUsed,
             scheduleUsed: result.scheduleUsed,
@@ -2026,7 +2062,19 @@ export async function registerRoutes(
         }
       }
       
-      res.json(updated);
+      // Bug #10: Recompute dive table when depth or time fields change
+      const recomputeFields = ["maxDepthFsw", "lsTime", "rbTime", "lbTime", "rsTime", "breathingGas", "fo2Percent"];
+      if (recomputeFields.some(f => updates[f] !== undefined)) {
+        try {
+          await autoComputeDiveTable(dive.id);
+        } catch (e) {
+          console.warn("Auto-compute dive table after edit failed:", e);
+        }
+      }
+      
+      // Re-fetch after potential table recomputation
+      const finalDive = await storage.getDive(req.params.id);
+      res.json(finalDive || updated);
     } catch (error: any) {
       if (error?.message?.startsWith("VERSION_CONFLICT")) {
         return res.status(409).json({ message: error.message, code: "VERSION_CONFLICT" });
@@ -3140,15 +3188,24 @@ If you're not confident about specific facilities, say so in the notes field. Al
   });
 
   app.post("/api/directory-facilities", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
-    const user = getUser(req);
-    
-    const facility = await storage.createDirectoryFacility({
-      ...req.body,
-      verifiedBy: user.id,
-      lastVerifiedAt: new Date(),
-    });
-    
-    res.status(201).json(facility);
+    try {
+      const user = getUser(req);
+      
+      // Provide defaults for lat/lng if not supplied (Bug #4 & #8)
+      const body = {
+        ...req.body,
+        lat: req.body.lat || "0",
+        lng: req.body.lng || "0",
+        verifiedBy: user.id,
+        lastVerifiedAt: new Date(),
+      };
+      
+      const facility = await storage.createDirectoryFacility(body);
+      res.status(201).json(facility);
+    } catch (error: any) {
+      console.error("Create facility error:", error);
+      res.status(500).json({ message: error?.message || "Failed to create facility" });
+    }
   });
 
   app.patch("/api/directory-facilities/:id", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
@@ -3372,7 +3429,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.post("/api/users", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
-      const data = registerSchema.parse(req.body);
+      const data = adminCreateUserSchema.parse(req.body);
 
       const existing = await storage.getUserByUsername(data.username);
       if (existing) {
@@ -3544,7 +3601,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
         res.setHeader("Connection", "keep-alive");
 
         const stream = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
+          model: "gpt-4.1-mini",
           messages: chatMessages,
           stream: true,
           max_completion_tokens: 1000,

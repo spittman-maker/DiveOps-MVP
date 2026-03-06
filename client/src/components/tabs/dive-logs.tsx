@@ -228,7 +228,10 @@ export function DiveLogsTab() {
       await apiRequest("PATCH", `/api/dives/${diveId}`, { [field]: value });
     },
     onSuccess: () => {
+      // Invalidate dive logs and master log so changes propagate (Bug 10, 12)
       queryClient.invalidateQueries({ queryKey: ["/api/days", activeDay?.id, "dives"] });
+      queryClient.invalidateQueries({ queryKey: ["master-log", activeDay?.id] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
     },
   });
 

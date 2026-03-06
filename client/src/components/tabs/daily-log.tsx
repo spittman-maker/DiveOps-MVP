@@ -469,9 +469,13 @@ export function DailyLogTab() {
       if (!currentDay) throw new Error("No day");
       const res = await fetch(`/api/days/${currentDay.id}/reopen`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to reopen day");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Failed to reopen day" }));
+        throw new Error(err.message || "Failed to reopen day");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -482,18 +486,24 @@ export function DailyLogTab() {
       queryClient.invalidateQueries({ queryKey: ["dashboard-recent-logs"] });
       toast({ title: "Day reopened", description: "Day is now active - reopening logged" });
     },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error?.message || "Failed to reopen day", variant: "destructive" });
+    },
   });
 
   const createDayMutation = useMutation({
     mutationFn: async () => {
-      if (!activeProject) throw new Error("No project");
+      if (!activeProject) throw new Error("No active project selected");
       const res = await fetch(`/api/projects/${activeProject.id}/days`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ date: new Date().toISOString().split('T')[0] }),
       });
-      if (!res.ok) throw new Error("Failed to create day");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Failed to create new day" }));
+        throw new Error(err.message || "Failed to create new day");
+      }
       return res.json();
     },
     onSuccess: (newDay) => {
@@ -508,8 +518,8 @@ export function DailyLogTab() {
       refreshDay();
       toast({ title: "New shift started", description: `Shift ${newDay.shift || ""} ready for logging` });
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to create new day", variant: "destructive" });
+    onError: (error: any) => {
+      toast({ title: "Error", description: error?.message || "Failed to create new day", variant: "destructive" });
     },
   });
 
@@ -565,6 +575,7 @@ export function DailyLogTab() {
           const response = await fetch("/api/transcribe", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+            credentials: "include",
             body: JSON.stringify({ audio: base64 }),
           });
 
@@ -584,15 +595,19 @@ export function DailyLogTab() {
 
               for (const line of lines) {
                 try {
-                  const data = JSON.parse(line.replace("data: ", ""));
+                  const jsonStr = line.replace(/^data:\s*/, "");
+                  if (!jsonStr.trim()) continue;
+                  const data = JSON.parse(jsonStr);
                   if (data.text) {
                     fullText += data.text;
                     setPttTranscript(fullText);
                   }
-                  if (data.done && fullText.trim()) {
-                    setRawInput((prev) => (prev ? prev + " " + fullText : fullText));
+                  if (data.done) {
+                    if (fullText.trim()) {
+                      setRawInput((prev) => (prev ? prev + " " + fullText.trim() : fullText.trim()));
+                      setPttPendingSubmit(true);
+                    }
                     setPttTranscript("");
-                    setPttPendingSubmit(true);
                   }
                 } catch {}
               }
@@ -1004,9 +1019,10 @@ export function DailyLogTab() {
                   size="sm"
                   variant="outline"
                   onClick={() => reopenDayMutation.mutate()}
+                  disabled={reopenDayMutation.isPending}
                   className="text-xs border-green-500 text-green-400 hover:bg-green-500/20"
                 >
-                  Reopen Shift
+                  {reopenDayMutation.isPending ? "Reopening..." : "Reopen Shift"}
                 </Button>
                 <Button
                   data-testid="button-new-day"

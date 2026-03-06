@@ -78,6 +78,7 @@ export type RiskOut = {
   impact: string;
   owner: string;
   status: "Open" | "Monitoring" | "Closed";
+  risk_level?: "low" | "med" | "high";
 };
 
 export type DailyLogModelOutput = {
@@ -519,6 +520,7 @@ type RiskRule = {
   trigger: string;
   impact: string;
   owner: string;
+  riskLevel?: "low" | "med" | "high";
 };
 
 const RISK_RULES: RiskRule[] = [
@@ -529,6 +531,7 @@ const RISK_RULES: RiskRule[] = [
     trigger: "Client-directed manpower reduction",
     impact: "Reduced production capacity; schedule exposure and inefficiency (lost diver-hours / re-sequencing).",
     owner: "Ops/PM",
+    riskLevel: "med",
   },
   {
     key: "early_release",
@@ -536,6 +539,7 @@ const RISK_RULES: RiskRule[] = [
     trigger: "Client-directed early release / reduced shift duration",
     impact: "Loss of planned work window; standby inefficiency and schedule exposure.",
     owner: "Ops/PM",
+    riskLevel: "low",
   },
 
   // Diving stoppage / recall
@@ -545,6 +549,7 @@ const RISK_RULES: RiskRule[] = [
     trigger: "DHO/Client-directed diver recall / stoppage",
     impact: "Interrupted bottom time and work sequence; productivity loss and potential rework/standby exposure.",
     owner: "Diving Superintendent",
+    riskLevel: "high",
   },
   {
     key: "stop_work_hold",
@@ -552,6 +557,7 @@ const RISK_RULES: RiskRule[] = [
     trigger: "Client-directed stop-work / hold / standdown",
     impact: "Immediate production loss; remobilization and schedule exposure.",
     owner: "Ops/PM",
+    riskLevel: "high",
   },
 
   // Access / control dependencies
@@ -561,6 +567,7 @@ const RISK_RULES: RiskRule[] = [
     trigger: "Tower clearance dependency impacting dive start windows",
     impact: "Delayed starts/interruptions due to tower clearance dependency; productivity loss exposure.",
     owner: "Dive Supervisor",
+    riskLevel: "med",
   },
   {
     key: "ais_shuffle_access",
@@ -568,6 +575,7 @@ const RISK_RULES: RiskRule[] = [
     trigger: "AIS/parking shuffle access constraint",
     impact: "Lost time due to access logistics; reduced effective production window.",
     owner: "Ops/PM",
+    riskLevel: "low",
   },
 
   // Third-party / interface constraints
@@ -577,6 +585,7 @@ const RISK_RULES: RiskRule[] = [
     trigger: "EOD/interface standdown impacting work window",
     impact: "Forced downtime due to third-party interface; schedule exposure.",
     owner: "Ops/PM",
+    riskLevel: "med",
   },
 
   // Equipment / means & methods directives
@@ -586,6 +595,7 @@ const RISK_RULES: RiskRule[] = [
     trigger: "Client-directed equipment deployment (pump/circulation)",
     impact: "Unplanned equipment deployment/diversion; potential critical path and crew utilization inefficiency.",
     owner: "Diving Superintendent",
+    riskLevel: "med",
   },
   {
     key: "hose_discharge_change",
@@ -593,6 +603,7 @@ const RISK_RULES: RiskRule[] = [
     trigger: "Material handling/discharge configuration change",
     impact: "Time spent reconfiguring discharge/material handling; potential production slowdown and rework exposure.",
     owner: "Dive Supervisor",
+    riskLevel: "low",
   },
 
   // Conflict-triggered risks
@@ -602,6 +613,7 @@ const RISK_RULES: RiskRule[] = [
     trigger: "CONFLICTING DIRECTION issued by Client",
     impact: "Sequencing uncertainty and potential rework/standby exposure; schedule impact risk.",
     owner: "Ops/PM",
+    riskLevel: "high",
   },
   {
     key: "reversed_direction",
@@ -609,6 +621,16 @@ const RISK_RULES: RiskRule[] = [
     trigger: "REVERSED DIRECTION issued by Client",
     impact: "Reversal may cause rework, demobilization/remobilization inefficiency, and schedule impact.",
     owner: "Ops/PM",
+    riskLevel: "high",
+  },
+  // Equipment breakdown (end-of-day) - low risk, not high
+  {
+    key: "equipment_breakdown",
+    match: /\b(breakdown|broke down|malfunction|out of service|inoperable)\b.*\b(end of|eod|close out|closeout|end.?of.?day)\b|\b(end of|eod|close out|closeout|end.?of.?day)\b.*\b(breakdown|broke down|malfunction|out of service|inoperable)\b/i,
+    trigger: "End-of-day equipment breakdown",
+    impact: "Equipment issue at shift end; repair can be scheduled for next shift with minimal operational impact.",
+    owner: "Dive Supervisor",
+    riskLevel: "low",
   },
 ];
 
@@ -670,6 +692,7 @@ export function autoCreateRisksFromDirectives(out: DailyLogModelOutput): DailyLo
         impact: rule.impact,
         owner: rule.owner,
         status: "Open",
+        risk_level: rule.riskLevel || "med",
         trigger_key,
         source_time: src.time,
       });

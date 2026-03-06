@@ -49,6 +49,7 @@ export function LibraryTab() {
   const [activeTab, setActiveTab] = useState("exports");
   const [showArchived, setShowArchived] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [selectedRefDoc, setSelectedRefDoc] = useState<LibraryDocument | null>(null);
   const { activeProject } = useProject();
   const { toast } = useToast();
 
@@ -378,6 +379,7 @@ export function LibraryTab() {
                   key={doc.id}
                   data-testid={`doc-card-${doc.id}`}
                   className="bg-navy-800/50 border-navy-600 hover:bg-navy-800/70 transition-colors cursor-pointer"
+                  onClick={() => setSelectedRefDoc(doc)}
                 >
                   <CardContent className="py-4">
                     <div className="flex items-center justify-between">
@@ -390,11 +392,19 @@ export function LibraryTab() {
                           <p className="text-sm text-navy-400">
                             Version {doc.version} • Uploaded {new Date(doc.uploadedAt).toLocaleDateString()}
                           </p>
+                          {doc.description && (
+                            <p className="text-xs text-navy-500 mt-0.5">{doc.description}</p>
+                          )}
                         </div>
                       </div>
-                      <Badge className={getCategoryColor(doc.category)}>
-                        {doc.category}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge className={getCategoryColor(doc.category)}>
+                          {doc.category}
+                        </Badge>
+                        <Button size="sm" variant="outline" className="border-navy-600 text-white hover:bg-navy-600" title="View Document">
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -410,8 +420,123 @@ export function LibraryTab() {
         </TabsContent>
       </Tabs>
 
+      {/* Reference Document Viewer Dialog */}
+      <Dialog open={!!selectedRefDoc} onOpenChange={(open) => { if (!open) setSelectedRefDoc(null); }}>
+        <DialogContent className="bg-navy-900 border-navy-600 text-white max-w-4xl max-h-[92vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-amber-400">
+              {selectedRefDoc?.name || "Reference Document"}
+            </DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="flex-1 min-h-0 max-h-[80vh]">
+            <div className="bg-navy-800/50 rounded-lg p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-navy-400">Category:</span>{" "}
+                  <Badge className={getCategoryColor(selectedRefDoc?.category || "")}>{selectedRefDoc?.category}</Badge>
+                </div>
+                <div>
+                  <span className="text-navy-400">File Type:</span>{" "}
+                  <span className="text-white font-mono">{selectedRefDoc?.fileType}</span>
+                </div>
+                <div>
+                  <span className="text-navy-400">Version:</span>{" "}
+                  <span className="text-white">{selectedRefDoc?.version}</span>
+                </div>
+                <div>
+                  <span className="text-navy-400">Uploaded:</span>{" "}
+                  <span className="text-white">{selectedRefDoc?.uploadedAt ? new Date(selectedRefDoc.uploadedAt).toLocaleDateString() : "N/A"}</span>
+                </div>
+              </div>
+              {selectedRefDoc?.description && (
+                <div>
+                  <h4 className="text-navy-400 text-sm mb-1">Description</h4>
+                  <p className="text-white text-sm">{selectedRefDoc.description}</p>
+                </div>
+              )}
+              <div className="border-t border-navy-600 pt-4">
+                <h4 className="text-amber-400 font-semibold mb-3">Document Content</h4>
+                {selectedRefDoc?.id === "1" && (
+                  <div className="space-y-2 text-sm text-navy-100">
+                    <p className="font-bold text-white">US Navy Diving Manual, Revision 7</p>
+                    <p>The US Navy Diving Manual (NDCM) is the comprehensive reference for all US Navy diving operations. It covers air diving, mixed gas diving, saturation diving, and submarine rescue operations.</p>
+                    <p className="font-semibold text-amber-400 mt-3">Key Chapters:</p>
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li>Chapter 1: History of Diving</li>
+                      <li>Chapter 2: Underwater Physics</li>
+                      <li>Chapter 3: Underwater Physiology and Diving Disorders</li>
+                      <li>Chapter 9: Air Decompression (Surface-Supplied and SCUBA)</li>
+                      <li>Chapter 14: Dive Record Keeping and Documentation</li>
+                      <li>Chapter 15: Diver Medical Standards and Certification</li>
+                    </ul>
+                    <p className="mt-2">This document provides the decompression tables, treatment tables, and operational procedures referenced throughout DiveOps.</p>
+                  </div>
+                )}
+                {selectedRefDoc?.id === "2" && (
+                  <div className="space-y-2 text-sm text-navy-100">
+                    <p className="font-bold text-white">OSHA Commercial Diving Operations - 29 CFR 1926.1071-1926.1090</p>
+                    <p>OSHA standards for commercial diving operations establish safety requirements for diving in construction, ship repair, and other commercial applications.</p>
+                    <p className="font-semibold text-amber-400 mt-3">Key Sections:</p>
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li>1926.1071 - Scope and Application</li>
+                      <li>1926.1076 - Qualifications of Dive Team</li>
+                      <li>1926.1080 - Safe Practices Manual</li>
+                      <li>1926.1084 - Surface-Supplied Air Diving</li>
+                      <li>1926.1090 - Record Keeping Requirements</li>
+                    </ul>
+                  </div>
+                )}
+                {selectedRefDoc?.id === "3" && (
+                  <div className="space-y-2 text-sm text-navy-100">
+                    <p className="font-bold text-white">Decompression Tables - Air</p>
+                    <p>Standard air decompression tables for surface-supplied and SCUBA diving operations. Based on US Navy Revision 7 tables.</p>
+                    <p className="font-semibold text-amber-400 mt-3">Table Groups:</p>
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li>No-Decompression Limits and Repetitive Group Designators</li>
+                      <li>Air Decompression Table (Surface Decompression)</li>
+                      <li>Residual Nitrogen Timetable</li>
+                      <li>Sea Level Equivalent Depth Table</li>
+                    </ul>
+                  </div>
+                )}
+                {selectedRefDoc?.id === "4" && (
+                  <div className="space-y-2 text-sm text-navy-100">
+                    <p className="font-bold text-white">Emergency Procedures Guide v3.2</p>
+                    <p>Standard operating procedures for emergency response during diving operations.</p>
+                    <p className="font-semibold text-amber-400 mt-3">Emergency Procedures:</p>
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li>Loss of Primary Air Supply</li>
+                      <li>Fouled Diver Procedures</li>
+                      <li>Unconscious Diver Recovery</li>
+                      <li>Decompression Sickness Treatment</li>
+                      <li>Chamber Operations - Emergency</li>
+                      <li>Man Overboard Procedures</li>
+                      <li>Fire and Abandon Ship</li>
+                    </ul>
+                  </div>
+                )}
+                {selectedRefDoc?.id === "5" && (
+                  <div className="space-y-2 text-sm text-navy-100">
+                    <p className="font-bold text-white">Equipment Maintenance Log Template</p>
+                    <p>Standardized template for tracking equipment maintenance, inspections, and certifications.</p>
+                    <p className="font-semibold text-amber-400 mt-3">Tracked Items:</p>
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li>Dive Helmets - Annual inspection and certification</li>
+                      <li>Umbilicals - Pressure testing and visual inspection</li>
+                      <li>Compressors - Air quality testing and maintenance</li>
+                      <li>Communications - Function testing</li>
+                      <li>Bailout systems - Hydrostatic testing</li>
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!previewId} onOpenChange={(open) => { if (!open) setPreviewId(null); }}>
-        <DialogContent className="bg-navy-900 border-navy-600 text-white max-w-4xl max-h-[85vh] flex flex-col">
+        <DialogContent className="bg-navy-900 border-navy-600 text-white max-w-4xl max-h-[92vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="text-amber-400 flex items-center justify-between">
               <span data-testid="preview-title">{previewData?.fileName || "Document Preview"}</span>
@@ -429,7 +554,7 @@ export function LibraryTab() {
               </div>
             </DialogTitle>
           </DialogHeader>
-          <ScrollArea className="flex-1 min-h-0 max-h-[70vh]">
+          <ScrollArea className="flex-1 min-h-0 max-h-[80vh]">
             {previewError ? (
               <div className="flex items-center justify-center py-12">
                 <span className="text-red-400">Failed to load preview. Try downloading instead.</span>

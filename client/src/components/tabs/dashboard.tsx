@@ -487,16 +487,48 @@ function DiverCertsWidget() {
 
   const divers = users?.filter(u => u.role === "DIVER" || u.role === "SUPERVISOR") || [];
 
+  // Certification status helper
+  const getCertStatus = (expiryStr?: string) => {
+    if (!expiryStr) return { label: "N/A", color: "bg-navy-600" };
+    const expiry = new Date(expiryStr);
+    const now = new Date();
+    const daysUntil = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysUntil < 0) return { label: "EXPIRED", color: "bg-red-600" };
+    if (daysUntil < 30) return { label: "EXPIRING", color: "bg-yellow-600" };
+    return { label: "CURRENT", color: "bg-green-600" };
+  };
+
   return (
     <div className="flex flex-col h-full" data-testid="widget-diver-certs">
       <div className="text-xs text-navy-300 mb-2">{divers.length} Personnel on Record</div>
       <div className="space-y-1 overflow-auto flex-1">
-        {divers.slice(0, 8).map(diver => (
-          <div key={diver.id} className="bg-navy-700 rounded px-2 py-1 flex justify-between items-center">
-            <span className="text-white text-xs">{diver.fullName || diver.username}</span>
-            <Badge className="bg-green-600 text-[9px]">ACTIVE</Badge>
-          </div>
-        ))}
+        {divers.slice(0, 10).map(diver => {
+          const medCert = getCertStatus(diver.medicalCertExpiry);
+          const diveCert = getCertStatus(diver.diveCertExpiry);
+          return (
+            <div key={diver.id} className="bg-navy-700 rounded px-2 py-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-white text-xs font-medium">{diver.fullName || diver.username}</span>
+                <span className="text-[9px] text-navy-400">{diver.role}</span>
+              </div>
+              <div className="flex gap-2 mt-1">
+                <div className="flex items-center gap-1">
+                  <span className="text-[9px] text-navy-400">Medical:</span>
+                  <Badge className={`${medCert.color} text-[8px] px-1 py-0`}>{medCert.label}</Badge>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-[9px] text-navy-400">Dive Cert:</span>
+                  <Badge className={`${diveCert.color} text-[8px] px-1 py-0`}>{diveCert.label}</Badge>
+                </div>
+              </div>
+              {diver.certifications && (
+                <div className="text-[9px] text-navy-500 mt-0.5 truncate">
+                  {diver.certifications}
+                </div>
+              )}
+            </div>
+          );
+        })}
         {divers.length === 0 && (
           <div className="text-navy-500 text-xs text-center mt-2">No divers registered</div>
         )}
@@ -506,27 +538,47 @@ function DiverCertsWidget() {
 }
 
 function EquipmentCertsWidget() {
-  const equipmentItems = [
-    { name: "Dive Helmets (KM-37)", status: "Current", expires: "2026-08" },
-    { name: "Umbilicals", status: "Current", expires: "2026-06" },
-    { name: "Air Compressor", status: "Current", expires: "2026-12" },
-    { name: "Comm System", status: "Current", expires: "2026-09" },
-    { name: "First Aid / O₂ Kit", status: "Current", expires: "2026-05" },
+  const defaultEquipment = [
+    { name: "Dive Helmets (KM-37)", category: "Dive Equipment", status: "Current", expires: "2026-08", serialNo: "KM37-001" },
+    { name: "Umbilicals", category: "Dive Equipment", status: "Current", expires: "2026-06", serialNo: "UMB-012" },
+    { name: "Air Compressor", category: "Life Support", status: "Current", expires: "2026-12", serialNo: "AC-003" },
+    { name: "Comm System", category: "Communications", status: "Current", expires: "2026-09", serialNo: "COM-007" },
+    { name: "First Aid / O\u2082 Kit", category: "Safety", status: "Current", expires: "2026-05", serialNo: "FA-015" },
+    { name: "Depth Gauges", category: "Instrumentation", status: "Current", expires: "2026-07", serialNo: "DG-022" },
+    { name: "Bailout Bottles", category: "Life Support", status: "Current", expires: "2026-04", serialNo: "BB-009" },
+    { name: "Hot Water Machine", category: "Dive Equipment", status: "Current", expires: "2026-11", serialNo: "HWM-002" },
   ];
+
+  const getCertStatus = (expiresStr: string) => {
+    const [year, month] = expiresStr.split("-").map(Number);
+    const expiry = new Date(year, month - 1, 28);
+    const now = new Date();
+    const daysUntil = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysUntil < 0) return { label: "EXPIRED", color: "bg-red-600" };
+    if (daysUntil < 30) return { label: "EXPIRING", color: "bg-yellow-600" };
+    if (daysUntil < 90) return { label: "DUE SOON", color: "bg-orange-600" };
+    return { label: "CURRENT", color: "bg-green-600" };
+  };
 
   return (
     <div className="flex flex-col h-full" data-testid="widget-equipment-certs">
-      <div className="text-xs text-navy-300 mb-2">{equipmentItems.length} Items Tracked</div>
+      <div className="text-xs text-navy-300 mb-2">{defaultEquipment.length} Items Tracked</div>
       <div className="space-y-1 overflow-auto flex-1">
-        {equipmentItems.map((item, idx) => (
-          <div key={idx} className="bg-navy-700 rounded px-2 py-1 flex justify-between items-center">
-            <span className="text-white text-xs truncate">{item.name}</span>
-            <div className="flex items-center gap-1">
-              <span className="text-[9px] text-navy-400">{item.expires}</span>
-              <Badge className="bg-green-600 text-[9px]">{item.status}</Badge>
+        {defaultEquipment.map((item, idx) => {
+          const cert = getCertStatus(item.expires);
+          return (
+            <div key={idx} className="bg-navy-700 rounded px-2 py-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-white text-xs truncate font-medium">{item.name}</span>
+                <Badge className={`${cert.color} text-[8px] px-1 py-0`}>{cert.label}</Badge>
+              </div>
+              <div className="flex justify-between items-center mt-0.5">
+                <span className="text-[9px] text-navy-500">{item.category} | S/N: {item.serialNo}</span>
+                <span className="text-[9px] text-navy-400">Exp: {item.expires}</span>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

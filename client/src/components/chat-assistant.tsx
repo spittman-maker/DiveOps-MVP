@@ -96,7 +96,29 @@ export function ChatAssistant({ isOpen, onClose }: { isOpen: boolean; onClose: (
   }, [conversation?.messages, streamingContent]);
 
   const sendMessage = async () => {
-    if (!input.trim() || !conversationId || isStreaming) return;
+    if (!input.trim() || isStreaming) return;
+    
+    // Auto-create conversation if needed
+    if (!conversationId) {
+      try {
+        const res = await fetch("/api/conversations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ title: "DiveOps Assistant" }),
+        });
+        if (!res.ok) throw new Error("Failed to create conversation");
+        const data = await res.json();
+        setConversationId(data.id);
+        localStorage.setItem("diveops_conversation_id", data.id.toString());
+        // Wait a tick for state to update, then retry
+        setTimeout(() => sendMessage(), 100);
+        return;
+      } catch (err) {
+        console.error("Failed to create conversation:", err);
+        return;
+      }
+    }
 
     const userMessage = input.trim();
     setInput("");
@@ -305,6 +327,7 @@ export function ChatAssistant({ isOpen, onClose }: { isOpen: boolean; onClose: (
               rows={1}
               className="flex-1 px-4 py-3 bg-transparent text-white placeholder:text-gray-500 resize-none focus:outline-none text-[15px] max-h-[200px]"
               disabled={isStreaming}
+              style={{ caretColor: 'white' }}
             />
             <Button
               onClick={sendMessage}

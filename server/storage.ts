@@ -687,8 +687,26 @@ export class DbStorage implements IStorage {
   }
 
   async updateDiveTimes(diveId: string, field: 'lsTime' | 'rbTime' | 'lbTime' | 'rsTime', time: Date, depthFsw?: number): Promise<Dive | undefined> {
-    const updates: any = { [field]: time, updatedAt: new Date() };
-    if (depthFsw) updates.maxDepthFsw = depthFsw;
+    // Bug #13 & #15: Only update time fields that are not already set to prevent overwriting with wrong data
+    const existing = await this.getDive(diveId);
+    if (!existing) return undefined;
+    
+    const updates: any = { updatedAt: new Date() };
+    
+    // Only set the time if it's not already populated
+    if (!(existing as any)[field]) {
+      updates[field] = time;
+    }
+    
+    // Only set depth if not already set or if the new depth is deeper
+    if (depthFsw) {
+      if (!existing.maxDepthFsw || depthFsw > existing.maxDepthFsw) {
+        updates.maxDepthFsw = depthFsw;
+      }
+    }
+    
+    // If only updatedAt changed, return existing
+    if (Object.keys(updates).length <= 1) return existing;
     
     const [updated] = await db.update(schema.dives)
       .set(updates)
