@@ -4106,21 +4106,26 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.post("/api/facilities", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
-      const { name, type, location, lat, lng, travelTimeMinutes, timezone } = req.body;
-      if (!name || !type) return res.status(400).json({ message: "name and type are required" });
+      const user = getUser(req);
+      const { name, type, facilityType, address, location, lat, latitude, lng, longitude, phone, hours, notes } = req.body;
+      const resolvedType = facilityType || type;
+      if (!name || !resolvedType) return res.status(400).json({ message: "name and type (or facilityType) are required" });
       const facility = await storage.createDirectoryFacility({
         name,
-        type,
-        location: location || null,
-        lat: lat || "0",
-        lng: lng || "0",
-        travelTimeMinutes: travelTimeMinutes || null,
-        timezone: timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+        facilityType: resolvedType,
+        address: address || location || "Unknown",
+        lat: lat || latitude || "0",
+        lng: lng || longitude || "0",
+        phone: phone || null,
+        hours: hours || null,
+        notes: notes || null,
+        verifiedBy: user.id,
+        lastVerifiedAt: new Date(),
       });
       res.status(201).json(facility);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Create facility error:", error);
-      res.status(500).json({ message: "Failed to create facility" });
+      res.status(500).json({ message: error?.message || "Failed to create facility" });
     }
   });
 
@@ -4262,6 +4267,29 @@ If you're not confident about specific facilities, say so in the notes field. Al
     } catch (error) {
       console.error("Bootstrap error:", error);
       res.status(500).json({ message: "Bootstrap failed" });
+    }
+  });
+
+  // GOD-only migration trigger endpoint
+  app.post("/api/admin/run-migrations", requireRole("GOD"), async (_req: Request, res: Response) => {
+    try {
+      const { runMigrations } = await import("./migrate");
+      await runMigrations();
+      res.json({ message: "Migrations executed successfully" });
+    } catch (error: any) {
+      console.error("Migration trigger error:", error);
+      res.status(500).json({ message: error?.message || "Migration failed" });
+    }
+  });
+
+  // GOD-only direct SQL migration for table_citation (fallback)
+  app.post("/api/admin/fix-schema", requireRole("GOD"), async (_req: Request, res: Response) => {
+    try {
+      await pool.query(`ALTER TABLE "dives" ADD COLUMN IF NOT EXISTS "table_citation" text`);
+      res.json({ message: "Schema fix applied: table_citation column added" });
+    } catch (error: any) {
+      console.error("Schema fix error:", error);
+      res.status(500).json({ message: error?.message || "Schema fix failed" });
     }
   });
 
