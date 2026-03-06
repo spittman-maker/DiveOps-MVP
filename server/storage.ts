@@ -37,6 +37,8 @@ import type {
   AnalyticsSnapshot, InsertAnalyticsSnapshot,
   AnomalyFlag, InsertAnomalyFlag,
   MlPrediction, InsertMlPrediction,
+  DiverCertification, InsertDiverCertification,
+  EquipmentCertification, InsertEquipmentCertification,
 } from "@shared/schema";
 
 const pool = new Pool({
@@ -228,6 +230,19 @@ export interface IStorage {
   // ML Predictions
   createMlPrediction(prediction: InsertMlPrediction): Promise<MlPrediction>;
   getLatestMlPrediction(projectId: string, predictionType?: string): Promise<MlPrediction | undefined>;
+
+  // Diver Certifications
+  getDiverCertifications(userId: string): Promise<DiverCertification[]>;
+  getAllDiverCertifications(): Promise<DiverCertification[]>;
+  createDiverCertification(cert: InsertDiverCertification): Promise<DiverCertification>;
+  updateDiverCertification(id: string, updates: Partial<InsertDiverCertification>): Promise<DiverCertification | undefined>;
+  deleteDiverCertification(id: string): Promise<boolean>;
+
+  // Equipment Certifications
+  getEquipmentCertifications(projectId?: string): Promise<EquipmentCertification[]>;
+  createEquipmentCertification(cert: InsertEquipmentCertification): Promise<EquipmentCertification>;
+  updateEquipmentCertification(id: string, updates: Partial<InsertEquipmentCertification>): Promise<EquipmentCertification | undefined>;
+  deleteEquipmentCertification(id: string): Promise<boolean>;
 }
 
 export class DbStorage implements IStorage {
@@ -1424,6 +1439,66 @@ export class DbStorage implements IStorage {
       .limit(1);
     return row;
   }
-}
 
+  // Diver Certifications
+  async getDiverCertifications(userId: string): Promise<DiverCertification[]> {
+    return await db.select().from(schema.diverCertifications)
+      .where(eq(schema.diverCertifications.userId, userId))
+      .orderBy(desc(schema.diverCertifications.expirationDate));
+  }
+
+  async getAllDiverCertifications(): Promise<DiverCertification[]> {
+    return await db.select().from(schema.diverCertifications)
+      .orderBy(desc(schema.diverCertifications.expirationDate));
+  }
+
+  async createDiverCertification(cert: InsertDiverCertification): Promise<DiverCertification> {
+    const [created] = await db.insert(schema.diverCertifications).values(cert).returning();
+    return created!;
+  }
+
+  async updateDiverCertification(id: string, updates: Partial<InsertDiverCertification>): Promise<DiverCertification | undefined> {
+    const [updated] = await db.update(schema.diverCertifications)
+      .set({ ...updates, updatedAt: new Date() } as any)
+      .where(eq(schema.diverCertifications.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteDiverCertification(id: string): Promise<boolean> {
+    const result = await db.delete(schema.diverCertifications)
+      .where(eq(schema.diverCertifications.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // Equipment Certifications
+  async getEquipmentCertifications(projectId?: string): Promise<EquipmentCertification[]> {
+    if (projectId) {
+      return await db.select().from(schema.equipmentCertifications)
+        .where(eq(schema.equipmentCertifications.projectId, projectId))
+        .orderBy(desc(schema.equipmentCertifications.expirationDate));
+    }
+    return await db.select().from(schema.equipmentCertifications)
+      .orderBy(desc(schema.equipmentCertifications.expirationDate));
+  }
+
+  async createEquipmentCertification(cert: InsertEquipmentCertification): Promise<EquipmentCertification> {
+    const [created] = await db.insert(schema.equipmentCertifications).values(cert).returning();
+    return created!;
+  }
+
+  async updateEquipmentCertification(id: string, updates: Partial<InsertEquipmentCertification>): Promise<EquipmentCertification | undefined> {
+    const [updated] = await db.update(schema.equipmentCertifications)
+      .set({ ...updates, updatedAt: new Date() } as any)
+      .where(eq(schema.equipmentCertifications.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteEquipmentCertification(id: string): Promise<boolean> {
+    const result = await db.delete(schema.equipmentCertifications)
+      .where(eq(schema.equipmentCertifications.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+}
 export const storage = new DbStorage();

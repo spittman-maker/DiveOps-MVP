@@ -18,11 +18,13 @@ export type EventCategory = "dive_op" | "directive" | "safety" | "ops" | "genera
 export interface ExtractedData {
   diverInitials?: string[];
   diverNames?: string[];
+  diverNumber?: number;
   lsTime?: string;
   rbTime?: string;
   lbTime?: string;
   rsTime?: string;
   depthFsw?: number;
+  breathingGas?: string;
   diveOperation?: "ls" | "rb" | "lb" | "rs";
   taskSummary?: string;
   taskDescription?: string;
@@ -459,6 +461,18 @@ export function extractData(rawText: string): ExtractedData {
     break;
   }
   
+  // Extract breathing gas
+  const gasMatch = rawText.match(/\b(AIR|HELIOX|NITROX|O2|EAN\d{2}|TRIMIX|HPNS)\b/i);
+  if (gasMatch) {
+    extracted.breathingGas = gasMatch[1].toUpperCase();
+  }
+
+  // Extract diver number (e.g., "D1", "D2", "Diver 1")
+  const diverNumMatch = rawText.match(/\bD(?:iver)?\s*(\d+)\b/i);
+  if (diverNumMatch) {
+    extracted.diverNumber = parseInt(diverNumMatch[1], 10);
+  }
+
   if (extracted.diveOperation) {
     extracted.taskDescription = extractTaskDescription(rawText);
   }

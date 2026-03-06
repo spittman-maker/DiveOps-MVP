@@ -9,6 +9,7 @@ import { ThemeProvider } from "@/hooks/use-theme";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import ConsolePage from "@/pages/console";
+import ChangePasswordPage from "@/pages/change-password";
 import { Spinner } from "@/components/ui/spinner";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -24,6 +25,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (!user) {
     return <LoginPage />;
+  }
+
+  if (user.mustChangePassword) {
+    return <ChangePasswordPage />;
   }
 
   return <ProjectProvider>{children}</ProjectProvider>;

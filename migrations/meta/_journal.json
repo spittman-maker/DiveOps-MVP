@@ -15,6 +15,13 @@
       "when": 1741305600000,
       "tag": "0001_add_table_citation",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1741392000000,
+      "tag": "0002_cert_tracking_and_invite_flow",
+      "breakpoints": true
     }
   ]
 }

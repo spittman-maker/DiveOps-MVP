@@ -60,7 +60,7 @@ passport.deserializeUser(async (id: string, done) => {
   }
 });
 
-export { passport, hashPassword };
+export { passport, hashPassword, verifyPassword };
 
 // ────────────────────────────────────────────────────────────────────────────
 // RBAC Middleware

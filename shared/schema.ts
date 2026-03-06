@@ -154,6 +154,7 @@ export const users = pgTable("users", {
   fullName: text("full_name"),
   initials: text("initials"),
   email: text("email"),
+  mustChangePassword: boolean("must_change_password").default(false).notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -161,6 +162,53 @@ export const users = pgTable("users", {
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+
+// ────────────────────────────────────────────────────────────────────────────
+// DIVER CERTIFICATIONS
+// ────────────────────────────────────────────────────────────────────────────
+
+export const diverCertifications = pgTable("diver_certifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  certType: text("cert_type").notNull(),
+  certNumber: text("cert_number"),
+  issuedDate: timestamp("issued_date"),
+  expirationDate: timestamp("expiration_date"),
+  status: text("status").notNull().default("active"),
+  documentUrl: text("document_url"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertDiverCertificationSchema = createInsertSchema(diverCertifications).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDiverCertification = z.infer<typeof insertDiverCertificationSchema>;
+export type DiverCertification = typeof diverCertifications.$inferSelect;
+
+// ────────────────────────────────────────────────────────────────────────────
+// EQUIPMENT CERTIFICATIONS
+// ────────────────────────────────────────────────────────────────────────────
+
+export const equipmentCertifications = pgTable("equipment_certifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  equipmentName: text("equipment_name").notNull(),
+  equipmentCategory: text("equipment_category").notNull(),
+  serialNumber: text("serial_number"),
+  certType: text("cert_type").notNull(),
+  certNumber: text("cert_number"),
+  issuedDate: timestamp("issued_date"),
+  expirationDate: timestamp("expiration_date"),
+  status: text("status").notNull().default("active"),
+  documentUrl: text("document_url"),
+  notes: text("notes"),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertEquipmentCertificationSchema = createInsertSchema(equipmentCertifications).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEquipmentCertification = z.infer<typeof insertEquipmentCertificationSchema>;
+export type EquipmentCertification = typeof equipmentCertifications.$inferSelect;
 
 // ────────────────────────────────────────────────────────────────────────────
 // PROJECTS & CLIENTS

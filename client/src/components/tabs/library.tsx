@@ -50,8 +50,35 @@ export function LibraryTab() {
   const [showArchived, setShowArchived] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [selectedRefDoc, setSelectedRefDoc] = useState<LibraryDocument | null>(null);
+  const [refDocUrl, setRefDocUrl] = useState<string | null>(null);
+  const [refDocLoading, setRefDocLoading] = useState(false);
   const { activeProject } = useProject();
   const { toast } = useToast();
+
+  // Fetch reference documents from Azure Blob Storage
+  const { data: blobDocs = [] } = useQuery<Array<{ name: string; contentLength: number; lastModified: string; contentType: string }>>({
+    queryKey: ["reference-docs"],
+    queryFn: async () => {
+      const res = await fetch("/api/reference-docs/list", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  // Open a reference doc via SAS URL
+  const openRefDoc = async (blobName: string) => {
+    setRefDocLoading(true);
+    try {
+      const res = await fetch(`/api/reference-docs/sas-url?blobName=${encodeURIComponent(blobName)}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to get document URL");
+      const { url } = await res.json();
+      setRefDocUrl(url);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to open document", variant: "destructive" });
+    } finally {
+      setRefDocLoading(false);
+    }
+  };
 
   const { data: previewData, error: previewError, isLoading: previewLoading } = useQuery<{ content: string; lines: string[]; fileName: string; fileType: string }>({
     queryKey: ["library-preview", previewId],
@@ -415,10 +442,77 @@ export function LibraryTab() {
                   <p className="text-navy-400">No documents found</p>
                 </div>
               )}
+
+              {/* Azure Blob Storage Documents */}
+              {blobDocs.length > 0 && (
+                <>
+                  <div className="mt-6 mb-2">
+                    <h3 className="text-amber-400 font-semibold text-sm">Cloud Storage Documents</h3>
+                    <p className="text-navy-400 text-xs">Documents from Azure Blob Storage</p>
+                  </div>
+                  {blobDocs.map((blob, idx) => (
+                    <Card
+                      key={`blob-${idx}`}
+                      className="bg-navy-800/50 border-navy-600 hover:bg-navy-800/70 transition-colors cursor-pointer"
+                      onClick={() => openRefDoc(blob.name)}
+                    >
+                      <CardContent className="py-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded bg-navy-700 flex items-center justify-center text-xs font-mono text-navy-300">
+                              {blob.contentType?.includes("pdf") ? "PDF" : blob.name.split(".").pop()?.toUpperCase() || "DOC"}
+                            </div>
+                            <div>
+                              <h3 className="text-white font-medium">{blob.name}</h3>
+                              <p className="text-sm text-navy-400">
+                                {(blob.contentLength / 1024 / 1024).toFixed(1)} MB • Modified {new Date(blob.lastModified).toLocaleDateString()}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge className="bg-blue-600">Cloud</Badge>
+                            <Button size="sm" variant="outline" className="border-navy-600 text-white hover:bg-navy-600" title="View Document">
+                              {refDocLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </>
+              )}
             </div>
           </ScrollArea>
         </TabsContent>
       </Tabs>
+
+      {/* Azure Blob Document Viewer Dialog */}
+      <Dialog open={!!refDocUrl} onOpenChange={(open) => { if (!open) setRefDocUrl(null); }}>
+        <DialogContent className="bg-navy-900 border-navy-600 text-white max-w-5xl max-h-[95vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-amber-400 flex items-center justify-between">
+              <span>Document Viewer</span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-navy-600 text-white hover:bg-navy-600"
+                onClick={() => refDocUrl && window.open(refDocUrl, "_blank")}
+              >
+                <Download className="w-4 h-4 mr-1" /> Open in New Tab
+              </Button>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 min-h-0">
+            {refDocUrl && (
+              <iframe
+                src={refDocUrl}
+                className="w-full h-[80vh] rounded border border-navy-600"
+                title="Reference Document"
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Reference Document Viewer Dialog */}
       <Dialog open={!!selectedRefDoc} onOpenChange={(open) => { if (!open) setSelectedRefDoc(null); }}>

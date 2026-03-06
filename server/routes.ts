@@ -201,7 +201,7 @@ export async function registerRoutes(
         console.error("[auth] Session save error:", err);
         return res.status(500).json({ message: "Session save failed" });
       }
-      res.json({ id: user.id, username: user.username, role: user.role, fullName: user.fullName });
+      res.json({ id: user.id, username: user.username, role: user.role, fullName: user.fullName, mustChangePassword: user.mustChangePassword });
     });
   });
 
@@ -222,6 +222,7 @@ export async function registerRoutes(
       fullName: user.fullName,
       initials: user.initials,
       activeProjectId: prefs?.activeProjectId,
+      mustChangePassword: user.mustChangePassword,
     });
   });
 
@@ -3440,17 +3441,25 @@ If you're not confident about specific facilities, say so in the notes field. Al
         return res.status(400).json({ message: "Username already exists" });
       }
 
+      // Generate a secure random temporary password if none provided or if "changeme123"
+      const crypto = await import("crypto");
+      const tempPassword = data.password && data.password !== "changeme123"
+        ? data.password
+        : crypto.randomBytes(12).toString("base64url");
+
       const user = await storage.createUser({
         username: data.username,
-        password: hashPassword(data.password),
+        password: hashPassword(tempPassword),
         role: data.role,
         fullName: data.fullName || null,
         initials: data.initials || null,
         email: data.email || null,
+        mustChangePassword: true,
       });
 
       const { password, ...sanitized } = user;
-      res.status(201).json(sanitized);
+      // Return the temp password so the admin can share it with the user
+      res.status(201).json({ ...sanitized, temporaryPassword: tempPassword });
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Validation error", errors: error.errors });
@@ -4306,6 +4315,204 @@ If you're not confident about specific facilities, say so in the notes field. Al
     } catch (error: any) {
       console.error("Schema fix error:", error);
       res.status(500).json({ message: error?.message || "Schema fix failed" });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // GEOCODING ENDPOINT (Item #1)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  app.get("/api/geocode", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const address = req.query.address as string;
+      if (!address) return res.status(400).json({ message: "Address query parameter is required" });
+
+      const encoded = encodeURIComponent(address);
+      const url = `https://nominatim.openstreetmap.org/search?q=${encoded}&format=json&limit=1`;
+      const response = await fetch(url, {
+        headers: { "User-Agent": "DiveOps-MVP/1.0 (contact@precisionsubsea.com)" },
+      });
+      if (!response.ok) {
+        return res.status(502).json({ message: "Geocoding service unavailable" });
+      }
+      const results = await response.json() as any[];
+      if (!results || results.length === 0) {
+        return res.json({ lat: null, lng: null, displayName: null });
+      }
+      const { lat, lon, display_name } = results[0];
+      res.json({ lat: String(lat), lng: String(lon), displayName: display_name });
+    } catch (error: any) {
+      console.error("Geocoding error:", error);
+      res.status(500).json({ message: error?.message || "Geocoding failed" });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // DIVER CERTIFICATIONS CRUD (Item #2)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  app.get("/api/diver-certifications", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.query.userId as string | undefined;
+      if (userId) {
+        const certs = await storage.getDiverCertifications(userId);
+        return res.json(certs);
+      }
+      const certs = await storage.getAllDiverCertifications();
+      res.json(certs);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message || "Failed to fetch diver certifications" });
+    }
+  });
+
+  app.post("/api/diver-certifications", requireRole("ADMIN", "GOD", "SUPERVISOR"), async (req: Request, res: Response) => {
+    try {
+      const cert = await storage.createDiverCertification(req.body);
+      res.status(201).json(cert);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message || "Failed to create diver certification" });
+    }
+  });
+
+  app.patch("/api/diver-certifications/:id", requireRole("ADMIN", "GOD", "SUPERVISOR"), async (req: Request, res: Response) => {
+    try {
+      const cert = await storage.updateDiverCertification(req.params.id, req.body);
+      if (!cert) return res.status(404).json({ message: "Certification not found" });
+      res.json(cert);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message || "Failed to update diver certification" });
+    }
+  });
+
+  app.delete("/api/diver-certifications/:id", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const deleted = await storage.deleteDiverCertification(req.params.id);
+      if (!deleted) return res.status(404).json({ message: "Certification not found" });
+      res.json({ message: "Deleted" });
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message || "Failed to delete diver certification" });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // EQUIPMENT CERTIFICATIONS CRUD (Item #2)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  app.get("/api/equipment-certifications", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const projectId = req.query.projectId as string | undefined;
+      const certs = await storage.getEquipmentCertifications(projectId || undefined);
+      res.json(certs);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message || "Failed to fetch equipment certifications" });
+    }
+  });
+
+  app.post("/api/equipment-certifications", requireRole("ADMIN", "GOD", "SUPERVISOR"), async (req: Request, res: Response) => {
+    try {
+      const cert = await storage.createEquipmentCertification(req.body);
+      res.status(201).json(cert);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message || "Failed to create equipment certification" });
+    }
+  });
+
+  app.patch("/api/equipment-certifications/:id", requireRole("ADMIN", "GOD", "SUPERVISOR"), async (req: Request, res: Response) => {
+    try {
+      const cert = await storage.updateEquipmentCertification(req.params.id, req.body);
+      if (!cert) return res.status(404).json({ message: "Certification not found" });
+      res.json(cert);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message || "Failed to update equipment certification" });
+    }
+  });
+
+  app.delete("/api/equipment-certifications/:id", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const deleted = await storage.deleteEquipmentCertification(req.params.id);
+      if (!deleted) return res.status(404).json({ message: "Certification not found" });
+      res.json({ message: "Deleted" });
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message || "Failed to delete equipment certification" });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // CHANGE PASSWORD ENDPOINT (Item #3 - Invite flow)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  app.post("/api/auth/change-password", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const { currentPassword, newPassword } = req.body;
+
+      if (!newPassword || newPassword.length < 8) {
+        return res.status(400).json({ message: "New password must be at least 8 characters" });
+      }
+
+      // If user must change password (invite flow), currentPassword is the temp password
+      // Otherwise require current password verification
+      const fullUser = await storage.getUser(user.id);
+      if (!fullUser) return res.status(404).json({ message: "User not found" });
+
+      if (!fullUser.mustChangePassword && currentPassword) {
+        // Verify current password
+        const crypto = await import("crypto");
+        const [salt, hash] = fullUser.password.split(".");
+        const derived = crypto.scryptSync(currentPassword, salt, 64).toString("hex");
+        if (derived !== hash) {
+          return res.status(400).json({ message: "Current password is incorrect" });
+        }
+      }
+
+      await storage.updateUser(user.id, {
+        password: hashPassword(newPassword),
+        mustChangePassword: false,
+      });
+
+      res.json({ message: "Password changed successfully" });
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message || "Failed to change password" });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // REFERENCE DOCUMENT VIEWER (Item #4 - Azure Blob SAS URLs)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  app.get("/api/reference-docs/list", requireAuth, async (_req: Request, res: Response) => {
+    try {
+      const blobStorage = await import("./services/blob-storage");
+      const blobs = await blobStorage.listBlobs({ container: "documents" });
+      const docs = blobs.map(b => ({
+        name: b.name,
+        contentLength: b.contentLength,
+        lastModified: b.lastModified,
+        contentType: b.contentType,
+      }));
+      res.json(docs);
+    } catch (error: any) {
+      console.error("List reference docs error:", error);
+      // Return empty array if blob storage is not configured
+      res.json([]);
+    }
+  });
+
+  app.get("/api/reference-docs/sas-url", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const blobName = req.query.blobName as string;
+      if (!blobName) return res.status(400).json({ message: "blobName query parameter is required" });
+
+      const blobStorage = await import("./services/blob-storage");
+      const sasUrl = blobStorage.generateSasUrl(blobName, {
+        container: "documents",
+        expiresInMinutes: 60,
+        permissions: "r",
+      });
+      res.json({ url: sasUrl, expiresInMinutes: 60 });
+    } catch (error: any) {
+      console.error("SAS URL generation error:", error);
+      res.status(500).json({ message: error?.message || "Failed to generate SAS URL" });
     }
   });
 

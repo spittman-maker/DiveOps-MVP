@@ -653,11 +653,19 @@ export function AdminTab() {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       setCreateUserOpen(false);
       resetUserForm();
-      toast({ title: "User created successfully" });
+      if (data.temporaryPassword) {
+        toast({
+          title: "User created — share temporary password",
+          description: `Temp password for ${data.username}: ${data.temporaryPassword} — User must change it on first login.`,
+          duration: 30000,
+        });
+      } else {
+        toast({ title: "User created successfully" });
+      }
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error?.message || "Failed to create user", variant: "destructive" });
@@ -1895,9 +1903,46 @@ export function AdminTab() {
               <Input
                 data-testid="input-facility-address"
                 className="bg-navy-800 border-navy-600 text-white"
+                placeholder="Enter address and press Tab to auto-fill lat/lng"
                 value={facilityForm.address}
                 onChange={(e) => setFacilityForm({ ...facilityForm, address: e.target.value })}
+                onBlur={async (e) => {
+                  const addr = e.target.value.trim();
+                  if (addr.length > 3) {
+                    try {
+                      const res = await fetch(`/api/geocode?address=${encodeURIComponent(addr)}`, { credentials: "include" });
+                      if (res.ok) {
+                        const geo = await res.json();
+                        if (geo.lat && geo.lng) {
+                          setFacilityForm(prev => ({ ...prev, lat: geo.lat, lng: geo.lng }));
+                        }
+                      }
+                    } catch {}
+                  }
+                }}
               />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-navy-300">Latitude</Label>
+                <Input
+                  data-testid="input-facility-lat"
+                  className="bg-navy-800 border-navy-600 text-white"
+                  placeholder="Auto-filled from address"
+                  value={facilityForm.lat}
+                  onChange={(e) => setFacilityForm({ ...facilityForm, lat: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label className="text-navy-300">Longitude</Label>
+                <Input
+                  data-testid="input-facility-lng"
+                  className="bg-navy-800 border-navy-600 text-white"
+                  placeholder="Auto-filled from address"
+                  value={facilityForm.lng}
+                  onChange={(e) => setFacilityForm({ ...facilityForm, lng: e.target.value })}
+                />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>

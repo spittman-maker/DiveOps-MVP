@@ -8,6 +8,7 @@ interface User {
   fullName?: string;
   initials?: string;
   activeProjectId?: string;
+  mustChangePassword?: boolean;
 }
 
 interface AuthContextType {
