@@ -49,7 +49,7 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
       <header className="px-4 py-2 flex items-center justify-between shrink-0 border-b bg-card border-border">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <img src="/brain-logo.png" alt="DiveOps" className="h-8 w-auto" />
+            <img src="/shield-logo.png" alt="DiveOps" className="h-8 w-auto" />
             <h1 className="text-lg font-bold tracking-tight gold-metallic">
               DiveOps™
             </h1>
