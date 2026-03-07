@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useProject } from "@/hooks/use-project";
+import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +22,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
-import { Mic, Square, CheckCircle, Edit2, ChevronDown, ChevronRight, Loader2, ArrowRight } from "lucide-react";
+import { Mic, Square, CheckCircle, Edit2, ChevronDown, ChevronRight, Loader2, ArrowRight, Plus } from "lucide-react";
 
 const COMMON_STATIONS = ["Dive Team 1", "Dive Team 2", "Dive Team 3", "Subcontractor Dive Team 1", "Subcontractor Dive Team 2", "Night Shift"];
 
@@ -63,11 +64,26 @@ interface DiveRecord {
   diveNumber: number;
   diverId: string;
   diverName?: string;
+  diverDisplayName?: string;
   lsTime?: string;
   rbTime?: string;
   lbTime?: string;
   rsTime?: string;
   maxDepthFsw?: number;
+  breathingGas?: string;
+  fo2Percent?: number;
+  tableUsed?: string;
+  scheduleUsed?: string;
+  repetitiveGroup?: string;
+  decompRequired?: string;
+  station?: string;
+  workLocation?: string;
+  taskSummary?: string;
+  postDiveStatus?: string;
+  toolsEquipment?: string;
+  qcDisposition?: string;
+  verifier?: string;
+  notes?: string;
 }
 
 interface MasterLogData {
@@ -100,6 +116,89 @@ interface MasterLogData {
     directivesCount: number;
     extractedDiverInitials?: string[];
   };
+}
+
+function formatTime24(timeStr?: string): string {
+  if (!timeStr) return "—";
+  const d = new Date(timeStr);
+  const h = String(d.getUTCHours()).padStart(2, "0");
+  const m = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${h}${m}`;
+}
+
+function getEditableValue(fieldName: string, value: string | number | undefined | null): string {
+  const timeFields = ["lsTime", "rbTime", "lbTime", "rsTime"];
+  if (timeFields.includes(fieldName) && value) {
+    return formatTime24(String(value));
+  }
+  return String(value ?? "");
+}
+
+function InlineEdit({
+  diveId,
+  fieldName,
+  value,
+  displayValue,
+  onSave,
+  className = "",
+  placeholder = "",
+  missingClass = "text-amber-400/60 italic",
+}: {
+  diveId: string;
+  fieldName: string;
+  value: string | number | undefined | null;
+  displayValue: string;
+  onSave: (fieldName: string, value: string) => void;
+  className?: string;
+  placeholder?: string;
+  missingClass?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const isMissing = !value && value !== 0;
+
+  const isTimeField = ["lsTime", "rbTime", "lbTime", "rsTime"].includes(fieldName);
+
+  const commit = useCallback(() => {
+    setEditing(false);
+    const editVal = getEditableValue(fieldName, value);
+    if (draft !== editVal) {
+      if (isTimeField && draft && !/^\d{3,4}$/.test(draft.replace(":", ""))) {
+        return;
+      }
+      onSave(fieldName, draft);
+    }
+  }, [draft, value, fieldName, onSave, isTimeField]);
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        className="bg-navy-900 border border-amber-400/50 text-white px-1.5 py-0.5 rounded text-xs w-full outline-none focus:border-amber-400"
+        value={draft}
+        placeholder={placeholder}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") setEditing(false);
+        }}
+      />
+    );
+  }
+
+  return (
+    <span
+      className={`cursor-pointer inline-flex items-center gap-1 group ${isMissing ? missingClass : className}`}
+      onClick={() => {
+        setDraft(getEditableValue(fieldName, value));
+        setEditing(true);
+      }}
+    >
+      {displayValue}
+      <Edit2 className="w-2.5 h-2.5 opacity-0 group-hover:opacity-60 transition-opacity" />
+    </span>
+  );
 }
 
 function DepthPrompt({ eventId }: { eventId: string }) {
@@ -267,6 +366,15 @@ export function DailyLogTab() {
   }, [activeDay?.id]);
 
   const [expandedStations, setExpandedStations] = useState<Record<string, boolean>>({});
+
+  // Fix 4: Manual add for directives and conflicts
+  const [showAddDirective, setShowAddDirective] = useState(false);
+  const [directiveText, setDirectiveText] = useState("");
+  const [directiveTime, setDirectiveTime] = useState("");
+  const [showAddConflict, setShowAddConflict] = useState(false);
+  const [conflictText, setConflictText] = useState("");
+  const [conflictTime, setConflictTime] = useState("");
+  const [conflictTag, setConflictTag] = useState<"CONFLICTING DIRECTION" | "REVERSED DIRECTION">("CONFLICTING DIRECTION");
 
   const toggleStation = (station: string) => {
     setExpandedStations(prev => ({ ...prev, [station]: !prev[station] }));
@@ -522,6 +630,92 @@ export function DailyLogTab() {
       toast({ title: "Error", description: error?.message || "Failed to create new day", variant: "destructive" });
     },
   });
+
+  const patchDiveMutation = useMutation({
+    mutationFn: async ({ diveId, field, value }: { diveId: string; field: string; value: string }) => {
+      await apiRequest("PATCH", `/api/dives/${diveId}`, { [field]: value });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["master-log", currentDay?.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/days", currentDay?.id, "dives"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+    },
+  });
+
+  const handleDiveSave = useCallback(
+    (diveId: string, field: string, value: string) => {
+      if (field === "breathingGas" || field === "fo2Percent") {
+        apiRequest("PATCH", `/api/dives/${diveId}`, { [field]: value, breathingGasOverride: true }).then(() => {
+          queryClient.invalidateQueries({ queryKey: ["master-log", currentDay?.id] });
+          queryClient.invalidateQueries({ queryKey: ["/api/days", currentDay?.id, "dives"] });
+        });
+      } else {
+        patchDiveMutation.mutate({ diveId, field, value });
+      }
+    },
+    [patchDiveMutation, currentDay?.id, queryClient],
+  );
+
+  const handleAddDirective = useCallback(async () => {
+    if (!directiveText.trim() || !currentDay || !activeProject) return;
+    try {
+      const rawText = directiveTime
+        ? `${directiveTime} CLIENT DIRECTIVE: ${directiveText.trim()}`
+        : `CLIENT DIRECTIVE: ${directiveText.trim()}`;
+      const res = await fetch("/api/log-events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          rawText,
+          dayId: currentDay.id,
+          projectId: activeProject.id,
+          station: selectedStation || undefined,
+          clientTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setDirectiveText("");
+      setDirectiveTime("");
+      setShowAddDirective(false);
+      queryClient.invalidateQueries({ queryKey: ["log-events"] });
+      queryClient.invalidateQueries({ queryKey: ["master-log"] });
+      toast({ title: "Directive added" });
+    } catch {
+      toast({ title: "Failed to add directive", variant: "destructive" });
+    }
+  }, [directiveText, directiveTime, currentDay, activeProject, selectedStation, queryClient, toast]);
+
+  const handleAddConflict = useCallback(async () => {
+    if (!conflictText.trim() || !currentDay || !activeProject) return;
+    try {
+      const tagPrefix = conflictTag === "REVERSED DIRECTION" ? "REVERSED DIRECTION" : "CONFLICTING DIRECTION";
+      const rawText = conflictTime
+        ? `${conflictTime} ${tagPrefix}: ${conflictText.trim()}`
+        : `${tagPrefix}: ${conflictText.trim()}`;
+      const res = await fetch("/api/log-events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          rawText,
+          dayId: currentDay.id,
+          projectId: activeProject.id,
+          station: selectedStation || undefined,
+          clientTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setConflictText("");
+      setConflictTime("");
+      setShowAddConflict(false);
+      queryClient.invalidateQueries({ queryKey: ["log-events"] });
+      queryClient.invalidateQueries({ queryKey: ["master-log"] });
+      toast({ title: "Conflict entry added" });
+    } catch {
+      toast({ title: "Failed to add conflict entry", variant: "destructive" });
+    }
+  }, [conflictText, conflictTime, conflictTag, currentDay, activeProject, selectedStation, queryClient, toast]);
 
   const startRecording = useCallback(async () => {
     try {
@@ -1414,15 +1608,65 @@ export function DailyLogTab() {
             <section data-testid="section-directives">
               <Card className="bg-navy-800/50 border-navy-600">
                 <CardHeader className="pb-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-purple-600" />
-                    <CardTitle className="text-amber-400 text-sm">Client Directives and Changes</CardTitle>
-                    <Badge variant="outline" className="text-xs border-navy-500 text-navy-400">
-                      {directiveEntries.length} entries
-                    </Badge>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-purple-600" />
+                      <CardTitle className="text-amber-400 text-sm">Client Directives and Changes</CardTitle>
+                      <Badge variant="outline" className="text-xs border-navy-500 text-navy-400">
+                        {directiveEntries.length} entries
+                      </Badge>
+                    </div>
+                    {canWriteLogEvents && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-2 text-xs border-purple-500/40 text-purple-300 hover:bg-purple-500/10"
+                        onClick={() => setShowAddDirective(!showAddDirective)}
+                      >
+                        <Plus className="w-3 h-3 mr-1" />
+                        Add
+                      </Button>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent>
+                  {showAddDirective && (
+                    <div className="mb-3 p-2 bg-navy-900/50 rounded border border-purple-500/30 space-y-2">
+                      <div className="flex gap-2">
+                        <Input
+                          type="text"
+                          placeholder="Time (HHMM, optional)"
+                          className="h-7 w-24 text-xs bg-navy-800 border-navy-600 text-white"
+                          value={directiveTime}
+                          onChange={(e) => setDirectiveTime(e.target.value)}
+                        />
+                        <Input
+                          type="text"
+                          placeholder="Directive description..."
+                          className="h-7 flex-1 text-xs bg-navy-800 border-navy-600 text-white"
+                          value={directiveText}
+                          onChange={(e) => setDirectiveText(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") handleAddDirective(); }}
+                        />
+                        <Button
+                          size="sm"
+                          className="h-7 px-3 text-xs btn-gold-metallic"
+                          onClick={handleAddDirective}
+                          disabled={!directiveText.trim()}
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs text-navy-400"
+                          onClick={() => { setShowAddDirective(false); setDirectiveText(""); setDirectiveTime(""); }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                   {directiveEntries.length > 0 ? (
                     <ul className="space-y-2">
                       {directiveEntries.map((entry, idx) => (
@@ -1450,12 +1694,72 @@ export function DailyLogTab() {
             <section data-testid="section-conflicts">
               <Card className="bg-navy-800/50 border-red-900/30">
                 <CardHeader className="pb-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-red-500" />
-                    <CardTitle className="text-amber-400 text-sm">CONFLICTING DIRECTION / REVERSED DIRECTION</CardTitle>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-red-500" />
+                      <CardTitle className="text-amber-400 text-sm">CONFLICTING DIRECTION / REVERSED DIRECTION</CardTitle>
+                    </div>
+                    {canWriteLogEvents && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-2 text-xs border-red-500/40 text-red-300 hover:bg-red-500/10"
+                        onClick={() => setShowAddConflict(!showAddConflict)}
+                      >
+                        <Plus className="w-3 h-3 mr-1" />
+                        Add
+                      </Button>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent>
+                  {showAddConflict && (
+                    <div className="mb-3 p-2 bg-navy-900/50 rounded border border-red-500/30 space-y-2">
+                      <div className="flex gap-2 items-center">
+                        <Input
+                          type="text"
+                          placeholder="Time (HHMM, optional)"
+                          className="h-7 w-24 text-xs bg-navy-800 border-navy-600 text-white"
+                          value={conflictTime}
+                          onChange={(e) => setConflictTime(e.target.value)}
+                        />
+                        <select
+                          className="h-7 text-xs bg-navy-800 border border-navy-600 text-white rounded px-1"
+                          value={conflictTag}
+                          onChange={(e) => setConflictTag(e.target.value as "CONFLICTING DIRECTION" | "REVERSED DIRECTION")}
+                        >
+                          <option value="CONFLICTING DIRECTION">CONFLICTING DIRECTION</option>
+                          <option value="REVERSED DIRECTION">REVERSED DIRECTION</option>
+                        </select>
+                      </div>
+                      <div className="flex gap-2">
+                        <Input
+                          type="text"
+                          placeholder="Description..."
+                          className="h-7 flex-1 text-xs bg-navy-800 border-navy-600 text-white"
+                          value={conflictText}
+                          onChange={(e) => setConflictText(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") handleAddConflict(); }}
+                        />
+                        <Button
+                          size="sm"
+                          className="h-7 px-3 text-xs btn-gold-metallic"
+                          onClick={handleAddConflict}
+                          disabled={!conflictText.trim()}
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs text-navy-400"
+                          onClick={() => { setShowAddConflict(false); setConflictText(""); setConflictTime(""); }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                   {conflictEntries.length > 0 ? (
                     <ul className="space-y-2">
                       {conflictEntries.map((entry: any) => (
@@ -1594,34 +1898,242 @@ export function DailyLogTab() {
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="border-navy-600 hover:bg-transparent">
-                          <TableHead className="text-navy-300 text-xs">Dive #</TableHead>
-                          <TableHead className="text-navy-300 text-xs">Diver</TableHead>
-                          <TableHead className="text-navy-300 text-xs">L/S</TableHead>
-                          <TableHead className="text-navy-300 text-xs">R/B</TableHead>
-                          <TableHead className="text-navy-300 text-xs">L/B</TableHead>
-                          <TableHead className="text-navy-300 text-xs">R/S</TableHead>
-                          <TableHead className="text-navy-300 text-xs">Depth</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {dives.map((dive) => (
-                          <TableRow key={dive.id} className="border-navy-700 hover:bg-navy-700/30">
-                            <TableCell className="text-white font-mono text-xs">#{dive.diveNumber}</TableCell>
-                            <TableCell className="text-navy-100 text-xs">{dive.diverName || dive.diverId}</TableCell>
-                            <TableCell className="text-navy-100 font-mono text-xs">{formatTime(dive.lsTime)}</TableCell>
-                            <TableCell className="text-navy-100 font-mono text-xs">{formatTime(dive.rbTime)}</TableCell>
-                            <TableCell className="text-navy-100 font-mono text-xs">{formatTime(dive.lbTime)}</TableCell>
-                            <TableCell className="text-navy-100 font-mono text-xs">{formatTime(dive.rsTime)}</TableCell>
-                            <TableCell className="text-navy-100 font-mono text-xs">
-                              {dive.maxDepthFsw ? `${dive.maxDepthFsw} fsw` : '--'}
-                            </TableCell>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="border-navy-600 hover:bg-transparent">
+                            <TableHead className="text-navy-300 text-xs">Dive #</TableHead>
+                            <TableHead className="text-navy-300 text-xs">Diver</TableHead>
+                            <TableHead className="text-navy-300 text-xs">L/S</TableHead>
+                            <TableHead className="text-navy-300 text-xs">R/B</TableHead>
+                            <TableHead className="text-navy-300 text-xs">L/B</TableHead>
+                            <TableHead className="text-navy-300 text-xs">R/S</TableHead>
+                            <TableHead className="text-navy-300 text-xs">Depth</TableHead>
+                            <TableHead className="text-navy-300 text-xs">Gas</TableHead>
+                            <TableHead className="text-navy-300 text-xs">FO2%</TableHead>
+                            <TableHead className="text-navy-300 text-xs">Table</TableHead>
+                            <TableHead className="text-navy-300 text-xs">Schedule</TableHead>
+                            <TableHead className="text-navy-300 text-xs">Rep Grp</TableHead>
+                            <TableHead className="text-navy-300 text-xs">Decomp</TableHead>
+                            <TableHead className="text-navy-300 text-xs">Station</TableHead>
+                            <TableHead className="text-navy-300 text-xs">Work Loc</TableHead>
+                            <TableHead className="text-navy-300 text-xs">Task</TableHead>
+                            <TableHead className="text-navy-300 text-xs">Post-Dive</TableHead>
+                            <TableHead className="text-navy-300 text-xs">Tools/Equip</TableHead>
+                            <TableHead className="text-navy-300 text-xs">QC Disp</TableHead>
+                            <TableHead className="text-navy-300 text-xs">Verifier</TableHead>
+                            <TableHead className="text-navy-300 text-xs">Notes</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                        </TableHeader>
+                        <TableBody>
+                          {dives.map((dive) => (
+                            <TableRow key={dive.id} className="border-navy-700 hover:bg-navy-700/30">
+                              <TableCell className="text-white font-mono text-xs">#{dive.diveNumber}</TableCell>
+                              <TableCell className="text-navy-100 text-xs">
+                                <InlineEdit
+                                  diveId={dive.id}
+                                  fieldName="diverDisplayName"
+                                  value={dive.diverDisplayName || dive.diverName}
+                                  displayValue={dive.diverDisplayName || dive.diverName || dive.diverId || "—"}
+                                  onSave={(f, v) => handleDiveSave(dive.id, f, v)}
+                                  placeholder="Diver name"
+                                />
+                              </TableCell>
+                              <TableCell className="text-navy-100 font-mono text-xs">
+                                <InlineEdit
+                                  diveId={dive.id}
+                                  fieldName="lsTime"
+                                  value={dive.lsTime}
+                                  displayValue={formatTime24(dive.lsTime)}
+                                  onSave={(f, v) => handleDiveSave(dive.id, f, v)}
+                                  placeholder="HHMM"
+                                />
+                              </TableCell>
+                              <TableCell className="text-navy-100 font-mono text-xs">
+                                <InlineEdit
+                                  diveId={dive.id}
+                                  fieldName="rbTime"
+                                  value={dive.rbTime}
+                                  displayValue={formatTime24(dive.rbTime)}
+                                  onSave={(f, v) => handleDiveSave(dive.id, f, v)}
+                                  placeholder="HHMM"
+                                />
+                              </TableCell>
+                              <TableCell className="text-navy-100 font-mono text-xs">
+                                <InlineEdit
+                                  diveId={dive.id}
+                                  fieldName="lbTime"
+                                  value={dive.lbTime}
+                                  displayValue={formatTime24(dive.lbTime)}
+                                  onSave={(f, v) => handleDiveSave(dive.id, f, v)}
+                                  placeholder="HHMM"
+                                />
+                              </TableCell>
+                              <TableCell className="text-navy-100 font-mono text-xs">
+                                <InlineEdit
+                                  diveId={dive.id}
+                                  fieldName="rsTime"
+                                  value={dive.rsTime}
+                                  displayValue={formatTime24(dive.rsTime)}
+                                  onSave={(f, v) => handleDiveSave(dive.id, f, v)}
+                                  placeholder="HHMM"
+                                />
+                              </TableCell>
+                              <TableCell className="text-navy-100 font-mono text-xs">
+                                <InlineEdit
+                                  diveId={dive.id}
+                                  fieldName="maxDepthFsw"
+                                  value={dive.maxDepthFsw}
+                                  displayValue={dive.maxDepthFsw ? `${dive.maxDepthFsw}` : "—"}
+                                  onSave={(f, v) => handleDiveSave(dive.id, f, v)}
+                                  placeholder="FSW"
+                                />
+                              </TableCell>
+                              <TableCell className="text-navy-100 text-xs">
+                                <InlineEdit
+                                  diveId={dive.id}
+                                  fieldName="breathingGas"
+                                  value={dive.breathingGas}
+                                  displayValue={dive.breathingGas || "—"}
+                                  onSave={(f, v) => handleDiveSave(dive.id, f, v)}
+                                  placeholder="Air/Nitrox"
+                                />
+                              </TableCell>
+                              <TableCell className="text-navy-100 font-mono text-xs">
+                                <InlineEdit
+                                  diveId={dive.id}
+                                  fieldName="fo2Percent"
+                                  value={dive.fo2Percent}
+                                  displayValue={dive.fo2Percent ? `${dive.fo2Percent}%` : "—"}
+                                  onSave={(f, v) => handleDiveSave(dive.id, f, v)}
+                                  placeholder="%"
+                                />
+                              </TableCell>
+                              <TableCell className="text-navy-100 text-xs">
+                                <InlineEdit
+                                  diveId={dive.id}
+                                  fieldName="tableUsed"
+                                  value={dive.tableUsed}
+                                  displayValue={dive.tableUsed || "—"}
+                                  onSave={(f, v) => handleDiveSave(dive.id, f, v)}
+                                  placeholder="Table"
+                                />
+                              </TableCell>
+                              <TableCell className="text-navy-100 text-xs">
+                                <InlineEdit
+                                  diveId={dive.id}
+                                  fieldName="scheduleUsed"
+                                  value={dive.scheduleUsed}
+                                  displayValue={dive.scheduleUsed || "—"}
+                                  onSave={(f, v) => handleDiveSave(dive.id, f, v)}
+                                  placeholder="Schedule"
+                                />
+                              </TableCell>
+                              <TableCell className="text-navy-100 text-xs">
+                                <InlineEdit
+                                  diveId={dive.id}
+                                  fieldName="repetitiveGroup"
+                                  value={dive.repetitiveGroup}
+                                  displayValue={dive.repetitiveGroup || "—"}
+                                  onSave={(f, v) => handleDiveSave(dive.id, f, v)}
+                                  placeholder="Group"
+                                />
+                              </TableCell>
+                              <TableCell className="text-navy-100 text-xs">
+                                <InlineEdit
+                                  diveId={dive.id}
+                                  fieldName="decompRequired"
+                                  value={dive.decompRequired}
+                                  displayValue={dive.decompRequired || "—"}
+                                  onSave={(f, v) => handleDiveSave(dive.id, f, v)}
+                                  placeholder="Y/N"
+                                />
+                              </TableCell>
+                              <TableCell className="text-navy-100 text-xs">
+                                <InlineEdit
+                                  diveId={dive.id}
+                                  fieldName="station"
+                                  value={dive.station}
+                                  displayValue={dive.station || "—"}
+                                  onSave={(f, v) => handleDiveSave(dive.id, f, v)}
+                                  placeholder="Station"
+                                />
+                              </TableCell>
+                              <TableCell className="text-navy-100 text-xs">
+                                <InlineEdit
+                                  diveId={dive.id}
+                                  fieldName="workLocation"
+                                  value={dive.workLocation}
+                                  displayValue={dive.workLocation || "—"}
+                                  onSave={(f, v) => handleDiveSave(dive.id, f, v)}
+                                  placeholder="Location"
+                                />
+                              </TableCell>
+                              <TableCell className="text-navy-100 text-xs">
+                                <InlineEdit
+                                  diveId={dive.id}
+                                  fieldName="taskSummary"
+                                  value={dive.taskSummary}
+                                  displayValue={dive.taskSummary || "—"}
+                                  onSave={(f, v) => handleDiveSave(dive.id, f, v)}
+                                  placeholder="Task"
+                                />
+                              </TableCell>
+                              <TableCell className="text-navy-100 text-xs">
+                                <InlineEdit
+                                  diveId={dive.id}
+                                  fieldName="postDiveStatus"
+                                  value={dive.postDiveStatus}
+                                  displayValue={dive.postDiveStatus || "—"}
+                                  onSave={(f, v) => handleDiveSave(dive.id, f, v)}
+                                  placeholder="Status"
+                                />
+                              </TableCell>
+                              <TableCell className="text-navy-100 text-xs">
+                                <InlineEdit
+                                  diveId={dive.id}
+                                  fieldName="toolsEquipment"
+                                  value={dive.toolsEquipment}
+                                  displayValue={dive.toolsEquipment || "—"}
+                                  onSave={(f, v) => handleDiveSave(dive.id, f, v)}
+                                  placeholder="Tools"
+                                />
+                              </TableCell>
+                              <TableCell className="text-navy-100 text-xs">
+                                <InlineEdit
+                                  diveId={dive.id}
+                                  fieldName="qcDisposition"
+                                  value={dive.qcDisposition}
+                                  displayValue={dive.qcDisposition || "—"}
+                                  onSave={(f, v) => handleDiveSave(dive.id, f, v)}
+                                  placeholder="QC"
+                                />
+                              </TableCell>
+                              <TableCell className="text-navy-100 text-xs">
+                                <InlineEdit
+                                  diveId={dive.id}
+                                  fieldName="verifier"
+                                  value={dive.verifier}
+                                  displayValue={dive.verifier || "—"}
+                                  onSave={(f, v) => handleDiveSave(dive.id, f, v)}
+                                  placeholder="Verifier"
+                                />
+                              </TableCell>
+                              <TableCell className="text-navy-100 text-xs">
+                                <InlineEdit
+                                  diveId={dive.id}
+                                  fieldName="notes"
+                                  value={dive.notes}
+                                  displayValue={dive.notes || "—"}
+                                  onSave={(f, v) => handleDiveSave(dive.id, f, v)}
+                                  placeholder="Notes"
+                                />
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
                   </CardContent>
                 </Card>
               </section>

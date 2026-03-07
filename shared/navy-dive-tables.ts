@@ -1417,7 +1417,9 @@ export const TABLE_DEPTHS = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80,
  * @returns EAD in fsw, rounded to next deeper table depth
  */
 export function calculateEAD(actualDepthFsw: number, fo2: number): number {
-  const fn2 = 1 - fo2;
+  // Normalize: if fo2 > 1, it's a percentage (e.g., 38), convert to fraction (0.38)
+  const fo2Fraction = fo2 > 1 ? fo2 / 100 : fo2;
+  const fn2 = 1 - fo2Fraction;
   const ead = (actualDepthFsw + 33) * (fn2 / 0.79) - 33;
   return Math.ceil(ead);
 }
@@ -1476,7 +1478,7 @@ export function lookupDiveTable(
 
   // Calculate EAD for Nitrox
   let effectiveDepth = depthFsw;
-  if (gasType === "nitrox" && fo2) {
+  if (gasType.toLowerCase() === "nitrox" && fo2) {
     effectiveDepth = calculateEAD(depthFsw, fo2);
     warnings.push(`EAD calculated: ${effectiveDepth} fsw (actual ${depthFsw} fsw, FO2 ${fo2})`);
   }
