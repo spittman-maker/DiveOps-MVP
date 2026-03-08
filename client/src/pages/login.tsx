@@ -203,11 +203,44 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
+  const getWelcomeMessage = (uname: string): { title: string; description: string } | null => {
+    const key = uname.toLowerCase().trim();
+    const messages: Record<string, { title: string; description: string }> = {
+      mdorn: {
+        title: "Welcome, Martin",
+        description: "Perfect time to queue up some Chopin — nothing pairs better with compliance data than a little Ballade No. 1 in G minor.",
+      },
+      aaddison: {
+        title: "Welcome, Aaron",
+        description: "\"Once in a while you get shown the light, in the strangest of places if you look at it right.\" — Grateful Dead. Let's get to work.",
+      },
+      jmorris: {
+        title: "Welcome, Jamie",
+        description: "Quick heads up — we've partnered with a premium hair restoration clinic. First consultation is on us. You're welcome.",
+      },
+      bmartin: {
+        title: "Welcome, Baker",
+        description: "Don't fuck this up. Skyler is counting on you.",
+      },
+    };
+    return messages[key] || null;
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     try {
       await login(username, password);
+      const welcome = getWelcomeMessage(username);
+      if (welcome) {
+        setTimeout(() => {
+          toast({
+            title: welcome.title,
+            description: welcome.description,
+            duration: 12000,
+          });
+        }, 1500);
+      }
     } catch (error) {
       toast({
         title: "Login failed",
