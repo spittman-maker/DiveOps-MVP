@@ -4153,31 +4153,50 @@ If you're not confident about specific facilities, say so in the notes field. Al
   app.delete("/api/projects/:projectId", requireRole("GOD"), async (req: Request, res: Response) => {
     try {
       const { db } = await import("./db");
-      const { projects, days, logEvents, dives, libraryExports, riskItems, auditEvents, projectMembers } = await import("@shared/schema");
+      const schema = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
 
       const projectId = req.params.projectId;
-      const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+      const [project] = await db.select().from(schema.projects).where(eq(schema.projects.id, projectId));
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
       }
 
-      const projectDays = await db.select({ id: days.id }).from(days).where(eq(days.projectId, projectId));
+      const projectDays = await db.select({ id: schema.days.id }).from(schema.days).where(eq(schema.days.projectId, projectId));
       const dayIds = projectDays.map(d => d.id);
+
+      // Delete in correct FK order
+      // 1. Risk items (reference log_events via triggerEventId)
+      await db.delete(schema.riskItems).where(eq(schema.riskItems.projectId, projectId));
 
       if (dayIds.length > 0) {
         for (const dayId of dayIds) {
-          await db.delete(logEvents).where(eq(logEvents.dayId, dayId));
-          await db.delete(dives).where(eq(dives.dayId, dayId));
-          await db.delete(libraryExports).where(eq(libraryExports.dayId, dayId));
+          // logRenders reference logEvents
+          try { await db.delete(schema.logRenders).where(eq(schema.logRenders.dayId, dayId)); } catch(e) {}
+          // clientComms reference days
+          try { await db.delete(schema.clientComms).where(eq(schema.clientComms.dayId, dayId)); } catch(e) {}
+          // dailySummaries reference days
+          try { await db.delete(schema.dailySummaries).where(eq(schema.dailySummaries.dayId, dayId)); } catch(e) {}
+          // analyticsSnapshots reference days
+          try { await db.delete(schema.analyticsSnapshots).where(eq(schema.analyticsSnapshots.dayId, dayId)); } catch(e) {}
+          // anomalyFlags reference days
+          try { await db.delete(schema.anomalyFlags).where(eq(schema.anomalyFlags.dayId, dayId)); } catch(e) {}
+          // libraryExports reference days
+          await db.delete(schema.libraryExports).where(eq(schema.libraryExports.dayId, dayId));
+          // logEvents reference days
+          await db.delete(schema.logEvents).where(eq(schema.logEvents.dayId, dayId));
+          // dives reference days
+          await db.delete(schema.dives).where(eq(schema.dives.dayId, dayId));
         }
       }
-
-      await db.delete(riskItems).where(eq(riskItems.projectId, projectId));
-      await db.delete(days).where(eq(days.projectId, projectId));
-      await db.delete(auditEvents).where(eq(auditEvents.projectId, projectId));
-      await db.delete(projectMembers).where(eq(projectMembers.projectId, projectId));
-      await db.delete(projects).where(eq(projects.id, projectId));
+      // divePlans reference projects
+      try { await db.delete(schema.divePlans).where(eq(schema.divePlans.projectId, projectId)); } catch(e) {}
+      await db.delete(schema.days).where(eq(schema.days.projectId, projectId));
+      await db.delete(schema.auditEvents).where(eq(schema.auditEvents.projectId, projectId));
+      await db.delete(schema.projectMembers).where(eq(schema.projectMembers.projectId, projectId));
+      // SOPs reference projects
+      try { await db.delete(schema.sops).where(eq(schema.sops.projectId, projectId)); } catch(e) {}
+      await db.delete(schema.projects).where(eq(schema.projects.id, projectId));
 
       res.json({ message: `Project "${project.name}" deleted successfully` });
     } catch (error) {
