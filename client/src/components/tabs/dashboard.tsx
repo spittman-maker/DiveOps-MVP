@@ -641,7 +641,7 @@ interface LightningData {
   }>;
 }
 
-function WeatherWidget() {
+function WeatherWidget({ projectId }: { projectId?: string } = {}) {
   const { data: projects } = useQuery<any[]>({
     queryKey: ["projects"],
     queryFn: async () => {
@@ -651,9 +651,24 @@ function WeatherWidget() {
     },
   });
 
-  const project = projects?.[0];
-  const lat = project?.jobsiteLat;
-  const lon = project?.jobsiteLng;
+  // Use the selected project, not just projects[0]
+  const project = projectId ? projects?.find((p: any) => p.id === projectId) : projects?.[0];
+  
+  // Parse lat/lng - handle numeric values and string formats like "36.8354° N"
+  const parseDegree = (val: any): number | null => {
+    if (val == null || val === "") return null;
+    if (typeof val === "number") return val;
+    const str = String(val).trim();
+    const match = str.match(/([\d.]+)/);
+    if (!match) return null;
+    let num = parseFloat(match[1]);
+    if (isNaN(num)) return null;
+    if (/[SW]/i.test(str)) num = -num;
+    return num;
+  };
+  
+  const lat = parseDegree(project?.jobsiteLat);
+  const lon = parseDegree(project?.jobsiteLng);
   const siteName = project?.jobsiteName || "Jobsite";
 
   const [geoLat, setGeoLat] = useState<number | null>(null);
@@ -930,7 +945,7 @@ function renderWidget(type: string, stats: DashboardStats, projectId?: string) {
     case "recent_logs":
       return <RecentLogsWidget projectId={projectId} />;
     case "weather":
-      return <WeatherWidget />;
+      return <WeatherWidget projectId={projectId} />;
     case "diver_certs":
       return <DiverCertsWidget />;
     case "equipment_certs":

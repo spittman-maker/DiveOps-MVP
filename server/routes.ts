@@ -435,37 +435,56 @@ export async function registerRoutes(
       };
       
       if (projectId) {
-        const day = await storage.getMostRecentDayByProject(projectId);
+        const allDays = await storage.getDaysByProject(projectId);
         const projectRisks = await storage.getRiskItemsByProject(projectId);
-        if (day) {
+        
+        // Aggregate stats across ALL days for this project
+        let totalDives = 0;
+        let activeDiveRecords: any[] = [];
+        let completedDiveRecords: any[] = [];
+        let allLogs: any[] = [];
+        let latestDayStatus = "NO_DAYS";
+        let latestDayDate = "";
+        
+        for (const day of allDays) {
           const dives = await storage.getDivesByDay(day.id);
           const logs = await storage.getLogEventsByDay(day.id);
-          // Show active dives from ALL day statuses (DRAFT, ACTIVE, CLOSED)
-          const activeDiveRecords = dives.filter(d => d.lsTime && !d.rsTime);
-          const completedDiveRecords = dives.filter(d => d.lsTime && (d.rsTime || d.lbTime));
-          
-          stats = {
-            totalDives: dives.length,
-            activeDives: activeDiveRecords.length,
-            activeDivers: activeDiveRecords.map(d => ({
-              id: d.id,
-              name: d.diverDisplayName || "Unknown",
-              station: d.station || null,
-              lsTime: d.lsTime,
-            })),
-            completedDives: completedDiveRecords.length,
-            safetyIncidents: logs.filter(l => l.category === "safety").length,
-            openRisks: projectRisks.filter(r => r.status === "open").length,
-            recentRisks: projectRisks
-              .filter(r => r.status === "open")
-              .slice(0, 3)
-              .map(r => ({ id: r.id, riskId: r.riskId, description: r.description, source: r.source })),
-            logEntriesToday: logs.length,
-            directivesToday: logs.filter(l => l.category === "directive").length,
-            dayStatus: day.status,
-            dayDate: day.date,
-          };
-        } else {
+          totalDives += dives.length;
+          activeDiveRecords.push(...dives.filter(d => d.lsTime && !d.rsTime));
+          completedDiveRecords.push(...dives.filter(d => d.lsTime && (d.rsTime || d.lbTime)));
+          allLogs.push(...logs);
+        }
+        
+        // Use the most recent day for status display
+        if (allDays.length > 0) {
+          latestDayStatus = allDays[0].status;
+          latestDayDate = allDays[0].date;
+        }
+        
+        stats = {
+          totalDives,
+          activeDives: activeDiveRecords.length,
+          activeDivers: activeDiveRecords.map(d => ({
+            id: d.id,
+            name: d.diverDisplayName || "Unknown",
+            station: d.station || null,
+            lsTime: d.lsTime,
+          })),
+          completedDives: completedDiveRecords.length,
+          safetyIncidents: allLogs.filter(l => l.category === "safety").length,
+          openRisks: projectRisks.filter(r => r.status === "open").length,
+          recentRisks: projectRisks
+            .filter(r => r.status === "open")
+            .slice(0, 3)
+            .map(r => ({ id: r.id, riskId: r.riskId, description: r.description, source: r.source })),
+          logEntriesToday: allLogs.length,
+          directivesToday: allLogs.filter(l => l.category === "directive").length,
+          dayStatus: latestDayStatus,
+          dayDate: latestDayDate,
+          totalDays: allDays.length,
+        };
+        
+        if (allDays.length === 0) {
           stats.openRisks = projectRisks.filter(r => r.status === "open").length;
         }
       }
