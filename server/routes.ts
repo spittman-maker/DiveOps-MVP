@@ -4149,6 +4149,43 @@ If you're not confident about specific facilities, say so in the notes field. Al
     }
   });
 
+  // Direct project delete (GOD only, no ML export required)
+  app.delete("/api/projects/:projectId", requireRole("GOD"), async (req: Request, res: Response) => {
+    try {
+      const { db } = await import("./db");
+      const { projects, days, logEvents, dives, libraryExports, riskItems, auditEvents, projectMembers } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+
+      const projectId = req.params.projectId;
+      const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      const projectDays = await db.select({ id: days.id }).from(days).where(eq(days.projectId, projectId));
+      const dayIds = projectDays.map(d => d.id);
+
+      if (dayIds.length > 0) {
+        for (const dayId of dayIds) {
+          await db.delete(logEvents).where(eq(logEvents.dayId, dayId));
+          await db.delete(dives).where(eq(dives.dayId, dayId));
+          await db.delete(libraryExports).where(eq(libraryExports.dayId, dayId));
+        }
+      }
+
+      await db.delete(riskItems).where(eq(riskItems.projectId, projectId));
+      await db.delete(days).where(eq(days.projectId, projectId));
+      await db.delete(auditEvents).where(eq(auditEvents.projectId, projectId));
+      await db.delete(projectMembers).where(eq(projectMembers.projectId, projectId));
+      await db.delete(projects).where(eq(projects.id, projectId));
+
+      res.json({ message: `Project "${project.name}" deleted successfully` });
+    } catch (error) {
+      console.error("Project delete error:", error);
+      res.status(500).json({ message: "Failed to delete project" });
+    }
+  });
+
   app.delete("/api/ml-export/purge/conversations", requireRole("GOD"), async (_req: Request, res: Response) => {
     try {
       const { db } = await import("./db");
