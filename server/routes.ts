@@ -879,25 +879,26 @@ export async function registerRoutes(
   // ──────────────────────────────────────────────────────────────────────────
 
   app.get("/api/projects/:projectId/days", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
-    // Get the most recent day/shift for the project
-    let day = await storage.getMostRecentDayByProject(req.params.projectId);
+    // Get ALL days/shifts for the project, ordered by most recent first
+    const days = await storage.getDaysByProject(req.params.projectId);
     
-    // If no day exists and user can write, create one for today
-    if (!day) {
+    // If no days exist and user can write, create one for today
+    if (days.length === 0) {
       const user = getUser(req);
       if (canWriteLogEvents(user.role)) {
         const today = getTodayDate();
-        day = await storage.createDay({
+        const day = await storage.createDay({
           projectId: req.params.projectId,
           date: today,
           shift: "1",
           status: "DRAFT",
           createdBy: user.id,
         });
+        return res.json([day]);
       }
     }
     
-    res.json(day ? [day] : []);
+    res.json(days);
   });
 
   app.get("/api/days/:id", requireAuth, async (req: Request, res: Response) => {

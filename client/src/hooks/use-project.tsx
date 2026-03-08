@@ -26,6 +26,8 @@ interface ProjectContextType {
   activeProject: Project | null;
   setActiveProject: (projectId: string) => void;
   activeDay: Day | null;
+  allDays: Day[];
+  setActiveDay: (dayId: string) => void;
   isLoading: boolean;
   refreshDay: () => void;
 }
@@ -36,6 +38,18 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [activeDayId, setActiveDayId] = useState<string | null>(null);
+
+  // Fetch user's active project from /api/auth/me
+  const { data: meData } = useQuery<{ activeProjectId?: string }>({
+    queryKey: ["auth-me"],
+    queryFn: async () => {
+      const res = await fetch("/api/auth/me", { credentials: "include" });
+      if (!res.ok) return {};
+      return res.json();
+    },
+    enabled: !!user,
+  });
 
   const { data: projects = [], isLoading: projectsLoading } = useQuery<Project[]>({
     queryKey: ["projects"],
@@ -47,11 +61,16 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     enabled: !!user,
   });
 
+  // Set active project from user preferences first, then fall back to first project
   useEffect(() => {
     if (projects.length > 0 && !activeProjectId) {
-      setActiveProjectId(projects[0].id);
+      if (meData?.activeProjectId && projects.find(p => p.id === meData.activeProjectId)) {
+        setActiveProjectId(meData.activeProjectId);
+      } else {
+        setActiveProjectId(projects[0].id);
+      }
     }
-  }, [projects, activeProjectId]);
+  }, [projects, activeProjectId, meData?.activeProjectId]);
 
   const activeProject = projects.find(p => p.id === activeProjectId) || null;
 
@@ -66,7 +85,22 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     enabled: !!activeProjectId,
   });
 
-  const activeDay = days[0] || null;
+  // When days change, select the first non-closed day, or the most recent day
+  useEffect(() => {
+    if (days.length > 0) {
+      if (!activeDayId || !days.find(d => d.id === activeDayId)) {
+        // Prefer ACTIVE day, then DRAFT, then most recent
+        const activeStatusDay = days.find(d => d.status === "ACTIVE");
+        const draftDay = days.find(d => d.status === "DRAFT");
+        const bestDay = activeStatusDay || draftDay || days[0];
+        setActiveDayId(bestDay.id);
+      }
+    } else {
+      setActiveDayId(null);
+    }
+  }, [days]);
+
+  const activeDay = (activeDayId ? days.find(d => d.id === activeDayId) : days[0]) || null;
 
   const setActiveProjectMutation = useMutation({
     mutationFn: async (projectId: string) => {
@@ -78,7 +112,11 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     },
     onSuccess: (projectId) => {
       setActiveProjectId(projectId);
+      setActiveDayId(null); // Reset day selection when switching projects
       queryClient.invalidateQueries({ queryKey: ["days"] });
+      queryClient.invalidateQueries({ queryKey: ["log-events"] });
+      queryClient.invalidateQueries({ queryKey: ["master-log"] });
+      queryClient.invalidateQueries({ queryKey: ["risks"] });
     },
   });
 
@@ -89,6 +127,8 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         activeProject,
         setActiveProject: (id) => setActiveProjectMutation.mutate(id),
         activeDay,
+        allDays: days,
+        setActiveDay: (dayId) => setActiveDayId(dayId),
         isLoading: projectsLoading || daysLoading,
         refreshDay: () => refetchDays(),
       }}

@@ -269,7 +269,7 @@ function DepthPrompt({ eventId }: { eventId: string }) {
 
 export function DailyLogTab() {
   const { canWriteLogEvents, isSupervisor } = useAuth();
-  const { activeProject, activeDay, refreshDay } = useProject();
+  const { activeProject, activeDay, allDays, setActiveDay, refreshDay } = useProject();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [rawInput, setRawInput] = useState("");
@@ -991,11 +991,26 @@ export function DailyLogTab() {
         <div className="bg-navy-800 p-3 border-b border-navy-600 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <h2 className="text-sm font-semibold text-white">Supervisor Daily Log</h2>
+            {allDays.length > 1 && (
+              <select
+                className="bg-navy-700 text-white text-xs border border-navy-500 rounded px-2 py-1"
+                value={activeDay?.id || ""}
+                onChange={(e) => setActiveDay(e.target.value)}
+              >
+                {allDays.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.date} {d.shift ? `Shift ${d.shift}` : ""} [{d.status}]
+                  </option>
+                ))}
+              </select>
+            )}
             {currentDay && (
               <>
-                <Badge className="text-xs bg-navy-600">
-                  {currentDay.date} {currentDay.shift ? `Shift ${currentDay.shift}` : ""}
-                </Badge>
+                {allDays.length <= 1 && (
+                  <Badge className="text-xs bg-navy-600">
+                    {currentDay.date} {currentDay.shift ? `Shift ${currentDay.shift}` : ""}
+                  </Badge>
+                )}
                 <Badge
                   className={`text-xs ${
                     currentDay.status === "CLOSED"
