@@ -4187,12 +4187,15 @@ If you're not confident about specific facilities, say so in the notes field. Al
           await db.delete(schema.logEvents).where(eq(schema.logEvents.dayId, dayId));
           // dives reference days
           await db.delete(schema.dives).where(eq(schema.dives.dayId, dayId));
+          // audit_events reference days via dayId FK
+          try { await db.delete(schema.auditEvents).where(eq(schema.auditEvents.dayId, dayId)); } catch(e) {}
         }
       }
       // divePlans reference projects
       try { await db.delete(schema.divePlans).where(eq(schema.divePlans.projectId, projectId)); } catch(e) {}
-      await db.delete(schema.days).where(eq(schema.days.projectId, projectId));
+      // Delete remaining audit_events that reference the project but not a specific day
       await db.delete(schema.auditEvents).where(eq(schema.auditEvents.projectId, projectId));
+      await db.delete(schema.days).where(eq(schema.days.projectId, projectId));
       await db.delete(schema.projectMembers).where(eq(schema.projectMembers.projectId, projectId));
       // SOPs reference projects
       try { await db.delete(schema.sops).where(eq(schema.sops.projectId, projectId)); } catch(e) {}
