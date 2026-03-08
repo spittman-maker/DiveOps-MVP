@@ -377,14 +377,15 @@ export async function registerRoutes(
         // Return default layout if none exists
         return res.json({
           widgets: [
-            { id: "w1", type: "daily_summary", title: "Today's Summary", x: 0, y: 0, w: 2, h: 2 },
-            { id: "w2", type: "active_dives", title: "Active Dives", x: 2, y: 0, w: 2, h: 2 },
-            { id: "w3", type: "recent_logs", title: "Recent Log Entries", x: 0, y: 2, w: 2, h: 2 },
-            { id: "w4", type: "safety_incidents", title: "Safety Status", x: 2, y: 2, w: 2, h: 1 },
-            { id: "w5", type: "diver_certs", title: "Diver Certifications", x: 0, y: 4, w: 2, h: 2 },
-            { id: "w6", type: "equipment_certs", title: "Equipment Certifications", x: 2, y: 4, w: 2, h: 2 },
+            { id: "w1", type: "live_dive_board", title: "Live Dive Board", x: 0, y: 0, w: 4, h: 3 },
+            { id: "w2", type: "live_log_feed", title: "Live Log Feed", x: 0, y: 3, w: 2, h: 3 },
+            { id: "w3", type: "station_overview", title: "Station Overview", x: 2, y: 3, w: 2, h: 3 },
+            { id: "w4", type: "daily_summary", title: "Today's Summary", x: 0, y: 6, w: 2, h: 2 },
+            { id: "w5", type: "safety_incidents", title: "Safety Status", x: 2, y: 6, w: 2, h: 2 },
+            { id: "w6", type: "diver_certs", title: "Diver Certifications", x: 0, y: 8, w: 2, h: 2 },
+            { id: "w7", type: "equipment_certs", title: "Equipment Certifications", x: 2, y: 8, w: 2, h: 2 },
           ],
-          version: 1,
+          version: 2,
         });
       }
       
@@ -523,6 +524,181 @@ export async function registerRoutes(
       
       res.json(recentLogs);
     } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // LIVE BOARD – Cross-crew real-time visibility
+  // ──────────────────────────────────────────────────────────────────────────
+
+  app.get("/api/dashboard/live-board", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const prefs = await storage.getUserPreferences(user.id);
+      let projectId = prefs?.activeProjectId;
+
+      if (!projectId) {
+        const projects = await storage.getAllProjects();
+        if (projects.length > 0) {
+          projectId = projects[0].id;
+        }
+      }
+
+      if (!projectId) {
+        return res.json({ activeDives: [], completedDives: [], logEntries: [], stations: [] });
+      }
+
+      // Get ALL days for this project (covers all shifts / stations)
+      const allDays = await storage.getDaysByProject(projectId);
+      const today = getTodayDate();
+
+      // Filter to today's active days (or most recent day if none today)
+      let todayDays = allDays.filter(d => d.date === today);
+      if (todayDays.length === 0 && allDays.length > 0) {
+        // Fall back to the most recent day's date
+        const mostRecentDate = allDays[0].date;
+        todayDays = allDays.filter(d => d.date === mostRecentDate);
+      }
+
+      // Gather ALL dives and logs across all today's days
+      const allDivesRaw: any[] = [];
+      const allLogsRaw: any[] = [];
+      const dayStatusMap: Record<string, string> = {};
+
+      for (const day of todayDays) {
+        dayStatusMap[day.id] = day.status;
+        const dives = await storage.getDivesByDay(day.id);
+        const logs = await storage.getLogEventsByDay(day.id);
+        allDivesRaw.push(...dives);
+        allLogsRaw.push(...logs);
+      }
+
+      const now = Date.now();
+
+      // Classify dives
+      const activeDives = allDivesRaw
+        .filter(d => d.lsTime && !d.rsTime)
+        .map(d => {
+          const lsMs = new Date(d.lsTime).getTime();
+          const elapsedMin = Math.round((now - lsMs) / 60000);
+          // Bottom time = time from reaching bottom (rbTime) to leaving bottom (lbTime) or now
+          let bottomTimeMin: number | null = null;
+          if (d.rbTime) {
+            const rbMs = new Date(d.rbTime).getTime();
+            const endMs = d.lbTime ? new Date(d.lbTime).getTime() : now;
+            bottomTimeMin = Math.round((endMs - rbMs) / 60000);
+          }
+          return {
+            id: d.id,
+            diverName: d.diverDisplayName || "Unknown",
+            station: d.station || "Unassigned",
+            maxDepthFsw: d.maxDepthFsw || null,
+            breathingGas: d.breathingGas || "Air",
+            fo2Percent: d.fo2Percent || null,
+            lsTime: d.lsTime,
+            rbTime: d.rbTime || null,
+            lbTime: d.lbTime || null,
+            elapsedMin,
+            bottomTimeMin,
+            tableUsed: d.tableUsed || null,
+            scheduleUsed: d.scheduleUsed || null,
+            repetitiveGroup: d.repetitiveGroup || null,
+            decompRequired: d.decompRequired || null,
+            diveNumber: d.diveNumber,
+            dayId: d.dayId,
+          };
+        })
+        .sort((a, b) => new Date(a.lsTime).getTime() - new Date(b.lsTime).getTime());
+
+      const completedDives = allDivesRaw
+        .filter(d => d.lsTime && d.rsTime)
+        .map(d => {
+          const lsMs = new Date(d.lsTime).getTime();
+          const rsMs = new Date(d.rsTime).getTime();
+          const totalMin = Math.round((rsMs - lsMs) / 60000);
+          let bottomTimeMin: number | null = null;
+          if (d.rbTime && d.lbTime) {
+            bottomTimeMin = Math.round((new Date(d.lbTime).getTime() - new Date(d.rbTime).getTime()) / 60000);
+          }
+          return {
+            id: d.id,
+            diverName: d.diverDisplayName || "Unknown",
+            station: d.station || "Unassigned",
+            maxDepthFsw: d.maxDepthFsw || null,
+            breathingGas: d.breathingGas || "Air",
+            fo2Percent: d.fo2Percent || null,
+            lsTime: d.lsTime,
+            rsTime: d.rsTime,
+            totalMin,
+            bottomTimeMin,
+            tableUsed: d.tableUsed || null,
+            scheduleUsed: d.scheduleUsed || null,
+            repetitiveGroup: d.repetitiveGroup || null,
+            decompRequired: d.decompRequired || null,
+            diveNumber: d.diveNumber,
+            dayId: d.dayId,
+          };
+        })
+        .sort((a, b) => new Date(b.rsTime).getTime() - new Date(a.rsTime).getTime());
+
+      // Log entries sorted most recent first
+      const logEntries = allLogsRaw
+        .sort((a, b) => new Date(b.eventTime).getTime() - new Date(a.eventTime).getTime())
+        .slice(0, 50)
+        .map(log => ({
+          id: log.id,
+          station: log.station || "General",
+          category: log.category || "general",
+          rawText: log.rawText,
+          eventTime: log.eventTime,
+          captureTime: log.captureTime,
+          dayId: log.dayId,
+        }));
+
+      // Station breakdown
+      const stationMap: Record<string, { name: string; activeDivers: number; completedDives: number; isActive: boolean }> = {};
+      for (const d of allDivesRaw) {
+        const sName = d.station || "Unassigned";
+        if (!stationMap[sName]) {
+          stationMap[sName] = { name: sName, activeDivers: 0, completedDives: 0, isActive: false };
+        }
+        if (d.lsTime && !d.rsTime) {
+          stationMap[sName].activeDivers++;
+          stationMap[sName].isActive = true;
+        } else if (d.lsTime && d.rsTime) {
+          stationMap[sName].completedDives++;
+        }
+      }
+      // Also mark stations as active if their day is active
+      for (const day of todayDays) {
+        if (day.status === "ACTIVE") {
+          // Check if any dive from this day has a station
+          const dayDives = allDivesRaw.filter(d => d.dayId === day.id);
+          for (const d of dayDives) {
+            const sName = d.station || "Unassigned";
+            if (stationMap[sName]) {
+              stationMap[sName].isActive = true;
+            }
+          }
+        }
+      }
+
+      const stations = Object.values(stationMap).sort((a, b) => {
+        if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+
+      res.json({
+        activeDives,
+        completedDives,
+        logEntries,
+        stations,
+        dayCount: todayDays.length,
+        date: todayDays[0]?.date || today,
+      });
+    } catch (error: any) {
+      console.error("Live board error:", error);
       res.status(500).json({ message: error.message });
     }
   });

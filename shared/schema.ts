@@ -861,7 +861,10 @@ export type WidgetType =
   | "risk_register" 
   | "project_status"
   | "dive_stats"
-  | "weather";
+  | "weather"
+  | "live_dive_board"
+  | "live_log_feed"
+  | "station_overview";
 
 export interface WidgetConfig {
   id: string;

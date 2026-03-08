@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Settings, GripVertical, X, Save, RotateCcw, Sun, Cloud, CloudRain, Wind, Droplets, Zap } from "lucide-react";
+import { Plus, Settings, GripVertical, X, Save, RotateCcw, Sun, Cloud, CloudRain, Wind, Droplets, Zap, Waves, Radio, Activity } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -69,7 +69,60 @@ interface DashboardStats {
   dayDate?: string;
 }
 
+// ─── Live Board Types ────────────────────────────────────────────────────────
+
+interface LiveDive {
+  id: string;
+  diverName: string;
+  station: string;
+  maxDepthFsw: number | null;
+  breathingGas: string;
+  fo2Percent: number | null;
+  lsTime: string;
+  rbTime: string | null;
+  lbTime: string | null;
+  rsTime?: string;
+  elapsedMin: number;
+  bottomTimeMin: number | null;
+  totalMin?: number;
+  tableUsed: string | null;
+  scheduleUsed: string | null;
+  repetitiveGroup: string | null;
+  decompRequired: string | null;
+  diveNumber: number;
+  dayId: string;
+}
+
+interface LiveLogEntry {
+  id: string;
+  station: string;
+  category: string;
+  rawText: string;
+  eventTime: string;
+  captureTime: string;
+  dayId: string;
+}
+
+interface StationInfo {
+  name: string;
+  activeDivers: number;
+  completedDives: number;
+  isActive: boolean;
+}
+
+interface LiveBoardData {
+  activeDives: LiveDive[];
+  completedDives: LiveDive[];
+  logEntries: LiveLogEntry[];
+  stations: StationInfo[];
+  dayCount: number;
+  date: string;
+}
+
 const WIDGET_TYPES = [
+  { type: "live_dive_board", label: "Live Dive Board", defaultW: 4, defaultH: 3 },
+  { type: "live_log_feed", label: "Live Log Feed", defaultW: 2, defaultH: 3 },
+  { type: "station_overview", label: "Station Overview", defaultW: 2, defaultH: 3 },
   { type: "daily_summary", label: "Today's Summary", defaultW: 2, defaultH: 2 },
   { type: "active_dives", label: "Active Dives", defaultW: 2, defaultH: 2 },
   { type: "recent_logs", label: "Recent Logs", defaultW: 2, defaultH: 2 },
@@ -81,6 +134,255 @@ const WIDGET_TYPES = [
   { type: "diver_certs", label: "Diver Certifications", defaultW: 2, defaultH: 2 },
   { type: "equipment_certs", label: "Equipment Certifications", defaultW: 2, defaultH: 2 },
 ];
+
+// ─── Shared hook for live board data ─────────────────────────────────────────
+
+function useLiveBoardData() {
+  return useQuery<LiveBoardData>({
+    queryKey: ["dashboard-live-board"],
+    queryFn: async () => {
+      const res = await fetch("/api/dashboard/live-board", { credentials: "include" });
+      if (!res.ok) return { activeDives: [], completedDives: [], logEntries: [], stations: [], dayCount: 0, date: "" };
+      return res.json();
+    },
+    refetchInterval: 5000,
+  });
+}
+
+// ─── NEW: Live Dive Board Widget ─────────────────────────────────────────────
+
+function LiveDiveBoardWidget() {
+  const { data } = useLiveBoardData();
+  const activeDives = data?.activeDives || [];
+  const completedDives = data?.completedDives || [];
+
+  const formatTime = (iso: string) => {
+    const d = new Date(iso);
+    return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+  };
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden" data-testid="widget-live-dive-board">
+      {/* Header summary */}
+      <div className="flex items-center gap-3 mb-2 shrink-0">
+        <div className="flex items-center gap-1.5">
+          <Waves className="h-4 w-4 text-amber-400" />
+          <span className="text-sm font-semibold text-white">{activeDives.length} In Water</span>
+        </div>
+        <span className="text-xs text-navy-400">|</span>
+        <span className="text-xs text-navy-300">{completedDives.length} Completed Today</span>
+        {activeDives.length > 0 && (
+          <Badge className="btn-gold-metallic animate-pulse text-[9px] px-1.5 py-0">LIVE</Badge>
+        )}
+      </div>
+
+      {/* Active dives table */}
+      {activeDives.length > 0 && (
+        <div className="mb-2 shrink-0">
+          <div className="text-[10px] text-amber-400 font-semibold uppercase tracking-wider mb-1">Active Dives</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[10px]">
+              <thead>
+                <tr className="text-navy-400 border-b border-navy-600">
+                  <th className="text-left py-1 px-1 font-medium"></th>
+                  <th className="text-left py-1 px-1 font-medium">Diver</th>
+                  <th className="text-left py-1 px-1 font-medium">Station</th>
+                  <th className="text-right py-1 px-1 font-medium">Depth</th>
+                  <th className="text-left py-1 px-1 font-medium">Gas</th>
+                  <th className="text-right py-1 px-1 font-medium">FO2%</th>
+                  <th className="text-right py-1 px-1 font-medium">LS</th>
+                  <th className="text-right py-1 px-1 font-medium">Elapsed</th>
+                  <th className="text-right py-1 px-1 font-medium">BT</th>
+                  <th className="text-left py-1 px-1 font-medium">Table</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeDives.map(dive => (
+                  <tr key={dive.id} className="border-b border-navy-700/50 hover:bg-navy-700/30">
+                    <td className="py-1 px-1">
+                      <span className="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                    </td>
+                    <td className="py-1 px-1 text-white font-medium">{dive.diverName}</td>
+                    <td className="py-1 px-1 text-cyan-400">{dive.station}</td>
+                    <td className="py-1 px-1 text-right text-white font-mono">{dive.maxDepthFsw ? `${dive.maxDepthFsw}'` : "—"}</td>
+                    <td className="py-1 px-1 text-navy-200">{dive.breathingGas}</td>
+                    <td className="py-1 px-1 text-right text-navy-200 font-mono">{dive.fo2Percent || "—"}</td>
+                    <td className="py-1 px-1 text-right text-amber-400 font-mono">{formatTime(dive.lsTime)}</td>
+                    <td className="py-1 px-1 text-right text-amber-300 font-mono font-bold">{dive.elapsedMin}m</td>
+                    <td className="py-1 px-1 text-right text-white font-mono">{dive.bottomTimeMin != null ? `${dive.bottomTimeMin}m` : "—"}</td>
+                    <td className="py-1 px-1 text-navy-300 truncate max-w-[100px]">{dive.scheduleUsed || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Completed dives */}
+      {completedDives.length > 0 && (
+        <div className="flex-1 overflow-auto min-h-0">
+          <div className="text-[10px] text-navy-400 font-semibold uppercase tracking-wider mb-1">Completed</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[10px]">
+              <thead>
+                <tr className="text-navy-500 border-b border-navy-700">
+                  <th className="text-left py-0.5 px-1 font-medium">Diver</th>
+                  <th className="text-left py-0.5 px-1 font-medium">Station</th>
+                  <th className="text-right py-0.5 px-1 font-medium">Depth</th>
+                  <th className="text-left py-0.5 px-1 font-medium">Gas</th>
+                  <th className="text-right py-0.5 px-1 font-medium">Total</th>
+                  <th className="text-right py-0.5 px-1 font-medium">BT</th>
+                  <th className="text-left py-0.5 px-1 font-medium">Table</th>
+                  <th className="text-left py-0.5 px-1 font-medium">Group</th>
+                </tr>
+              </thead>
+              <tbody>
+                {completedDives.slice(0, 15).map(dive => (
+                  <tr key={dive.id} className="border-b border-navy-700/30 opacity-70 hover:opacity-100">
+                    <td className="py-0.5 px-1 text-navy-200">{dive.diverName}</td>
+                    <td className="py-0.5 px-1 text-cyan-400/60">{dive.station}</td>
+                    <td className="py-0.5 px-1 text-right text-navy-200 font-mono">{dive.maxDepthFsw ? `${dive.maxDepthFsw}'` : "—"}</td>
+                    <td className="py-0.5 px-1 text-navy-300">{dive.breathingGas}</td>
+                    <td className="py-0.5 px-1 text-right text-navy-200 font-mono">{dive.totalMin}m</td>
+                    <td className="py-0.5 px-1 text-right text-navy-200 font-mono">{dive.bottomTimeMin != null ? `${dive.bottomTimeMin}m` : "—"}</td>
+                    <td className="py-0.5 px-1 text-navy-400 truncate max-w-[80px]">{dive.scheduleUsed || "—"}</td>
+                    <td className="py-0.5 px-1 text-navy-300 font-mono">{dive.repetitiveGroup || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeDives.length === 0 && completedDives.length === 0 && (
+        <div className="flex flex-col items-center justify-center flex-1 text-navy-500">
+          <Waves className="h-8 w-8 mb-2 opacity-30" />
+          <p className="text-xs">No dive activity yet today</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── NEW: Live Log Feed Widget ───────────────────────────────────────────────
+
+function LiveLogFeedWidget() {
+  const { data } = useLiveBoardData();
+  const logEntries = data?.logEntries || [];
+
+  const categoryColor: Record<string, string> = {
+    directive: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+    safety: "bg-red-500/20 text-red-400 border-red-500/30",
+    dive_op: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+    ops: "bg-green-500/20 text-green-400 border-green-500/30",
+    general: "bg-navy-600/50 text-navy-300 border-navy-500/30",
+  };
+
+  const formatTime = (iso: string) => {
+    const d = new Date(iso);
+    return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+  };
+
+  if (logEntries.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-navy-500" data-testid="widget-live-log-feed">
+        <Radio className="h-8 w-8 mb-2 opacity-30" />
+        <p className="text-xs">No log entries yet today</p>
+        <p className="text-[10px] mt-1">Entries from all crews will appear here</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden" data-testid="widget-live-log-feed">
+      <div className="flex items-center gap-2 mb-2 shrink-0">
+        <Radio className="h-3.5 w-3.5 text-green-400" />
+        <span className="text-xs text-navy-300">{logEntries.length} entries from all crews</span>
+      </div>
+      <div className="space-y-1 overflow-auto flex-1 min-h-0">
+        {logEntries.map(log => (
+          <div key={log.id} className="bg-navy-700/60 rounded px-2 py-1.5 text-[11px]">
+            <div className="flex items-center justify-between mb-0.5">
+              <div className="flex items-center gap-1.5">
+                <span className="text-amber-400 font-mono text-[10px]">{formatTime(log.eventTime)}</span>
+                <span className={`text-[9px] font-semibold uppercase px-1.5 py-0 rounded border ${categoryColor[log.category] || categoryColor.general}`}>
+                  {log.category?.replace("_", " ") || "general"}
+                </span>
+              </div>
+              <span className="text-[9px] text-cyan-400/70 font-medium">{log.station}</span>
+            </div>
+            <div className="text-white/80 text-[11px] line-clamp-2 leading-tight">{log.rawText}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── NEW: Station Overview Widget ────────────────────────────────────────────
+
+function StationOverviewWidget() {
+  const { data } = useLiveBoardData();
+  const stations = data?.stations || [];
+
+  if (stations.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-navy-500" data-testid="widget-station-overview">
+        <Activity className="h-8 w-8 mb-2 opacity-30" />
+        <p className="text-xs">No station activity yet</p>
+        <p className="text-[10px] mt-1">Stations will appear as dives are logged</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden" data-testid="widget-station-overview">
+      <div className="flex items-center gap-2 mb-2 shrink-0">
+        <Activity className="h-3.5 w-3.5 text-cyan-400" />
+        <span className="text-xs text-navy-300">{stations.length} station{stations.length !== 1 ? "s" : ""}</span>
+        <span className="text-xs text-navy-500">|</span>
+        <span className="text-xs text-green-400">{stations.filter(s => s.isActive).length} active</span>
+      </div>
+      <div className="space-y-1.5 overflow-auto flex-1 min-h-0">
+        {stations.map(station => (
+          <div
+            key={station.name}
+            className={`rounded-lg px-3 py-2 border ${
+              station.isActive
+                ? "bg-navy-700/80 border-green-500/30"
+                : "bg-navy-800/60 border-navy-600/50"
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <span className={`inline-block w-2.5 h-2.5 rounded-full ${station.isActive ? "bg-green-500 animate-pulse" : "bg-navy-500"}`} />
+                <span className="text-sm font-semibold text-white">{station.name}</span>
+              </div>
+              {station.isActive && (
+                <Badge className="bg-green-600/80 text-[8px] px-1.5 py-0">ACTIVE</Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-4 text-xs">
+              <div className="flex items-center gap-1">
+                <Waves className="h-3 w-3 text-amber-400" />
+                <span className="text-amber-400 font-mono font-bold">{station.activeDivers}</span>
+                <span className="text-navy-400">in water</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-navy-300 font-mono">{station.completedDives}</span>
+                <span className="text-navy-400">completed</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Existing Widgets ────────────────────────────────────────────────────────
 
 function DailySummaryWidget({ stats }: { stats: DashboardStats }) {
   return (
@@ -247,7 +549,7 @@ function RecentLogsWidget() {
       if (!res.ok) return [];
       return res.json();
     },
-    refetchInterval: 10000,
+    refetchInterval: 5000,
   });
 
   if (!recentLogs || recentLogs.length === 0) {
@@ -276,8 +578,8 @@ function RecentLogsWidget() {
               <span className="text-amber-400 font-mono text-[10px]">
                 {(() => { const d = new Date(log.eventTime); return `${String(d.getUTCHours()).padStart(2,"0")}:${String(d.getUTCMinutes()).padStart(2,"0")}`; })()}
               </span>
-              <span className={`uppercase text-[9px] font-semibold ${categoryColor[log.category] || "text-navy-400"}`}>
-                {log.category === "dive_op" ? "DIVE" : log.category}
+              <span className={`uppercase text-[9px] font-semibold ${categoryColor[log.category] || "text-navy-300"}`}>
+                {log.category?.replace("_", " ") || "general"}
               </span>
             </div>
             {log.station && (
@@ -619,6 +921,12 @@ function renderWidget(type: string, stats: DashboardStats) {
       return <DiverCertsWidget />;
     case "equipment_certs":
       return <EquipmentCertsWidget />;
+    case "live_dive_board":
+      return <LiveDiveBoardWidget />;
+    case "live_log_feed":
+      return <LiveLogFeedWidget />;
+    case "station_overview":
+      return <StationOverviewWidget />;
     default:
       return <div className="text-navy-400 text-sm">Unknown widget type</div>;
   }
@@ -661,7 +969,7 @@ export function DashboardTab() {
       if (!res.ok) throw new Error("Failed to load stats");
       return res.json();
     },
-    refetchInterval: 10000,
+    refetchInterval: 5000,
   });
 
   const saveMutation = useMutation({
@@ -722,10 +1030,11 @@ export function DashboardTab() {
 
   const resetLayout = () => {
     setLocalLayout([
-      { id: "w1", type: "daily_summary", title: "Today's Summary", x: 0, y: 0, w: 2, h: 2 },
-      { id: "w2", type: "active_dives", title: "Active Dives", x: 2, y: 0, w: 2, h: 2 },
-      { id: "w3", type: "recent_logs", title: "Recent Log Entries", x: 0, y: 2, w: 2, h: 2 },
-      { id: "w4", type: "safety_incidents", title: "Safety Status", x: 2, y: 2, w: 2, h: 2 },
+      { id: "w1", type: "live_dive_board", title: "Live Dive Board", x: 0, y: 0, w: 4, h: 3 },
+      { id: "w2", type: "live_log_feed", title: "Live Log Feed", x: 0, y: 3, w: 2, h: 3 },
+      { id: "w3", type: "station_overview", title: "Station Overview", x: 2, y: 3, w: 2, h: 3 },
+      { id: "w4", type: "daily_summary", title: "Today's Summary", x: 0, y: 6, w: 2, h: 2 },
+      { id: "w5", type: "safety_incidents", title: "Safety Status", x: 2, y: 6, w: 2, h: 2 },
     ]);
   };
 
