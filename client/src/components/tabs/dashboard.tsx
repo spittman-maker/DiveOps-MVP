@@ -6,13 +6,21 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Settings, GripVertical, X, Save, RotateCcw, Sun, Cloud, CloudRain, Wind, Droplets, Zap, Waves, Radio, Activity } from "lucide-react";
+import { Plus, Settings, GripVertical, X, Save, RotateCcw, Sun, Cloud, CloudRain, Wind, Droplets, Zap, Waves, Radio, Activity, ChevronDown } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useAuth } from "@/hooks/use-auth";
 
 interface WidgetConfig {
   id: string;
@@ -137,11 +145,14 @@ const WIDGET_TYPES = [
 
 // ─── Shared hook for live board data ─────────────────────────────────────────
 
-function useLiveBoardData() {
+function useLiveBoardData(projectId?: string) {
   return useQuery<LiveBoardData>({
-    queryKey: ["dashboard-live-board"],
+    queryKey: ["dashboard-live-board", projectId],
     queryFn: async () => {
-      const res = await fetch("/api/dashboard/live-board", { credentials: "include" });
+      const url = projectId
+        ? `/api/dashboard/live-board?projectId=${projectId}`
+        : "/api/dashboard/live-board";
+      const res = await fetch(url, { credentials: "include" });
       if (!res.ok) return { activeDives: [], completedDives: [], logEntries: [], stations: [], dayCount: 0, date: "" };
       return res.json();
     },
@@ -151,8 +162,8 @@ function useLiveBoardData() {
 
 // ─── NEW: Live Dive Board Widget ─────────────────────────────────────────────
 
-function LiveDiveBoardWidget() {
-  const { data } = useLiveBoardData();
+function LiveDiveBoardWidget({ projectId }: { projectId?: string } = {}) {
+  const { data } = useLiveBoardData(projectId);
   const activeDives = data?.activeDives || [];
   const completedDives = data?.completedDives || [];
 
@@ -268,8 +279,8 @@ function LiveDiveBoardWidget() {
 
 // ─── NEW: Live Log Feed Widget ───────────────────────────────────────────────
 
-function LiveLogFeedWidget() {
-  const { data } = useLiveBoardData();
+function LiveLogFeedWidget({ projectId }: { projectId?: string } = {}) {
+  const { data } = useLiveBoardData(projectId);
   const logEntries = data?.logEntries || [];
 
   const categoryColor: Record<string, string> = {
@@ -323,8 +334,8 @@ function LiveLogFeedWidget() {
 
 // ─── NEW: Station Overview Widget ────────────────────────────────────────────
 
-function StationOverviewWidget() {
-  const { data } = useLiveBoardData();
+function StationOverviewWidget({ projectId }: { projectId?: string } = {}) {
+  const { data } = useLiveBoardData(projectId);
   const stations = data?.stations || [];
 
   if (stations.length === 0) {
@@ -541,11 +552,14 @@ interface RecentLog {
   aiStatus?: string;
 }
 
-function RecentLogsWidget() {
+function RecentLogsWidget({ projectId }: { projectId?: string } = {}) {
   const { data: recentLogs } = useQuery<RecentLog[]>({
-    queryKey: ["dashboard-recent-logs"],
+    queryKey: ["dashboard-recent-logs", projectId],
     queryFn: async () => {
-      const res = await fetch("/api/dashboard/recent-logs", { credentials: "include" });
+      const url = projectId
+        ? `/api/dashboard/recent-logs?projectId=${projectId}`
+        : "/api/dashboard/recent-logs";
+      const res = await fetch(url, { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
     },
@@ -899,7 +913,7 @@ function EquipmentCertsWidget() {
   );
 }
 
-function renderWidget(type: string, stats: DashboardStats) {
+function renderWidget(type: string, stats: DashboardStats, projectId?: string) {
   switch (type) {
     case "daily_summary":
       return <DailySummaryWidget stats={stats} />;
@@ -914,7 +928,7 @@ function renderWidget(type: string, stats: DashboardStats) {
     case "risk_register":
       return <RiskRegisterWidget stats={stats} />;
     case "recent_logs":
-      return <RecentLogsWidget />;
+      return <RecentLogsWidget projectId={projectId} />;
     case "weather":
       return <WeatherWidget />;
     case "diver_certs":
@@ -922,11 +936,11 @@ function renderWidget(type: string, stats: DashboardStats) {
     case "equipment_certs":
       return <EquipmentCertsWidget />;
     case "live_dive_board":
-      return <LiveDiveBoardWidget />;
+      return <LiveDiveBoardWidget projectId={projectId} />;
     case "live_log_feed":
-      return <LiveLogFeedWidget />;
+      return <LiveLogFeedWidget projectId={projectId} />;
     case "station_overview":
-      return <StationOverviewWidget />;
+      return <StationOverviewWidget projectId={projectId} />;
     default:
       return <div className="text-navy-400 text-sm">Unknown widget type</div>;
   }
@@ -935,10 +949,12 @@ function renderWidget(type: string, stats: DashboardStats) {
 export function DashboardTab() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [localLayout, setLocalLayout] = useState<WidgetConfig[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(800);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -963,9 +979,12 @@ export function DashboardTab() {
   });
 
   const { data: stats = { totalDives: 0, activeDives: 0, safetyIncidents: 0, openRisks: 0, logEntriesToday: 0 } } = useQuery<DashboardStats>({
-    queryKey: ["dashboard-stats"],
+    queryKey: ["dashboard-stats", selectedProjectId],
     queryFn: async () => {
-      const res = await fetch("/api/dashboard/stats", { credentials: "include" });
+      const url = selectedProjectId
+        ? `/api/dashboard/stats?projectId=${selectedProjectId}`
+        : "/api/dashboard/stats";
+      const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load stats");
       return res.json();
     },
@@ -1057,16 +1076,83 @@ export function DashboardTab() {
       return res.json();
     },
   });
-  const activeProject = projects?.[0];
+
+  // Fix: find the project matching the user's activeProjectId, not just projects[0]
+  const activeProject = projects?.find((p: any) => p.id === (selectedProjectId || user?.activeProjectId)) || projects?.[0];
+
+  // Initialize selectedProjectId from user's activeProjectId when data loads
+  useEffect(() => {
+    if (!selectedProjectId && user?.activeProjectId && projects?.length) {
+      const match = projects.find((p: any) => p.id === user.activeProjectId);
+      if (match) {
+        setSelectedProjectId(match.id);
+      } else if (projects.length > 0) {
+        setSelectedProjectId(projects[0].id);
+      }
+    } else if (!selectedProjectId && projects?.length && !user?.activeProjectId) {
+      setSelectedProjectId(projects[0].id);
+    }
+  }, [user?.activeProjectId, projects, selectedProjectId]);
+
+  // Project switch mutation: persist selection and refetch all dashboard data
+  const switchProjectMutation = useMutation({
+    mutationFn: async (projectId: string) => {
+      const res = await fetch(`/api/projects/${projectId}/activate`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to switch project");
+      return res.json();
+    },
+    onSuccess: () => {
+      // Refetch auth data so user.activeProjectId updates
+      queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+      // Refetch all dashboard data for the new project
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-recent-logs"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-live-board"] });
+    },
+  });
+
+  const handleProjectSwitch = (projectId: string) => {
+    setSelectedProjectId(projectId);
+    switchProjectMutation.mutate(projectId);
+    toast({ title: "Switching project", description: "Loading dashboard data for the selected project..." });
+  };
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <div className="bg-navy-800 p-3 border-b border-navy-600 shrink-0">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-3">
-            <h2 className="text-sm font-semibold text-white" data-testid="text-dashboard-title">
-              {activeProject?.name || "DiveOps"}
-            </h2>
+            {projects && projects.length > 1 ? (
+              <Select
+                value={selectedProjectId || activeProject?.id || ""}
+                onValueChange={handleProjectSwitch}
+              >
+                <SelectTrigger
+                  className="h-7 w-auto min-w-[140px] max-w-[250px] bg-navy-700 border-navy-500 text-white text-sm font-semibold px-2 py-1 focus:ring-amber-500"
+                  data-testid="select-project-switcher"
+                >
+                  <SelectValue placeholder="Select Project" />
+                </SelectTrigger>
+                <SelectContent className="bg-navy-800 border-navy-600">
+                  {projects.map((p: any) => (
+                    <SelectItem
+                      key={p.id}
+                      value={p.id}
+                      className="text-navy-200 hover:bg-navy-700 focus:bg-navy-700 focus:text-white"
+                    >
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <h2 className="text-sm font-semibold text-white" data-testid="text-dashboard-title">
+                {activeProject?.name || "DiveOps"}
+              </h2>
+            )}
             {stats.dayStatus && (
               <Badge data-testid="badge-shift-status" className={stats.dayStatus === "ACTIVE" ? "bg-green-600" : stats.dayStatus === "CLOSED" ? "bg-red-600" : "bg-yellow-600"}>
                 {stats.dayStatus === "ACTIVE" ? "SHIFT ACTIVE" : stats.dayStatus}
@@ -1182,7 +1268,7 @@ export function DashboardTab() {
                 )}
               </div>
               <div className="p-3 h-[calc(100%-40px)] overflow-auto">
-                {renderWidget(widget.type, stats)}
+                {renderWidget(widget.type, stats, selectedProjectId)}
               </div>
             </div>
           ))}

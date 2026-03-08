@@ -417,7 +417,7 @@ export async function registerRoutes(
     try {
       const user = getUser(req);
       const prefs = await storage.getUserPreferences(user.id);
-      let projectId = prefs?.activeProjectId;
+      let projectId = (req.query.projectId as string) || prefs?.activeProjectId;
       
       if (!projectId) {
         const projects = await storage.getAllProjects();
@@ -440,10 +440,8 @@ export async function registerRoutes(
         if (day) {
           const dives = await storage.getDivesByDay(day.id);
           const logs = await storage.getLogEventsByDay(day.id);
-          const isDayActive = day.status === "ACTIVE";
-          const activeDiveRecords = isDayActive
-            ? dives.filter(d => d.lsTime && !d.rsTime)
-            : [];
+          // Show active dives from ALL day statuses (DRAFT, ACTIVE, CLOSED)
+          const activeDiveRecords = dives.filter(d => d.lsTime && !d.rsTime);
           const completedDiveRecords = dives.filter(d => d.lsTime && (d.rsTime || d.lbTime));
           
           stats = {
@@ -482,7 +480,7 @@ export async function registerRoutes(
     try {
       const user = getUser(req);
       const prefs = await storage.getUserPreferences(user.id);
-      let projectId = prefs?.activeProjectId;
+      let projectId = (req.query.projectId as string) || prefs?.activeProjectId;
       
       if (!projectId) {
         const projects = await storage.getAllProjects();
@@ -536,7 +534,7 @@ export async function registerRoutes(
     try {
       const user = getUser(req);
       const prefs = await storage.getUserPreferences(user.id);
-      let projectId = prefs?.activeProjectId;
+      let projectId = (req.query.projectId as string) || prefs?.activeProjectId;
 
       if (!projectId) {
         const projects = await storage.getAllProjects();
