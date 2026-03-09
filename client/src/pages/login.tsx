@@ -232,7 +232,9 @@ function LoginForm() {
     try {
       await login(username, password);
       const welcome = getWelcomeMessage(username);
-      if (welcome) {
+      const welcomeKey = `diveops_welcome_seen_${username.toLowerCase().trim()}`;
+      if (welcome && !localStorage.getItem(welcomeKey)) {
+        localStorage.setItem(welcomeKey, new Date().toISOString());
         setTimeout(() => {
           toast({
             title: welcome.title,
