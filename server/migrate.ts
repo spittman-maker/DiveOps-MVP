@@ -126,11 +126,121 @@ export async function runMigrations(): Promise<void> {
     } else {
       console.log("[MIGRATE] Database is up to date");
     }
+
+    // Safety net: ensure critical tables exist even if migrations failed
+    await ensureCriticalTables(pool);
   } catch (err) {
     console.error("[MIGRATE] Migration failed:", err);
     // Don't crash the app — log the error and continue
     // The specific query that uses the missing column will fail with a clear error
   } finally {
     await pool.end();
+  }
+}
+
+async function ensureCriticalTables(pool: InstanceType<typeof Pool>): Promise<void> {
+  // Check if diver_certifications table exists
+  const { rows } = await pool.query(`
+    SELECT EXISTS (
+      SELECT FROM information_schema.tables 
+      WHERE table_schema = 'public' AND table_name = 'diver_certifications'
+    ) as exists;
+  `);
+
+  if (!rows[0]?.exists) {
+    console.log("[MIGRATE] Creating missing diver_certifications table...");
+    try {
+      await pool.query(`
+        CREATE TABLE "diver_certifications" (
+          "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+          "user_id" varchar NOT NULL,
+          "project_id" varchar,
+          "cert_name" text,
+          "cert_type" text NOT NULL,
+          "cert_number" text,
+          "issuing_authority" text,
+          "issued_date" timestamp,
+          "expiration_date" timestamp,
+          "file_url" text,
+          "file_name" text,
+          "file_size" integer,
+          "status" text NOT NULL DEFAULT 'active',
+          "document_url" text,
+          "notes" text,
+          "created_at" timestamp DEFAULT now() NOT NULL,
+          "updated_at" timestamp DEFAULT now() NOT NULL
+        );
+      `);
+      console.log("[MIGRATE] ✓ Created diver_certifications table");
+    } catch (err: any) {
+      if (err.code === "42P07") {
+        console.log("[MIGRATE] diver_certifications already exists (race condition)");
+      } else {
+        console.error("[MIGRATE] ✗ Failed to create diver_certifications:", err.message);
+      }
+    }
+
+    // Create indexes
+    try {
+      await pool.query(`CREATE INDEX IF NOT EXISTS "diver_certs_user_idx" ON "diver_certifications" ("user_id");`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS "diver_certs_project_idx" ON "diver_certifications" ("project_id");`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS "diver_certs_expiration_idx" ON "diver_certifications" ("expiration_date");`);
+      console.log("[MIGRATE] ✓ Created diver_certifications indexes");
+    } catch (err: any) {
+      console.error("[MIGRATE] ✗ Failed to create diver_certifications indexes:", err.message);
+    }
+  }
+
+  // Check if equipment_certifications table exists
+  const { rows: eqRows } = await pool.query(`
+    SELECT EXISTS (
+      SELECT FROM information_schema.tables 
+      WHERE table_schema = 'public' AND table_name = 'equipment_certifications'
+    ) as exists;
+  `);
+
+  if (!eqRows[0]?.exists) {
+    console.log("[MIGRATE] Creating missing equipment_certifications table...");
+    try {
+      await pool.query(`
+        CREATE TABLE "equipment_certifications" (
+          "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+          "equipment_name" text NOT NULL,
+          "equipment_category" text NOT NULL,
+          "equipment_type" text,
+          "serial_number" text,
+          "cert_name" text,
+          "cert_type" text NOT NULL,
+          "cert_number" text,
+          "issuing_authority" text,
+          "issued_date" timestamp,
+          "expiration_date" timestamp,
+          "file_url" text,
+          "file_name" text,
+          "file_size" integer,
+          "status" text NOT NULL DEFAULT 'active',
+          "document_url" text,
+          "notes" text,
+          "project_id" varchar,
+          "created_at" timestamp DEFAULT now() NOT NULL,
+          "updated_at" timestamp DEFAULT now() NOT NULL
+        );
+      `);
+      console.log("[MIGRATE] ✓ Created equipment_certifications table");
+    } catch (err: any) {
+      if (err.code === "42P07") {
+        console.log("[MIGRATE] equipment_certifications already exists (race condition)");
+      } else {
+        console.error("[MIGRATE] ✗ Failed to create equipment_certifications:", err.message);
+      }
+    }
+
+    try {
+      await pool.query(`CREATE INDEX IF NOT EXISTS "equip_certs_project_idx" ON "equipment_certifications" ("project_id");`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS "equip_certs_expiration_idx" ON "equipment_certifications" ("expiration_date");`);
+      console.log("[MIGRATE] ✓ Created equipment_certifications indexes");
+    } catch (err: any) {
+      console.error("[MIGRATE] ✗ Failed to create equipment_certifications indexes:", err.message);
+    }
   }
 }
