@@ -4751,6 +4751,31 @@ If you're not confident about specific facilities, say so in the notes field. Al
   });
 
   // ──────────────────────────────────────────────────────────────────────────
+  // CERTIFICATIONS - Expiring & Stats endpoints
+  // ──────────────────────────────────────────────────────────────────────────
+
+  app.get("/api/certifications/expiring", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const projectId = req.query.projectId as string | undefined;
+      const daysAhead = parseInt(req.query.daysAhead as string || "30", 10);
+      const certs = await storage.getExpiringCertifications(projectId || undefined, daysAhead);
+      res.json(certs);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message || "Failed to fetch expiring certifications" });
+    }
+  });
+
+  app.get("/api/certifications/stats", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const projectId = req.query.projectId as string | undefined;
+      const stats = await storage.getCertificationStats(projectId || undefined);
+      res.json(stats);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message || "Failed to fetch certification stats" });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
   // CHANGE PASSWORD ENDPOINT (Item #3 - Invite flow)
   // ──────────────────────────────────────────────────────────────────────────
 

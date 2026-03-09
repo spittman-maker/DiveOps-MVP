@@ -19,6 +19,7 @@ const TABS = [
   { id: "dive-logs", label: "Dive Logs" },
   { id: "dive-plan", label: "Dive Plan" },
   { id: "risk-register", label: "Risk Register" },
+  { id: "certifications", label: "Certifications" },
   { id: "library", label: "Library" },
   { id: "admin", label: "Admin" },
 ];
@@ -108,6 +109,7 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
         <div className="flex gap-1">
           {TABS.map((tab) => {
             if (tab.id === "admin" && !isAdmin) return null;
+            if (tab.id === "certifications" && !isSupervisor) return null;
 
             return (
               <button

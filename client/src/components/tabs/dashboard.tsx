@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Settings, GripVertical, X, Save, RotateCcw, Sun, Cloud, CloudRain, Wind, Droplets, Zap, Waves, Radio, Activity, ChevronDown } from "lucide-react";
+import { Plus, Settings, GripVertical, X, Save, RotateCcw, Sun, Cloud, CloudRain, Wind, Droplets, Zap, Waves, Radio, Activity, ChevronDown, AlertTriangle, Shield, ShieldCheck } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/hooks/use-auth";
+import { useProject } from "@/hooks/use-project";
 
 interface WidgetConfig {
   id: string;
@@ -141,6 +142,8 @@ const WIDGET_TYPES = [
   { type: "weather", label: "Weather & Lightning", defaultW: 2, defaultH: 2 },
   { type: "diver_certs", label: "Diver Certifications", defaultW: 2, defaultH: 2 },
   { type: "equipment_certs", label: "Equipment Certifications", defaultW: 2, defaultH: 2 },
+  { type: "expiring_certs", label: "Expiring Certifications", defaultW: 2, defaultH: 2 },
+  { type: "cert_status", label: "Certification Status", defaultW: 2, defaultH: 2 },
 ];
 
 // ─── Shared hook for live board data ─────────────────────────────────────────
@@ -797,7 +800,7 @@ function WeatherWidget({ projectId }: { projectId?: string } = {}) {
   );
 }
 
-function DiverCertsWidget() {
+function DiverCertsWidget({ projectId }: { projectId?: string } = {}) {
   const { data: users } = useQuery<any[]>({
     queryKey: ["users-list"],
     queryFn: async () => {
@@ -808,9 +811,12 @@ function DiverCertsWidget() {
   });
 
   const { data: allCerts } = useQuery<any[]>({
-    queryKey: ["diver-certifications"],
+    queryKey: ["diver-certifications", projectId],
     queryFn: async () => {
-      const res = await fetch("/api/diver-certifications", { credentials: "include" });
+      const url = projectId
+        ? `/api/diver-certifications?projectId=${projectId}`
+        : "/api/diver-certifications";
+      const res = await fetch(url, { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
     },
@@ -879,11 +885,14 @@ function DiverCertsWidget() {
   );
 }
 
-function EquipmentCertsWidget() {
+function EquipmentCertsWidget({ projectId }: { projectId?: string } = {}) {
   const { data: equipmentCerts } = useQuery<any[]>({
-    queryKey: ["equipment-certifications"],
+    queryKey: ["equipment-certifications", projectId],
     queryFn: async () => {
-      const res = await fetch("/api/equipment-certifications", { credentials: "include" });
+      const url = projectId
+        ? `/api/equipment-certifications?projectId=${projectId}`
+        : "/api/equipment-certifications";
+      const res = await fetch(url, { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
     },
@@ -947,9 +956,13 @@ function renderWidget(type: string, stats: DashboardStats, projectId?: string) {
     case "weather":
       return <WeatherWidget projectId={projectId} />;
     case "diver_certs":
-      return <DiverCertsWidget />;
+      return <DiverCertsWidget projectId={projectId} />;
     case "equipment_certs":
-      return <EquipmentCertsWidget />;
+      return <EquipmentCertsWidget projectId={projectId} />;
+    case "expiring_certs":
+      return <ExpiringCertsWidget projectId={projectId} />;
+    case "cert_status":
+      return <CertStatusWidget projectId={projectId} />;
     case "live_dive_board":
       return <LiveDiveBoardWidget projectId={projectId} />;
     case "live_log_feed":
@@ -961,15 +974,114 @@ function renderWidget(type: string, stats: DashboardStats, projectId?: string) {
   }
 }
 
+// ─── Expiring Certifications Widget ─────────────────────────────────────────
+
+function ExpiringCertsWidget({ projectId }: { projectId?: string }) {
+  const { data: expiring } = useQuery<any[]>({
+    queryKey: ["certifications-expiring", projectId],
+    queryFn: async () => {
+      const url = projectId
+        ? `/api/certifications/expiring?projectId=${projectId}`
+        : "/api/certifications/expiring";
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    refetchInterval: 60000,
+  });
+
+  const items = expiring || [];
+
+  return (
+    <div className="flex flex-col h-full" data-testid="widget-expiring-certs">
+      <div className="flex items-center gap-2 mb-2">
+        <AlertTriangle className="h-4 w-4 text-yellow-400" />
+        <span className="text-xs text-navy-300">{items.length} expiring within 30 days</span>
+      </div>
+      <div className="space-y-1 overflow-auto flex-1">
+        {items.length > 0 ? items.slice(0, 10).map((item: any) => {
+          const daysLeft = Math.ceil((new Date(item.expirationDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+          return (
+            <div key={item.id} className="bg-navy-700 rounded px-2 py-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-white text-xs font-medium truncate">
+                  {item.certName || item.certType}
+                </span>
+                <Badge className={`${daysLeft < 0 ? 'bg-red-600' : daysLeft < 7 ? 'bg-red-500' : 'bg-yellow-600'} text-[8px] px-1 py-0`}>
+                  {daysLeft < 0 ? 'EXPIRED' : `${daysLeft}d left`}
+                </Badge>
+              </div>
+              <div className="text-[9px] text-navy-400 mt-0.5">
+                {item.entityName || item.equipmentName || 'Unknown'} — {item.certType}
+              </div>
+            </div>
+          );
+        }) : (
+          <div className="flex flex-col items-center justify-center h-full text-navy-500">
+            <ShieldCheck className="h-8 w-8 mb-2 opacity-30" />
+            <p className="text-xs">No certifications expiring soon</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Certification Status Widget ────────────────────────────────────────────
+
+function CertStatusWidget({ projectId }: { projectId?: string }) {
+  const { data: stats } = useQuery<any>({
+    queryKey: ["certifications-stats", projectId],
+    queryFn: async () => {
+      const url = projectId
+        ? `/api/certifications/stats?projectId=${projectId}`
+        : "/api/certifications/stats";
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) return { active: 0, expiring: 0, expired: 0 };
+      return res.json();
+    },
+    refetchInterval: 60000,
+  });
+
+  const certStats = stats || { active: 0, expiring: 0, expired: 0 };
+
+  return (
+    <div className="flex flex-col h-full" data-testid="widget-cert-status">
+      <div className="flex items-center gap-2 mb-3">
+        <Shield className="h-4 w-4 text-cyan-400" />
+        <span className="text-xs text-navy-300">Certification Overview</span>
+      </div>
+      <div className="grid grid-cols-3 gap-2 flex-1">
+        <div className="bg-navy-700 rounded p-2 text-center">
+          <div className="text-xl font-bold text-green-400">{certStats.active}</div>
+          <div className="text-[10px] text-navy-300">Active</div>
+        </div>
+        <div className="bg-navy-700 rounded p-2 text-center">
+          <div className="text-xl font-bold text-yellow-400">{certStats.expiring}</div>
+          <div className="text-[10px] text-navy-300">Expiring</div>
+        </div>
+        <div className="bg-navy-700 rounded p-2 text-center">
+          <div className="text-xl font-bold text-red-400">{certStats.expired}</div>
+          <div className="text-[10px] text-navy-300">Expired</div>
+        </div>
+      </div>
+      <div className="mt-2 text-[9px] text-navy-500 text-center">
+        Personnel + Equipment combined
+      </div>
+    </div>
+  );
+}
+
 export function DashboardTab() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { projects, activeProject, setActiveProject } = useProject();
   const [isEditing, setIsEditing] = useState(false);
   const [localLayout, setLocalLayout] = useState<WidgetConfig[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(800);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
+  const selectedProjectId = activeProject?.id;
 
   useEffect(() => {
     const el = containerRef.current;
@@ -1004,6 +1116,7 @@ export function DashboardTab() {
       return res.json();
     },
     refetchInterval: 5000,
+    enabled: !!selectedProjectId,
   });
 
   const saveMutation = useMutation({
@@ -1083,55 +1196,14 @@ export function DashboardTab() {
     static: false,
   }));
 
-  const { data: projects } = useQuery<any[]>({
-    queryKey: ["projects"],
-    queryFn: async () => {
-      const res = await fetch("/api/projects", { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-  });
-
-  // Fix: find the project matching the user's activeProjectId, not just projects[0]
-  const activeProject = projects?.find((p: any) => p.id === (selectedProjectId || user?.activeProjectId)) || projects?.[0];
-
-  // Initialize selectedProjectId from user's activeProjectId when data loads
-  useEffect(() => {
-    if (!selectedProjectId && user?.activeProjectId && projects?.length) {
-      const match = projects.find((p: any) => p.id === user.activeProjectId);
-      if (match) {
-        setSelectedProjectId(match.id);
-      } else if (projects.length > 0) {
-        setSelectedProjectId(projects[0].id);
-      }
-    } else if (!selectedProjectId && projects?.length && !user?.activeProjectId) {
-      setSelectedProjectId(projects[0].id);
-    }
-  }, [user?.activeProjectId, projects, selectedProjectId]);
-
-  // Project switch mutation: persist selection and refetch all dashboard data
-  const switchProjectMutation = useMutation({
-    mutationFn: async (projectId: string) => {
-      const res = await fetch(`/api/projects/${projectId}/activate`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to switch project");
-      return res.json();
-    },
-    onSuccess: () => {
-      // Refetch auth data so user.activeProjectId updates
-      queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
-      // Refetch all dashboard data for the new project
-      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard-recent-logs"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard-live-board"] });
-    },
-  });
-
   const handleProjectSwitch = (projectId: string) => {
-    setSelectedProjectId(projectId);
-    switchProjectMutation.mutate(projectId);
+    setActiveProject(projectId);
+    // Invalidate all dashboard queries so they refetch with the new project
+    queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard-recent-logs"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard-live-board"] });
+    queryClient.invalidateQueries({ queryKey: ["certifications-expiring"] });
+    queryClient.invalidateQueries({ queryKey: ["certifications-stats"] });
     toast({ title: "Switching project", description: "Loading dashboard data for the selected project..." });
   };
 
@@ -1142,7 +1214,7 @@ export function DashboardTab() {
           <div className="flex items-center gap-3">
             {projects && projects.length > 1 ? (
               <Select
-                value={selectedProjectId || activeProject?.id || ""}
+                value={activeProject?.id || ""}
                 onValueChange={handleProjectSwitch}
               >
                 <SelectTrigger
@@ -1152,7 +1224,7 @@ export function DashboardTab() {
                   <SelectValue placeholder="Select Project" />
                 </SelectTrigger>
                 <SelectContent className="bg-navy-800 border-navy-600">
-                  {projects.map((p: any) => (
+                  {projects.map((p) => (
                     <SelectItem
                       key={p.id}
                       value={p.id}

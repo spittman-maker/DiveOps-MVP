@@ -234,6 +234,7 @@ export interface IStorage {
   // Diver Certifications
   getDiverCertifications(userId: string): Promise<DiverCertification[]>;
   getAllDiverCertifications(): Promise<DiverCertification[]>;
+  getDiverCertificationsByProject(projectId: string): Promise<DiverCertification[]>;
   createDiverCertification(cert: InsertDiverCertification): Promise<DiverCertification>;
   updateDiverCertification(id: string, updates: Partial<InsertDiverCertification>): Promise<DiverCertification | undefined>;
   deleteDiverCertification(id: string): Promise<boolean>;
@@ -243,6 +244,10 @@ export interface IStorage {
   createEquipmentCertification(cert: InsertEquipmentCertification): Promise<EquipmentCertification>;
   updateEquipmentCertification(id: string, updates: Partial<InsertEquipmentCertification>): Promise<EquipmentCertification | undefined>;
   deleteEquipmentCertification(id: string): Promise<boolean>;
+
+  // Certification stats/expiring
+  getExpiringCertifications(projectId?: string, daysAhead?: number): Promise<any[]>;
+  getCertificationStats(projectId?: string): Promise<{ active: number; expiring: number; expired: number }>;
 }
 
 export class DbStorage implements IStorage {
@@ -1454,6 +1459,12 @@ export class DbStorage implements IStorage {
       .orderBy(desc(schema.diverCertifications.expirationDate));
   }
 
+  async getDiverCertificationsByProject(projectId: string): Promise<DiverCertification[]> {
+    return await db.select().from(schema.diverCertifications)
+      .where(eq(schema.diverCertifications.projectId, projectId))
+      .orderBy(desc(schema.diverCertifications.expirationDate));
+  }
+
   async createDiverCertification(cert: InsertDiverCertification): Promise<DiverCertification> {
     const [created] = await db.insert(schema.diverCertifications).values(cert).returning();
     return created!;
@@ -1501,6 +1512,101 @@ export class DbStorage implements IStorage {
     const result = await db.delete(schema.equipmentCertifications)
       .where(eq(schema.equipmentCertifications.id, id));
     return (result.rowCount ?? 0) > 0;
+  }
+
+  // Expiring certifications (combined diver + equipment)
+  async getExpiringCertifications(projectId?: string, daysAhead: number = 30): Promise<any[]> {
+    const now = new Date();
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + daysAhead);
+
+    // Get diver certs expiring soon
+    let diverQuery = db.select({
+      id: schema.diverCertifications.id,
+      certType: schema.diverCertifications.certType,
+      certName: schema.diverCertifications.certName,
+      expirationDate: schema.diverCertifications.expirationDate,
+      status: schema.diverCertifications.status,
+      entityName: schema.users.fullName,
+      entityType: sql<string>`'personnel'`,
+    }).from(schema.diverCertifications)
+      .leftJoin(schema.users, eq(schema.diverCertifications.userId, schema.users.id))
+      .where(
+        and(
+          sql`${schema.diverCertifications.expirationDate} IS NOT NULL`,
+          sql`${schema.diverCertifications.expirationDate} <= ${futureDate}`,
+          ...(projectId ? [eq(schema.diverCertifications.projectId, projectId)] : [])
+        )
+      )
+      .orderBy(schema.diverCertifications.expirationDate);
+
+    // Get equipment certs expiring soon
+    let equipQuery = db.select({
+      id: schema.equipmentCertifications.id,
+      certType: schema.equipmentCertifications.certType,
+      certName: schema.equipmentCertifications.certName,
+      expirationDate: schema.equipmentCertifications.expirationDate,
+      status: schema.equipmentCertifications.status,
+      entityName: schema.equipmentCertifications.equipmentName,
+      entityType: sql<string>`'equipment'`,
+    }).from(schema.equipmentCertifications)
+      .where(
+        and(
+          sql`${schema.equipmentCertifications.expirationDate} IS NOT NULL`,
+          sql`${schema.equipmentCertifications.expirationDate} <= ${futureDate}`,
+          ...(projectId ? [eq(schema.equipmentCertifications.projectId, projectId)] : [])
+        )
+      )
+      .orderBy(schema.equipmentCertifications.expirationDate);
+
+    const [diverCerts, equipCerts] = await Promise.all([diverQuery, equipQuery]);
+    // Combine and sort by expiration date
+    return [...diverCerts, ...equipCerts].sort((a, b) => {
+      const aDate = a.expirationDate ? new Date(a.expirationDate).getTime() : Infinity;
+      const bDate = b.expirationDate ? new Date(b.expirationDate).getTime() : Infinity;
+      return aDate - bDate;
+    });
+  }
+
+  // Certification stats (active/expiring/expired counts)
+  async getCertificationStats(projectId?: string): Promise<{ active: number; expiring: number; expired: number }> {
+    const now = new Date();
+    const thirtyDaysFromNow = new Date();
+    thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+
+    // Count diver certs
+    const diverConditions = projectId ? [eq(schema.diverCertifications.projectId, projectId)] : [];
+    const diverCerts = await db.select({
+      expirationDate: schema.diverCertifications.expirationDate,
+    }).from(schema.diverCertifications)
+      .where(diverConditions.length > 0 ? and(...diverConditions) : undefined);
+
+    // Count equipment certs
+    const equipConditions = projectId ? [eq(schema.equipmentCertifications.projectId, projectId)] : [];
+    const equipCerts = await db.select({
+      expirationDate: schema.equipmentCertifications.expirationDate,
+    }).from(schema.equipmentCertifications)
+      .where(equipConditions.length > 0 ? and(...equipConditions) : undefined);
+
+    const allCerts = [...diverCerts, ...equipCerts];
+    let active = 0, expiring = 0, expired = 0;
+
+    for (const cert of allCerts) {
+      if (!cert.expirationDate) {
+        active++; // No expiration = active
+      } else {
+        const expDate = new Date(cert.expirationDate);
+        if (expDate < now) {
+          expired++;
+        } else if (expDate <= thirtyDaysFromNow) {
+          expiring++;
+        } else {
+          active++;
+        }
+      }
+    }
+
+    return { active, expiring, expired };
   }
 }
 export const storage = new DbStorage();

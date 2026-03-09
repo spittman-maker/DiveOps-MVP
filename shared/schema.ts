@@ -165,47 +165,66 @@ export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
 // ────────────────────────────────────────────────────────────────────────────
-// DIVER CERTIFICATIONS
+// PERSONNEL CERTIFICATIONS (enhanced from diver_certifications)
 // ────────────────────────────────────────────────────────────────────────────
 
 export const diverCertifications = pgTable("diver_certifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  certName: text("cert_name"),
   certType: text("cert_type").notNull(),
   certNumber: text("cert_number"),
+  issuingAuthority: text("issuing_authority"),
   issuedDate: timestamp("issued_date"),
   expirationDate: timestamp("expiration_date"),
+  fileUrl: text("file_url"),
+  fileName: text("file_name"),
+  fileSize: integer("file_size"),
   status: text("status").notNull().default("active"),
   documentUrl: text("document_url"),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (t) => ({
+  userIdx: index("diver_certs_user_idx").on(t.userId),
+  projectIdx: index("diver_certs_project_idx").on(t.projectId),
+  expirationIdx: index("diver_certs_expiration_idx").on(t.expirationDate),
+}));
 
 export const insertDiverCertificationSchema = createInsertSchema(diverCertifications).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertDiverCertification = z.infer<typeof insertDiverCertificationSchema>;
 export type DiverCertification = typeof diverCertifications.$inferSelect;
 
 // ────────────────────────────────────────────────────────────────────────────
-// EQUIPMENT CERTIFICATIONS
+// EQUIPMENT CERTIFICATIONS (enhanced)
 // ────────────────────────────────────────────────────────────────────────────
 
 export const equipmentCertifications = pgTable("equipment_certifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   equipmentName: text("equipment_name").notNull(),
   equipmentCategory: text("equipment_category").notNull(),
+  equipmentType: text("equipment_type"),
   serialNumber: text("serial_number"),
+  certName: text("cert_name"),
   certType: text("cert_type").notNull(),
   certNumber: text("cert_number"),
+  issuingAuthority: text("issuing_authority"),
   issuedDate: timestamp("issued_date"),
   expirationDate: timestamp("expiration_date"),
+  fileUrl: text("file_url"),
+  fileName: text("file_name"),
+  fileSize: integer("file_size"),
   status: text("status").notNull().default("active"),
   documentUrl: text("document_url"),
   notes: text("notes"),
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (t) => ({
+  projectIdx: index("equip_certs_project_idx").on(t.projectId),
+  expirationIdx: index("equip_certs_expiration_idx").on(t.expirationDate),
+}));
 
 export const insertEquipmentCertificationSchema = createInsertSchema(equipmentCertifications).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertEquipmentCertification = z.infer<typeof insertEquipmentCertificationSchema>;
@@ -865,7 +884,11 @@ export type WidgetType =
   | "weather"
   | "live_dive_board"
   | "live_log_feed"
-  | "station_overview";
+  | "station_overview"
+  | "diver_certs"
+  | "equipment_certs"
+  | "expiring_certs"
+  | "cert_status";
 
 export interface WidgetConfig {
   id: string;
