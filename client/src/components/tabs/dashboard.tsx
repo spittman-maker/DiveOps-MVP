@@ -1204,6 +1204,9 @@ export function DashboardTab() {
     queryClient.invalidateQueries({ queryKey: ["dashboard-live-board"] });
     queryClient.invalidateQueries({ queryKey: ["certifications-expiring"] });
     queryClient.invalidateQueries({ queryKey: ["certifications-stats"] });
+    // BUG-5 FIX: Also invalidate library queries on project switch
+    queryClient.invalidateQueries({ queryKey: ["library-exports"] });
+    queryClient.invalidateQueries({ queryKey: ["library-docs"] });
     toast({ title: "Switching project", description: "Loading dashboard data for the selected project..." });
   };
 

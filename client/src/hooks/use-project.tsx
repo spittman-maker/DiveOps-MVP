@@ -117,6 +117,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       queryClient.invalidateQueries({ queryKey: ["log-events"] });
       queryClient.invalidateQueries({ queryKey: ["master-log"] });
       queryClient.invalidateQueries({ queryKey: ["risks"] });
+      // BUG-3 FIX: Invalidate library queries so they refetch for the new project
+      queryClient.invalidateQueries({ queryKey: ["library-exports"] });
+      queryClient.invalidateQueries({ queryKey: ["library-docs"] });
     },
   });
 

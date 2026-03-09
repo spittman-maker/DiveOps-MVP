@@ -468,7 +468,21 @@ export class DbStorage implements IStorage {
         "RRR": "risk_register",
       };
 
+      // BUG-2 FIX: Prevent duplicate library exports.
+      // Fetch existing exports for this day inside the transaction, then only insert
+      // files that don't already have a record for (dayId, fileName).
+      const existingExports = await tx
+        .select({ fileName: schema.libraryExports.fileName })
+        .from(schema.libraryExports)
+        .where(eq(schema.libraryExports.dayId, id));
+      const existingFileNames = new Set(existingExports.map((e) => e.fileName));
+
       for (const file of preBuiltFiles) {
+        // Skip if this (dayId, fileName) combination already exists
+        if (existingFileNames.has(file.name)) {
+          continue;
+        }
+
         let docCategory: "raw_notes" | "daily_log" | "master_log" | "dive_log" | "risk_register" = "daily_log";
         for (const [prefix, category] of Object.entries(docCategoryMap)) {
           if (file.name.includes(prefix)) {
@@ -486,7 +500,9 @@ export class DbStorage implements IStorage {
           docCategory,
           fileData: file.buffer.toString("base64"),
           exportedBy: closedBy,
-        } as any).onConflictDoNothing();
+        } as any);
+        // Track the newly inserted file so subsequent loop iterations don't re-insert
+        existingFileNames.add(file.name);
       }
 
       return {

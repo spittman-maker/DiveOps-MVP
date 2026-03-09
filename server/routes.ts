@@ -967,11 +967,24 @@ export async function registerRoutes(
     try {
       const user = getUser(req);
       const date = req.body.date || getTodayDate();
-      
+
+      // BUG-1 FIX: Prevent duplicate open shifts.
+      // Only allow creating a new shift if ALL existing shifts for this date are CLOSED.
+      const existingDays = await storage.getDaysByProject(req.params.projectId);
+      const openShiftsForDate = existingDays.filter(
+        (d) => d.date === date && (d.status === "DRAFT" || d.status === "ACTIVE")
+      );
+      if (openShiftsForDate.length > 0) {
+        return res.status(409).json({
+          message: `There is already an open shift for ${date}. Close all existing shifts before creating a new one.`,
+          existingShiftId: openShiftsForDate[0].id,
+        });
+      }
+
       // Auto-generate shift number for this date
       const shiftCount = await storage.getShiftCountForDate(req.params.projectId, date);
       const shiftNumber = String(shiftCount + 1);
-      
+
       const day = await storage.createDay({
         projectId: req.params.projectId,
         date,
