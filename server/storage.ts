@@ -258,8 +258,9 @@ export class DbStorage implements IStorage {
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    // Support login by username OR email
-    const [user] = await db.select().from(schema.users).where(eq(schema.users.username, username));
+    // Support login by username OR email (trim to handle whitespace in DB)
+    const trimmed = username.trim();
+    const [user] = await db.select().from(schema.users).where(eq(schema.users.username, trimmed));
     if (user) return user;
     // Try email lookup
     const [userByEmail] = await db.select().from(schema.users).where(eq(schema.users.email, username));
@@ -298,11 +299,17 @@ export class DbStorage implements IStorage {
   }
 
   async createUser(user: InsertUser): Promise<User> {
+    // Trim username and fullName to prevent whitespace issues
+    if (user.username) user.username = user.username.trim();
+    if (user.fullName) user.fullName = user.fullName.trim();
     const [created] = await db.insert(schema.users).values(user as any).returning();
     return created!;
   }
 
   async updateUser(id: string, updates: Partial<InsertUser>): Promise<User | undefined> {
+    // Trim username and fullName to prevent whitespace issues
+    if (updates.username) updates.username = updates.username.trim();
+    if (updates.fullName) updates.fullName = (updates.fullName as string).trim();
     const [updated] = await db.update(schema.users)
       .set({ ...updates, updatedAt: new Date() } as any)
       .where(eq(schema.users.id, id))
