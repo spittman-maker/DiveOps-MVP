@@ -6,11 +6,14 @@ import { detectAnomalies } from "../services/anomaly-detector";
 import { db } from "../db";
 import { eq, and } from "drizzle-orm";
 import * as schema from "../../shared/schema";
+import { requireAuth, requireRole } from "../auth";
 import logger from "../logger";
 
 export function registerMlRoutes(app: Express): void {
+  // HIGH-02 FIX: All ML routes now require authentication.
+
   // Risk prediction for a project
-  app.get("/api/ml/:projectId/risk", async (req: Request, res: Response) => {
+  app.get("/api/ml/:projectId/risk", requireAuth, async (req: Request, res: Response) => {
     try {
       const projectId = getParam(req, "projectId");
       const result = await predictRisk(projectId);
@@ -22,7 +25,7 @@ export function registerMlRoutes(app: Express): void {
   });
 
   // Delay prediction for a project
-  app.get("/api/ml/:projectId/delay", async (req: Request, res: Response) => {
+  app.get("/api/ml/:projectId/delay", requireAuth, async (req: Request, res: Response) => {
     try {
       const projectId = getParam(req, "projectId");
       const result = await predictDelay(projectId);
@@ -34,7 +37,7 @@ export function registerMlRoutes(app: Express): void {
   });
 
   // Crew utilization stats
-  app.get("/api/ml/:projectId/crew", async (req: Request, res: Response) => {
+  app.get("/api/ml/:projectId/crew", requireAuth, async (req: Request, res: Response) => {
     try {
       const projectId = getParam(req, "projectId");
       const result = await computeCrewUtilization(projectId);
@@ -46,7 +49,7 @@ export function registerMlRoutes(app: Express): void {
   });
 
   // Get anomaly flags for a project
-  app.get("/api/ml/:projectId/anomalies", async (req: Request, res: Response) => {
+  app.get("/api/ml/:projectId/anomalies", requireAuth, async (req: Request, res: Response) => {
     try {
       const projectId = getParam(req, "projectId");
       const flags = await db
@@ -61,8 +64,8 @@ export function registerMlRoutes(app: Express): void {
     }
   });
 
-  // Update anomaly flag status
-  app.patch("/api/ml/anomalies/:id", async (req: Request, res: Response) => {
+  // Update anomaly flag status (admin only)
+  app.patch("/api/ml/anomalies/:id", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(getParam(req, "id"), 10);
       const { status, resolvedBy } = validateBody(anomalyUpdateSchema, req.body);
@@ -88,7 +91,7 @@ export function registerMlRoutes(app: Express): void {
   });
 
   // Run anomaly detection for a project day
-  app.post("/api/ml/:projectId/detect", async (req: Request, res: Response) => {
+  app.post("/api/ml/:projectId/detect", requireAuth, async (req: Request, res: Response) => {
     try {
       const projectId = getParam(req, "projectId");
       const { dayId, snapshotDate } = req.body;

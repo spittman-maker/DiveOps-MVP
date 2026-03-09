@@ -92,10 +92,18 @@ app.use(passport.session());
 // Rate limiting on all API routes
 app.use("/api", apiLimiter);
 
-// CSRF protection removed — the app uses session-based auth with SameSite=lax
-// cookies, which already prevents cross-site request forgery. The double-submit
-// cookie middleware was blocking all POST/PUT/PATCH/DELETE requests because the
-// frontend never sent the X-CSRF-Token header.
+// SEC-04: CSRF PROTECTION DECISION (Documented 2025-03)
+// ─────────────────────────────────────────────────────────────────────────────
+// CSRF token middleware was intentionally removed. The application relies on
+// SameSite=lax session cookies for CSRF protection, which is the recommended
+// approach for same-origin SPAs per OWASP guidelines:
+//   - SameSite=lax prevents cross-site POST requests from sending cookies
+//   - All API endpoints are same-origin (/api/*) — no cross-origin requests
+//   - The frontend is served from the same domain as the API
+//   - No CORS is configured, so cross-origin XHR/fetch is blocked by browsers
+// The previous double-submit cookie middleware was removed because the frontend
+// never sent the X-CSRF-Token header, causing all state-changing requests to fail.
+// If cross-origin API access is ever needed, re-evaluate CSRF protection.
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

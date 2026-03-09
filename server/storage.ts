@@ -1334,16 +1334,18 @@ export class DbStorage implements IStorage {
   }
 
   // Audit Events
-  async getAuditEvents(filters: { targetId?: string; targetType?: string; action?: string; dayId?: string; limit?: number }): Promise<any[]> {
+  async getAuditEvents(filters: { targetId?: string; targetType?: string; action?: string; dayId?: string; limit?: number; offset?: number }): Promise<any[]> {
     const conditions = [];
     if (filters.targetId) conditions.push(eq(schema.auditEvents.targetId, filters.targetId));
     if (filters.targetType) conditions.push(eq(schema.auditEvents.targetType, filters.targetType));
     if (filters.action) conditions.push(eq(schema.auditEvents.action, filters.action));
     if (filters.dayId) conditions.push(eq(schema.auditEvents.dayId, filters.dayId));
     
+    // SEC-07 FIX: Added offset support for pagination
     let query = db.select().from(schema.auditEvents)
       .orderBy(desc(schema.auditEvents.timestamp))
-      .limit(filters.limit || 100);
+      .limit(filters.limit || 100)
+      .offset(filters.offset || 0);
     
     if (conditions.length > 0) {
       return await (query as any).where(and(...conditions));

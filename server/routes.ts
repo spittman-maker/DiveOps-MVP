@@ -87,10 +87,12 @@ function getTodayDate(): string {
 // Validation Schemas
 // ────────────────────────────────────────────────────────────────────────────
 
+// MED-01 FIX: Removed role field from public registration schema.
+// Public registration always creates DIVER accounts. Elevated roles
+// can only be assigned by admins via the admin user creation endpoint.
 const registerSchema = z.object({
   username: z.string().min(3).max(50),
   password: z.string().min(6),
-  role: z.enum(["GOD", "ADMIN", "SUPERVISOR", "DIVER"]),
   fullName: z.string().optional(),
   initials: z.string().max(3).optional(),
   email: z.string().email().optional().or(z.literal("")),
@@ -161,10 +163,7 @@ export async function registerRoutes(
   app.post("/api/auth/register", authLimiter, async (req: Request, res: Response) => {
     try {
       const data = registerSchema.parse(req.body);
-      
-      if (data.role !== "DIVER") {
-        return res.status(403).json({ message: "Public registration is restricted to DIVER role. Contact an administrator for elevated access." });
-      }
+      // MED-01: Role is always DIVER for public registration (role field removed from schema)
 
       const existing = await storage.getUserByUsername(data.username);
       if (existing) {
@@ -202,6 +201,15 @@ export async function registerRoutes(
         return res.status(500).json({ message: "Session save failed" });
       }
       res.json({ id: user.id, username: user.username, role: user.role, fullName: user.fullName, mustChangePassword: user.mustChangePassword });
+    });
+  });
+
+  // CRIT-06 FIX: Explicit handler for the commonly-guessed /api/login path.
+  // Returns a helpful error pointing callers to the correct endpoint.
+  app.post("/api/login", (_req: Request, res: Response) => {
+    res.status(404).json({
+      message: "This endpoint does not exist. Use POST /api/auth/login instead.",
+      correctEndpoint: "/api/auth/login",
     });
   });
 
@@ -743,7 +751,25 @@ export async function registerRoutes(
       } else if (location) {
         queryParams += `&q=${encodeURIComponent(location as string)}`;
       } else {
-        return res.status(400).json({ message: "Location or coordinates required" });
+        // HIGH-01 FIX: Fall back to the user's active project location when no params passed
+        try {
+          const user = getUser(req);
+          const prefs = await storage.getUserPreferences(user.id);
+          if (prefs?.activeProjectId) {
+            const project = await storage.getProject(prefs.activeProjectId);
+            if (project?.jobsiteLat && project?.jobsiteLng) {
+              queryParams += `&lat=${project.jobsiteLat}&lon=${project.jobsiteLng}`;
+            } else if (project?.jobsiteName) {
+              queryParams += `&q=${encodeURIComponent(project.jobsiteName)}`;
+            } else {
+              return res.status(400).json({ message: "Location or coordinates required. Active project has no location set." });
+            }
+          } else {
+            return res.status(400).json({ message: "Location or coordinates required. No active project selected." });
+          }
+        } catch {
+          return res.status(400).json({ message: "Location or coordinates required" });
+        }
       }
       
       const weatherRes = await fetch(
@@ -898,26 +924,37 @@ export async function registerRoutes(
   // ──────────────────────────────────────────────────────────────────────────
 
   app.get("/api/projects/:projectId/days", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
-    // Get ALL days/shifts for the project, ordered by most recent first
-    const days = await storage.getDaysByProject(req.params.projectId);
-    
-    // If no days exist and user can write, create one for today
-    if (days.length === 0) {
-      const user = getUser(req);
-      if (canWriteLogEvents(user.role)) {
-        const today = getTodayDate();
-        const day = await storage.createDay({
-          projectId: req.params.projectId,
-          date: today,
-          shift: "1",
-          status: "DRAFT",
-          createdBy: user.id,
-        });
-        return res.json([day]);
+    try {
+      // HIGH-08 FIX: Validate project exists before querying days
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
       }
+
+      // Get ALL days/shifts for the project, ordered by most recent first
+      const days = await storage.getDaysByProject(req.params.projectId);
+      
+      // If no days exist and user can write, create one for today
+      if (days.length === 0) {
+        const user = getUser(req);
+        if (canWriteLogEvents(user.role)) {
+          const today = getTodayDate();
+          const day = await storage.createDay({
+            projectId: req.params.projectId,
+            date: today,
+            shift: "1",
+            status: "DRAFT",
+            createdBy: user.id,
+          });
+          return res.json([day]);
+        }
+      }
+      
+      res.json(days);
+    } catch (error: any) {
+      console.error("Get days error:", error);
+      res.status(500).json({ message: "Failed to fetch days" });
     }
-    
-    res.json(days);
   });
 
   app.get("/api/days/:id", requireAuth, async (req: Request, res: Response) => {
@@ -3695,14 +3732,32 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.get("/api/audit-events", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
+      // SEC-07 FIX: Add pagination with offset and cap limit to prevent unbounded queries
+      const rawLimit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+      const limit = Math.min(Math.max(rawLimit, 1), 500); // Cap between 1 and 500
+      const offset = req.query.offset ? Math.max(parseInt(req.query.offset as string), 0) : 0;
+
       const events = await storage.getAuditEvents({
         targetId: req.query.targetId as string | undefined,
         targetType: req.query.targetType as string | undefined,
         action: req.query.action as string | undefined,
         dayId: req.query.dayId as string | undefined,
-        limit: req.query.limit ? parseInt(req.query.limit as string) : 100,
+        limit: limit + 1, // Fetch one extra to determine if there are more
+        offset,
       });
-      res.json(events);
+
+      const hasMore = events.length > limit;
+      const page = hasMore ? events.slice(0, limit) : events;
+
+      res.json({
+        events: page,
+        pagination: {
+          limit,
+          offset,
+          count: page.length,
+          hasMore,
+        },
+      });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch audit events" });
     }
@@ -4411,7 +4466,12 @@ If you're not confident about specific facilities, say so in the notes field. Al
     try {
       const facilities = await storage.getDirectoryFacilities();
       res.json(facilities);
-    } catch (error) {
+    } catch (error: any) {
+      // CRIT-04 FIX: If the table doesn't exist yet, return empty array instead of 500
+      if (error?.code === "42P01" || error?.message?.includes("does not exist")) {
+        console.warn("[Facilities] Table not found, returning empty array");
+        return res.json([]);
+      }
       console.error("Get facilities error:", error);
       res.status(500).json({ message: "Failed to get facilities" });
     }
@@ -4481,8 +4541,8 @@ If you're not confident about specific facilities, say so in the notes field. Al
     res.json({ message: "All feature flags reset to defaults", flags: getFlagStatus() });
   });
 
-  // Manual sweep trigger (admin/god only)
-  app.post("/api/sweep/run", requireRole("ADMIN", "GOD"), async (_req: Request, res: Response) => {
+  // HIGH-07 FIX: Restrict sweep to GOD role only (destructive system operation)
+  app.post("/api/sweep/run", requireRole("GOD"), async (_req: Request, res: Response) => {
     try {
       const { runSweep, isSweepRunning } = await import("./sweep");
       if (isSweepRunning()) {
@@ -4756,6 +4816,14 @@ If you're not confident about specific facilities, say so in the notes field. Al
       const blobName = req.query.blobName as string;
       if (!blobName) return res.status(400).json({ message: "blobName query parameter is required" });
 
+      // HIGH-03 FIX: Check if Azure Storage credentials are configured before attempting SAS generation
+      if (!process.env.AZURE_STORAGE_CONNECTION_STRING && !process.env.AZURE_STORAGE_ACCOUNT_NAME) {
+        return res.status(503).json({
+          message: "Azure Blob Storage is not configured. Set AZURE_STORAGE_CONNECTION_STRING or AZURE_STORAGE_ACCOUNT_NAME + AZURE_STORAGE_ACCOUNT_KEY.",
+          configured: false,
+        });
+      }
+
       const blobStorage = await import("./services/blob-storage");
       const sasUrl = blobStorage.generateSasUrl(blobName, {
         container: "documents",
@@ -4765,24 +4833,30 @@ If you're not confident about specific facilities, say so in the notes field. Al
       res.json({ url: sasUrl, expiresInMinutes: 60 });
     } catch (error: any) {
       console.error("SAS URL generation error:", error);
-      res.status(500).json({ message: error?.message || "Failed to generate SAS URL" });
+      // HIGH-03 FIX: Return a user-friendly error instead of raw internal error
+      if (error?.message?.includes("not configured") || error?.message?.includes("StorageSharedKeyCredential")) {
+        return res.status(503).json({ message: "Azure Blob Storage is not configured", configured: false });
+      }
+      res.status(500).json({ message: "Failed to generate SAS URL" });
     }
   });
 
-  // Dynamically register new route modules (ML, Analytics, Knowledge Base)
-  (async () => {
-    try {
-      const { registerKnowledgeBaseRoutes } = await import("./routes/knowledge-base.routes");
-      const { registerAnalyticsRoutes } = await import("./routes/analytics.routes");
-      const { registerMlRoutes } = await import("./routes/ml.routes");
-      
-      registerKnowledgeBaseRoutes(app);
-      registerAnalyticsRoutes(app);
-      registerMlRoutes(app);
-    } catch (error) {
-      console.error("[Routes] Failed to register route modules:", error);
-    }
-  })();
+  // CRIT-02 FIX: Await the async route registration so these routes are registered
+  // BEFORE the SPA catch-all in serveStatic(). Previously the un-awaited IIFE caused
+  // a race condition where the catch-all was registered first, making all knowledge-base,
+  // analytics, and ML routes unreachable (they returned HTML instead of JSON).
+  try {
+    const { registerKnowledgeBaseRoutes } = await import("./routes/knowledge-base.routes");
+    const { registerAnalyticsRoutes } = await import("./routes/analytics.routes");
+    const { registerMlRoutes } = await import("./routes/ml.routes");
+    
+    registerKnowledgeBaseRoutes(app);
+    registerAnalyticsRoutes(app);
+    registerMlRoutes(app);
+    console.log("[Routes] Knowledge-base, analytics, and ML route modules registered successfully");
+  } catch (error) {
+    console.error("[Routes] Failed to register route modules:", error);
+  }
 
   return httpServer;
 }

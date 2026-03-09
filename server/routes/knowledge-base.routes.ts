@@ -10,11 +10,15 @@ import {
   deleteClientIndex,
   uploadDocuments,
 } from "../services/azure-search";
+import { requireAuth, requireRole } from "../auth";
 import logger from "../logger";
 
 export function registerKnowledgeBaseRoutes(app: Express): void {
+  // HIGH-02 FIX: All knowledge-base routes now require authentication.
+  // Destructive operations (create/delete index, upload) require ADMIN or GOD role.
+
   // Search the knowledge base
-  app.post("/api/knowledge-base/search", async (req: Request, res: Response) => {
+  app.post("/api/knowledge-base/search", requireAuth, async (req: Request, res: Response) => {
     try {
       const { query, topK, product, clientId, documentType, mode } = req.body;
       if (!query) return res.status(400).json({ error: "query is required" });
@@ -36,7 +40,7 @@ export function registerKnowledgeBaseRoutes(app: Express): void {
   });
 
   // Get RAG context for a query
-  app.post("/api/knowledge-base/context", async (req: Request, res: Response) => {
+  app.post("/api/knowledge-base/context", requireAuth, async (req: Request, res: Response) => {
     try {
       const { query, topK, product, clientId } = req.body;
       if (!query) return res.status(400).json({ error: "query is required" });
@@ -56,7 +60,7 @@ export function registerKnowledgeBaseRoutes(app: Express): void {
   });
 
   // Health check
-  app.get("/api/knowledge-base/health", async (_req: Request, res: Response) => {
+  app.get("/api/knowledge-base/health", requireAuth, async (_req: Request, res: Response) => {
     try {
       const health = await healthCheck();
       res.json(health);
@@ -66,7 +70,7 @@ export function registerKnowledgeBaseRoutes(app: Express): void {
   });
 
   // Index stats
-  app.get("/api/knowledge-base/stats", async (req: Request, res: Response) => {
+  app.get("/api/knowledge-base/stats", requireAuth, async (req: Request, res: Response) => {
     try {
       const indexName = getQuery(req, "index");
       const stats = await getIndexStats(indexName);
@@ -77,7 +81,7 @@ export function registerKnowledgeBaseRoutes(app: Express): void {
   });
 
   // List all indexes
-  app.get("/api/knowledge-base/indexes", async (_req: Request, res: Response) => {
+  app.get("/api/knowledge-base/indexes", requireAuth, async (_req: Request, res: Response) => {
     try {
       const indexes = await listIndexes();
       res.json({ indexes });
@@ -86,8 +90,8 @@ export function registerKnowledgeBaseRoutes(app: Express): void {
     }
   });
 
-  // Create client-specific index
-  app.post("/api/knowledge-base/indexes/:clientId", async (req: Request, res: Response) => {
+  // Create client-specific index (admin only)
+  app.post("/api/knowledge-base/indexes/:clientId", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
       const clientId = getParam(req, "clientId");
       const indexName = await createClientIndex(clientId);
@@ -97,8 +101,8 @@ export function registerKnowledgeBaseRoutes(app: Express): void {
     }
   });
 
-  // Delete client-specific index
-  app.delete("/api/knowledge-base/indexes/:clientId", async (req: Request, res: Response) => {
+  // Delete client-specific index (admin only)
+  app.delete("/api/knowledge-base/indexes/:clientId", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
       const clientId = getParam(req, "clientId");
       await deleteClientIndex(clientId);
@@ -108,8 +112,8 @@ export function registerKnowledgeBaseRoutes(app: Express): void {
     }
   });
 
-  // Upload documents to an index
-  app.post("/api/knowledge-base/upload", async (req: Request, res: Response) => {
+  // Upload documents to an index (admin only)
+  app.post("/api/knowledge-base/upload", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
       const { indexName, documents } = req.body;
       if (!indexName || !documents || !Array.isArray(documents)) {

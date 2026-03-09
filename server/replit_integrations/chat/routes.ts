@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import { chatStorage } from "./storage";
 import { storage } from "../../storage";
 import { getRAGContext } from "../../services/azure-search";
+import { requireAuth } from "../../auth";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -70,10 +71,14 @@ Day Status: ${activeDay.status}
 }
 
 export function registerChatRoutes(app: Express): void {
-  // Get all conversations
-  app.get("/api/conversations", async (req: Request, res: Response) => {
+  // CRIT-01 FIX: All conversation routes now require authentication via requireAuth middleware.
+  // HIGH-05 FIX: Conversations are filtered by the authenticated user's ID.
+
+  // Get all conversations (filtered by authenticated user)
+  app.get("/api/conversations", requireAuth, async (req: Request, res: Response) => {
     try {
-      const conversations = await chatStorage.getAllConversations();
+      const userId = (req.user as any)?.id;
+      const conversations = await chatStorage.getAllConversations(userId);
       res.json(conversations);
     } catch (error) {
       console.error("Error fetching conversations:", error);
@@ -81,11 +86,16 @@ export function registerChatRoutes(app: Express): void {
     }
   });
 
-  // Get single conversation with messages
-  app.get("/api/conversations/:id", async (req: Request, res: Response) => {
+  // Get single conversation with messages (filtered by authenticated user)
+  app.get("/api/conversations/:id", requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
-      const conversation = await chatStorage.getConversation(id);
+      // HIGH-04 FIX: Validate conversation ID is numeric
+      const id = parseInt(req.params.id as string, 10);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid conversation ID — must be a number" });
+      }
+      const userId = (req.user as any)?.id;
+      const conversation = await chatStorage.getConversation(id, userId);
       if (!conversation) {
         return res.status(404).json({ error: "Conversation not found" });
       }
@@ -97,11 +107,12 @@ export function registerChatRoutes(app: Express): void {
     }
   });
 
-  // Create new conversation
-  app.post("/api/conversations", async (req: Request, res: Response) => {
+  // Create new conversation (associated with authenticated user)
+  app.post("/api/conversations", requireAuth, async (req: Request, res: Response) => {
     try {
       const { title } = req.body;
-      const conversation = await chatStorage.createConversation(title || "New Chat");
+      const userId = (req.user as any)?.id;
+      const conversation = await chatStorage.createConversation(title || "New Chat", userId);
       res.status(201).json(conversation);
     } catch (error) {
       console.error("Error creating conversation:", error);
@@ -109,10 +120,20 @@ export function registerChatRoutes(app: Express): void {
     }
   });
 
-  // Delete conversation
-  app.delete("/api/conversations/:id", async (req: Request, res: Response) => {
+  // Delete conversation (only if owned by authenticated user)
+  app.delete("/api/conversations/:id", requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      // HIGH-04 FIX: Validate conversation ID is numeric
+      const id = parseInt(req.params.id as string, 10);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid conversation ID — must be a number" });
+      }
+      const userId = (req.user as any)?.id;
+      // Verify ownership before deleting
+      const conversation = await chatStorage.getConversation(id, userId);
+      if (!conversation) {
+        return res.status(404).json({ error: "Conversation not found" });
+      }
       await chatStorage.deleteConversation(id);
       res.status(204).send();
     } catch (error) {
@@ -122,10 +143,21 @@ export function registerChatRoutes(app: Express): void {
   });
 
   // Send message and get AI response (streaming)
-  app.post("/api/conversations/:id/messages", async (req: Request, res: Response) => {
+  app.post("/api/conversations/:id/messages", requireAuth, async (req: Request, res: Response) => {
     try {
-      const conversationId = parseInt(req.params.id);
+      // HIGH-04 FIX: Validate conversation ID is numeric
+      const conversationId = parseInt(req.params.id as string, 10);
+      if (isNaN(conversationId)) {
+        return res.status(400).json({ error: "Invalid conversation ID — must be a number" });
+      }
       const { content, userRole } = req.body;
+
+      // Verify conversation exists and belongs to user
+      const userId = (req.user as any)?.id;
+      const conversation = await chatStorage.getConversation(conversationId, userId);
+      if (!conversation) {
+        return res.status(404).json({ error: "Conversation not found" });
+      }
 
       // Save user message
       await chatStorage.createMessage(conversationId, "user", content);
@@ -272,7 +304,7 @@ Format: [HHMM] Type: Description. Impact: effect on operations (Station).
 - Client: The entity giving operational direction (previously referenced as JV/OICC)
 - PFU: Pre-Formed Unit | GDS: General Dynamics | AIS: Automatic Identification System
 
-## ABSOLUTE PROHIBITION - DIVE SAFETY (NON-NEGOTIABLE)
+## ABSOLUTE
 NEVER generalize, calculate, or infer:
 - Dive times or bottom times
 - Decompression schedules or stops
@@ -363,4 +395,3 @@ You cannot make changes to the app or discuss development features. If asked to 
     }
   });
 }
-

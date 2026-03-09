@@ -6,11 +6,14 @@ import {
   computeProjectTrends,
   computeProjectSummary,
 } from "../services/analytics-aggregator";
+import { requireAuth } from "../auth";
 import logger from "../logger";
 
 export function registerAnalyticsRoutes(app: Express): void {
+  // HIGH-02 FIX: All analytics routes now require authentication.
+
   // Get analytics snapshot for a project + date
-  app.get("/api/analytics/:projectId/snapshot", async (req: Request, res: Response) => {
+  app.get("/api/analytics/:projectId/snapshot", requireAuth, async (req: Request, res: Response) => {
     try {
       const projectId = getParam(req, "projectId");
       const date = getQuery(req, "date") || getTodayDate();
@@ -26,7 +29,7 @@ export function registerAnalyticsRoutes(app: Express): void {
   });
 
   // Get project trends over a date range
-  app.get("/api/analytics/:projectId/trends", async (req: Request, res: Response) => {
+  app.get("/api/analytics/:projectId/trends", requireAuth, async (req: Request, res: Response) => {
     try {
       const projectId = getParam(req, "projectId");
       const startDate = getQuery(req, "startDate");
@@ -45,7 +48,7 @@ export function registerAnalyticsRoutes(app: Express): void {
   });
 
   // Compute and store a day snapshot
-  app.post("/api/analytics/compute", async (req: Request, res: Response) => {
+  app.post("/api/analytics/compute", requireAuth, async (req: Request, res: Response) => {
     try {
       const { projectId, dayId, snapshotDate } = validateBody(analyticsComputeSchema, req.body);
       const snapshot = await computeDaySnapshot(projectId, dayId, snapshotDate);
@@ -57,7 +60,7 @@ export function registerAnalyticsRoutes(app: Express): void {
   });
 
   // Get project summary (all-time)
-  app.get("/api/analytics/:projectId/summary", async (req: Request, res: Response) => {
+  app.get("/api/analytics/:projectId/summary", requireAuth, async (req: Request, res: Response) => {
     try {
       const projectId = getParam(req, "projectId");
       const summary = await computeProjectSummary(projectId);
