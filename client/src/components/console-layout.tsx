@@ -4,6 +4,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ChatAssistant } from "./chat-assistant";
+import { PwaInstallBanner } from "./pwa-install-banner";
 import { Sun, Moon, LogOut, MessageSquare } from "lucide-react";
 
 interface ConsoleLayoutProps {
@@ -46,6 +47,7 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background">
+      <PwaInstallBanner />
       <header className="px-4 py-2 flex items-center justify-between shrink-0 border-b bg-card border-border">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
