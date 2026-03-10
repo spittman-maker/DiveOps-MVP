@@ -510,14 +510,14 @@ async function upgradeChecklistsToRegulationGrounded(pool: any) {
   try {
     // Check if any checklist items lack regulatory references
     const { rows } = await pool.query(
-      \`SELECT COUNT(*) as cnt FROM "checklist_items" WHERE "regulatory_reference" IS NULL\`
+      `SELECT COUNT(*) as cnt FROM "checklist_items" WHERE "regulatory_reference" IS NULL`
     );
     const nullCount = parseInt(rows[0]?.cnt || "0");
     if (nullCount > 0) {
-      console.log(\`[MIGRATE] Found \${nullCount} checklist items without regulatory references — upgrading...\`);
-      await pool.query(\`DELETE FROM "checklist_completions"\`);
-      await pool.query(\`DELETE FROM "checklist_items"\`);
-      await pool.query(\`DELETE FROM "safety_checklists"\`);
+      console.log(`[MIGRATE] Found ${nullCount} checklist items without regulatory references — upgrading...`);
+      await pool.query(`DELETE FROM "checklist_completions"`);
+      await pool.query(`DELETE FROM "checklist_items"`);
+      await pool.query(`DELETE FROM "safety_checklists"`);
       console.log("[MIGRATE] ✓ Cleared old checklists — auto-seed will recreate with regulation references");
     }
   } catch (err: any) {
