@@ -6,6 +6,7 @@ export interface FeatureFlags {
   riskCreation: boolean;
   exportGeneration: boolean;
   aiProcessing: boolean;
+  safetyTab: boolean;
 }
 
 const defaults: FeatureFlags = {
@@ -13,6 +14,7 @@ const defaults: FeatureFlags = {
   riskCreation: true,
   exportGeneration: true,
   aiProcessing: true,
+  safetyTab: false,
 };
 
 let overrides: Partial<FeatureFlags> = {};

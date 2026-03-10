@@ -1,6 +1,7 @@
 import { ReactNode, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/hooks/use-theme";
+import { useFeatureFlags } from "@/hooks/use-feature-flags";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ChatAssistant } from "./chat-assistant";
@@ -13,7 +14,7 @@ interface ConsoleLayoutProps {
   onTabChange: (tab: string) => void;
 }
 
-const TABS = [
+const BASE_TABS = [
   { id: "dashboard", label: "Dashboard" },
   { id: "daily-log", label: "Daily Log" },
   { id: "dive-logs", label: "Dive Logs" },
@@ -41,10 +42,19 @@ const ROLE_COLORS: Record<string, string> = {
 export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayoutProps) {
   const { user, logout, isAdmin, isSupervisor } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const featureFlags = useFeatureFlags();
   const [chatOpen, setChatOpen] = useState(false);
 
   const isDark = theme === "dark";
   const roleKey = user?.role || "";
+
+  // Build tabs dynamically based on feature flags
+  const TABS = [...BASE_TABS];
+  if (featureFlags.safetyTab) {
+    // Insert Safety tab after Risk Register
+    const riskIdx = TABS.findIndex(t => t.id === "risk-register");
+    TABS.splice(riskIdx + 1, 0, { id: "safety", label: "Safety" });
+  }
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background">

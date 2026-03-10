@@ -4526,7 +4526,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.post("/api/admin/feature-flags", requireRole("GOD"), async (req: Request, res: Response) => {
     const { flag, enabled } = req.body;
-    const validFlags = ["closeDay", "riskCreation", "exportGeneration", "aiProcessing"];
+    const validFlags = ["closeDay", "riskCreation", "exportGeneration", "aiProcessing", "safetyTab"];
     if (!validFlags.includes(flag)) {
       return res.status(400).json({ message: `Invalid flag. Valid flags: ${validFlags.join(", ")}` });
     }
@@ -4887,11 +4887,13 @@ If you're not confident about specific facilities, say so in the notes field. Al
     const { registerKnowledgeBaseRoutes } = await import("./routes/knowledge-base.routes");
     const { registerAnalyticsRoutes } = await import("./routes/analytics.routes");
     const { registerMlRoutes } = await import("./routes/ml.routes");
+    const { registerSafetyRoutes } = await import("./routes/safety.routes");
     
     registerKnowledgeBaseRoutes(app);
     registerAnalyticsRoutes(app);
     registerMlRoutes(app);
-    console.log("[Routes] Knowledge-base, analytics, and ML route modules registered successfully");
+    registerSafetyRoutes(app);
+    console.log("[Routes] Knowledge-base, analytics, ML, and safety route modules registered successfully");
   } catch (error) {
     console.error("[Routes] Failed to register route modules:", error);
   }
