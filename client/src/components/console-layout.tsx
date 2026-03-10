@@ -16,6 +16,7 @@ interface ConsoleLayoutProps {
 
 const BASE_TABS = [
   { id: "dashboard", label: "Dashboard" },
+  { id: "safety", label: "Safety" },
   { id: "daily-log", label: "Daily Log" },
   { id: "dive-logs", label: "Dive Logs" },
   { id: "dive-plan", label: "Dive Plan" },
@@ -23,7 +24,6 @@ const BASE_TABS = [
   { id: "certifications", label: "Certifications" },
   { id: "library", label: "Library" },
   { id: "admin", label: "Admin" },
-  { id: "safety", label: "Safety" },
 ];
 
 const ROLE_DISPLAY: Record<string, string> = {
@@ -51,11 +51,6 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
 
   // Build tabs dynamically based on feature flags
   const TABS = [...BASE_TABS];
-  if (featureFlags.safetyTab) {
-    // Insert Safety tab after Risk Register
-    const riskIdx = TABS.findIndex(t => t.id === "risk-register");
-    TABS.splice(riskIdx + 1, 0, { id: "safety", label: "Safety" });
-  }
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background">
