@@ -244,6 +244,186 @@ async function ensureCriticalTables(pool: InstanceType<typeof Pool>): Promise<vo
     }
   }
 
+  // Check and create all safety tab tables
+  const safetyTables = [
+    {
+      name: 'safety_checklists',
+      sql: `CREATE TABLE IF NOT EXISTS "safety_checklists" (
+        "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "project_id" varchar NOT NULL,
+        "checklist_type" text NOT NULL,
+        "title" text NOT NULL,
+        "description" text,
+        "role_scope" text NOT NULL DEFAULT 'all',
+        "is_active" boolean NOT NULL DEFAULT true,
+        "version" integer NOT NULL DEFAULT 1,
+        "created_by" varchar NOT NULL,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL
+      );`,
+      indexes: [
+        `CREATE INDEX IF NOT EXISTS "safety_checklists_project_idx" ON "safety_checklists" ("project_id");`,
+        `CREATE INDEX IF NOT EXISTS "safety_checklists_type_idx" ON "safety_checklists" ("checklist_type");`,
+      ],
+    },
+    {
+      name: 'checklist_items',
+      sql: `CREATE TABLE IF NOT EXISTS "checklist_items" (
+        "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "checklist_id" varchar NOT NULL,
+        "sort_order" integer NOT NULL DEFAULT 0,
+        "category" text,
+        "label" text NOT NULL,
+        "description" text,
+        "item_type" text NOT NULL DEFAULT 'checkbox',
+        "is_required" boolean NOT NULL DEFAULT true,
+        "equipment_category" text,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL
+      );`,
+      indexes: [
+        `CREATE INDEX IF NOT EXISTS "checklist_items_checklist_idx" ON "checklist_items" ("checklist_id");`,
+      ],
+    },
+    {
+      name: 'checklist_completions',
+      sql: `CREATE TABLE IF NOT EXISTS "checklist_completions" (
+        "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "checklist_id" varchar NOT NULL,
+        "project_id" varchar NOT NULL,
+        "day_id" varchar,
+        "completed_by" varchar NOT NULL,
+        "completed_by_name" text,
+        "status" text NOT NULL DEFAULT 'in_progress',
+        "responses" jsonb NOT NULL DEFAULT '[]'::jsonb,
+        "digital_signature" text,
+        "signed_at" timestamp with time zone,
+        "notes" text,
+        "auto_generated_risk_ids" jsonb DEFAULT '[]'::jsonb,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL
+      );`,
+      indexes: [
+        `CREATE INDEX IF NOT EXISTS "checklist_completions_project_idx" ON "checklist_completions" ("project_id");`,
+        `CREATE INDEX IF NOT EXISTS "checklist_completions_day_idx" ON "checklist_completions" ("day_id");`,
+        `CREATE INDEX IF NOT EXISTS "checklist_completions_user_idx" ON "checklist_completions" ("completed_by");`,
+      ],
+    },
+    {
+      name: 'jha_records',
+      sql: `CREATE TABLE IF NOT EXISTS "jha_records" (
+        "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "project_id" varchar NOT NULL,
+        "day_id" varchar,
+        "title" text NOT NULL,
+        "status" text NOT NULL DEFAULT 'draft',
+        "content" jsonb NOT NULL,
+        "ai_generated" boolean NOT NULL DEFAULT false,
+        "generated_by" varchar NOT NULL,
+        "reviewed_by" varchar,
+        "reviewed_at" timestamp with time zone,
+        "approved_by" varchar,
+        "approved_at" timestamp with time zone,
+        "digital_signature" text,
+        "export_file_id" varchar,
+        "version" integer NOT NULL DEFAULT 1,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL
+      );`,
+      indexes: [
+        `CREATE INDEX IF NOT EXISTS "jha_records_project_idx" ON "jha_records" ("project_id");`,
+        `CREATE INDEX IF NOT EXISTS "jha_records_day_idx" ON "jha_records" ("day_id");`,
+        `CREATE INDEX IF NOT EXISTS "jha_records_status_idx" ON "jha_records" ("status");`,
+      ],
+    },
+    {
+      name: 'safety_meetings',
+      sql: `CREATE TABLE IF NOT EXISTS "safety_meetings" (
+        "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "project_id" varchar NOT NULL,
+        "day_id" varchar,
+        "title" text NOT NULL,
+        "meeting_date" text NOT NULL,
+        "status" text NOT NULL DEFAULT 'draft',
+        "agenda" jsonb NOT NULL,
+        "ai_generated" boolean NOT NULL DEFAULT false,
+        "conducted_by" varchar NOT NULL,
+        "conducted_by_name" text,
+        "attendees" jsonb DEFAULT '[]'::jsonb,
+        "duration_minutes" integer,
+        "notes" text,
+        "digital_signature" text,
+        "signed_at" timestamp with time zone,
+        "export_file_id" varchar,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL
+      );`,
+      indexes: [
+        `CREATE INDEX IF NOT EXISTS "safety_meetings_project_idx" ON "safety_meetings" ("project_id");`,
+        `CREATE INDEX IF NOT EXISTS "safety_meetings_day_idx" ON "safety_meetings" ("day_id");`,
+        `CREATE INDEX IF NOT EXISTS "safety_meetings_date_idx" ON "safety_meetings" ("meeting_date");`,
+      ],
+    },
+    {
+      name: 'near_miss_reports',
+      sql: `CREATE TABLE IF NOT EXISTS "near_miss_reports" (
+        "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "project_id" varchar NOT NULL,
+        "day_id" varchar,
+        "reported_by" varchar NOT NULL,
+        "reported_by_name" text,
+        "title" text NOT NULL,
+        "description" text NOT NULL,
+        "location" text,
+        "severity" text NOT NULL DEFAULT 'low',
+        "status" text NOT NULL DEFAULT 'reported',
+        "category" text,
+        "involved_personnel" jsonb DEFAULT '[]'::jsonb,
+        "immediate_actions" text,
+        "root_cause" text,
+        "corrective_actions" text,
+        "linked_risk_id" varchar,
+        "voice_transcript" text,
+        "reviewed_by" varchar,
+        "reviewed_at" timestamp with time zone,
+        "resolved_by" varchar,
+        "resolved_at" timestamp with time zone,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL
+      );`,
+      indexes: [
+        `CREATE INDEX IF NOT EXISTS "near_miss_reports_project_idx" ON "near_miss_reports" ("project_id");`,
+        `CREATE INDEX IF NOT EXISTS "near_miss_reports_day_idx" ON "near_miss_reports" ("day_id");`,
+        `CREATE INDEX IF NOT EXISTS "near_miss_reports_severity_idx" ON "near_miss_reports" ("severity");`,
+        `CREATE INDEX IF NOT EXISTS "near_miss_reports_status_idx" ON "near_miss_reports" ("status");`,
+      ],
+    },
+  ];
+
+  for (const table of safetyTables) {
+    const { rows: checkRows } = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' AND table_name = '${table.name}'
+      ) as exists;
+    `);
+    if (!checkRows[0]?.exists) {
+      console.log(`[MIGRATE] Creating missing ${table.name} table...`);
+      try {
+        await pool.query(table.sql);
+        for (const idx of table.indexes) {
+          await pool.query(idx);
+        }
+        console.log(`[MIGRATE] ✓ Created ${table.name} table`);
+      } catch (err: any) {
+        if (err.code === '42P07') {
+          console.log(`[MIGRATE] ${table.name} already exists (race condition)`);
+        } else {
+          console.error(`[MIGRATE] ✗ Failed to create ${table.name}:`, err.message);
+        }
+      }
+    }
+  }
+
   // Check if safety_topic_library table exists
   const { rows: stRows } = await pool.query(`
     SELECT EXISTS (
