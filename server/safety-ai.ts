@@ -1,13 +1,13 @@
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import type { JhaContent, SafetyMeetingAgenda } from "@shared/safety-schema";
 import logger from "./logger";
 
-const AI_MODEL = "gpt-4.1-mini";
+const AI_MODEL = "claude-sonnet-4-20250514";
 
-function getOpenAIClient(): OpenAI {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) throw new Error("OPENAI_API_KEY is not set");
-  return new OpenAI({ apiKey: key });
+function getAnthropicClient(): Anthropic {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) throw new Error("ANTHROPIC_API_KEY is not set");
+  return new Anthropic({ apiKey: key });
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -24,7 +24,7 @@ interface JhaGenerationInput {
 }
 
 export async function generateJhaWithAI(input: JhaGenerationInput): Promise<JhaContent> {
-  const client = getOpenAIClient();
+  const client = getAnthropicClient();
   const today = new Date().toISOString().split("T")[0];
 
   const nearMissContext = input.historicalNearMisses.length > 0
@@ -68,20 +68,17 @@ Respond ONLY with valid JSON matching this exact structure (no markdown, no code
 }`;
 
   try {
-    const response = await client.chat.completions.create({
+    const response = await client.messages.create({
       model: AI_MODEL,
+      max_tokens: 4000,
+      system: "You are a commercial diving safety expert with deep knowledge of USACE EM 385-1-1, Navy Dive Manual, OSHA 29 CFR 1926 Subpart Y, and ADCI consensus standards. Respond only with valid JSON. No markdown formatting, no code fences, no explanatory text.",
       messages: [
-        {
-          role: "system",
-          content: "You are a commercial diving safety expert. Respond only with valid JSON. No markdown formatting, no code fences, no explanatory text."
-        },
         { role: "user", content: prompt }
       ],
-      temperature: 0.7,
-      max_tokens: 4000,
     });
 
-    const content = response.choices[0]?.message?.content?.trim();
+    const textBlock = response.content.find(block => block.type === "text");
+    const content = textBlock?.text?.trim();
     if (!content) throw new Error("Empty AI response");
 
     // Strip any markdown code fences if present
@@ -113,7 +110,7 @@ interface MeetingGenerationInput {
 }
 
 export async function generateMeetingWithAI(input: MeetingGenerationInput): Promise<SafetyMeetingAgenda> {
-  const client = getOpenAIClient();
+  const client = getAnthropicClient();
 
   const nearMissContext = input.recentNearMisses.length > 0
     ? `\nRecent near-misses:\n${input.recentNearMisses.map(nm => `- [${nm.severity.toUpperCase()}] ${nm.title}: ${nm.description}`).join("\n")}`
@@ -163,20 +160,17 @@ Respond ONLY with valid JSON matching this exact structure (no markdown, no code
 }`;
 
   try {
-    const response = await client.chat.completions.create({
+    const response = await client.messages.create({
       model: AI_MODEL,
+      max_tokens: 3000,
+      system: "You are a commercial diving safety supervisor with extensive field experience. You understand the real hazards divers face and create practical, actionable safety meeting agendas — not generic corporate safety fluff. Respond only with valid JSON. No markdown formatting, no code fences, no explanatory text.",
       messages: [
-        {
-          role: "system",
-          content: "You are a commercial diving safety supervisor. Respond only with valid JSON. No markdown formatting, no code fences, no explanatory text."
-        },
         { role: "user", content: prompt }
       ],
-      temperature: 0.7,
-      max_tokens: 3000,
     });
 
-    const content = response.choices[0]?.message?.content?.trim();
+    const textBlock = response.content.find(block => block.type === "text");
+    const content = textBlock?.text?.trim();
     if (!content) throw new Error("Empty AI response");
 
     const jsonStr = content.replace(/^```(?:json)?\s*/, "").replace(/\s*```$/, "").trim();
