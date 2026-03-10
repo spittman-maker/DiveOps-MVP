@@ -23,6 +23,7 @@ const BASE_TABS = [
   { id: "certifications", label: "Certifications" },
   { id: "library", label: "Library" },
   { id: "admin", label: "Admin" },
+  { id: "safety", label: "Safety" },
 ];
 
 const ROLE_DISPLAY: Record<string, string> = {
@@ -120,6 +121,7 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
           {TABS.map((tab) => {
             if (tab.id === "admin" && !isAdmin) return null;
             if (tab.id === "certifications" && !isSupervisor) return null;
+            if (tab.id === "safety" && !featureFlags.safetyTab) return null;
 
             return (
               <button
