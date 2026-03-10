@@ -129,6 +129,7 @@ export async function runMigrations(): Promise<void> {
 
     // Safety net: ensure critical tables exist even if migrations failed
     await ensureCriticalTables(pool);
+    await upgradeChecklistsToRegulationGrounded(pool);
   } catch (err) {
     console.error("[MIGRATE] Migration failed:", err);
     // Don't crash the app — log the error and continue
@@ -501,5 +502,25 @@ async function ensureCriticalTables(pool: InstanceType<typeof Pool>): Promise<vo
     console.log("[MIGRATE] ✓ Ensured regulatory_reference column on checklist_items");
   } catch (err: any) {
     console.error("[MIGRATE] Could not add regulatory_reference column:", err.message);
+  }
+}
+
+// One-time cleanup: remove old checklists without regulatory references and let auto-seed recreate them
+async function upgradeChecklistsToRegulationGrounded(pool: any) {
+  try {
+    // Check if any checklist items lack regulatory references
+    const { rows } = await pool.query(
+      \`SELECT COUNT(*) as cnt FROM "checklist_items" WHERE "regulatory_reference" IS NULL\`
+    );
+    const nullCount = parseInt(rows[0]?.cnt || "0");
+    if (nullCount > 0) {
+      console.log(\`[MIGRATE] Found \${nullCount} checklist items without regulatory references — upgrading...\`);
+      await pool.query(\`DELETE FROM "checklist_completions"\`);
+      await pool.query(\`DELETE FROM "checklist_items"\`);
+      await pool.query(\`DELETE FROM "safety_checklists"\`);
+      console.log("[MIGRATE] ✓ Cleared old checklists — auto-seed will recreate with regulation references");
+    }
+  } catch (err: any) {
+    console.error("[MIGRATE] Could not upgrade checklists:", err.message);
   }
 }
