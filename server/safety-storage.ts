@@ -8,6 +8,8 @@ import type {
   JhaRecord, InsertJhaRecord,
   SafetyMeeting, InsertSafetyMeeting,
   NearMissReport, InsertNearMissReport,
+  SafetyTopic, InsertSafetyTopic,
+  JhaHazard, InsertJhaHazard,
 } from "@shared/safety-schema";
 
 export class SafetyStorage {
@@ -227,6 +229,64 @@ export class SafetyStorage {
       .where(eq(safetySchema.nearMissReports.id, id))
       .returning();
     return updated;
+  }
+
+  // ── Safety Topic Library ───────────────────────────────────────────────
+
+  async getSafetyTopics(category?: string): Promise<SafetyTopic[]> {
+    if (category) {
+      return await db.select().from(safetySchema.safetyTopicLibrary)
+        .where(and(
+          eq(safetySchema.safetyTopicLibrary.category, category as any),
+          eq(safetySchema.safetyTopicLibrary.isActive, true),
+        ))
+        .orderBy(safetySchema.safetyTopicLibrary.title);
+    }
+    return await db.select().from(safetySchema.safetyTopicLibrary)
+      .where(eq(safetySchema.safetyTopicLibrary.isActive, true))
+      .orderBy(safetySchema.safetyTopicLibrary.title);
+  }
+
+  async getSafetyTopicCount(): Promise<number> {
+    const [result] = await db.select({ count: sql<number>`count(*)` })
+      .from(safetySchema.safetyTopicLibrary);
+    return Number(result?.count ?? 0);
+  }
+
+  async bulkCreateSafetyTopics(topics: InsertSafetyTopic[]): Promise<SafetyTopic[]> {
+    if (topics.length === 0) return [];
+    const created = await db.insert(safetySchema.safetyTopicLibrary)
+      .values(topics as any[]).returning();
+    return created;
+  }
+
+  // ── JHA Hazard Library ────────────────────────────────────────────────
+
+  async getJhaHazards(category?: string): Promise<JhaHazard[]> {
+    if (category) {
+      return await db.select().from(safetySchema.jhaHazardLibrary)
+        .where(and(
+          eq(safetySchema.jhaHazardLibrary.category, category as any),
+          eq(safetySchema.jhaHazardLibrary.isActive, true),
+        ))
+        .orderBy(safetySchema.jhaHazardLibrary.hazard);
+    }
+    return await db.select().from(safetySchema.jhaHazardLibrary)
+      .where(eq(safetySchema.jhaHazardLibrary.isActive, true))
+      .orderBy(safetySchema.jhaHazardLibrary.hazard);
+  }
+
+  async getJhaHazardCount(): Promise<number> {
+    const [result] = await db.select({ count: sql<number>`count(*)` })
+      .from(safetySchema.jhaHazardLibrary);
+    return Number(result?.count ?? 0);
+  }
+
+  async bulkCreateJhaHazards(hazards: InsertJhaHazard[]): Promise<JhaHazard[]> {
+    if (hazards.length === 0) return [];
+    const created = await db.insert(safetySchema.jhaHazardLibrary)
+      .values(hazards as any[]).returning();
+    return created;
   }
 
   // ── Safety Metrics ─────────────────────────────────────────────────────

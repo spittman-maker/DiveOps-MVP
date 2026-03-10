@@ -14,7 +14,7 @@ const defaults: FeatureFlags = {
   riskCreation: true,
   exportGeneration: true,
   aiProcessing: true,
-  safetyTab: false,
+  safetyTab: true,
 };
 
 let overrides: Partial<FeatureFlags> = {};

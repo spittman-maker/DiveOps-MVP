@@ -2432,19 +2432,14 @@ export async function registerRoutes(
         .join("\n");
       
       try {
-        const openai = new (await import("openai")).default({
-          apiKey: process.env.OPENAI_API_KEY,
-          baseURL: process.env.OPENAI_BASE_URL || undefined,
-        });
+        const { getAnthropicClient, AI_MODEL } = await import("./ai-client");
+        const anthropic = getAnthropicClient();
         
-        const response = await openai.chat.completions.create({
-          model: "gpt-4o",
-          max_completion_tokens: 200,
+        const response = await anthropic.messages.create({
+          model: AI_MODEL,
+          max_tokens: 200,
+          system: `You summarize dive tasks for ADCI dive log forms. Create a concise "Task / Work Accomplished" summary from raw log entries for a single diver. Include specific tasks, equipment, and locations. Do NOT calculate dive times or decompression data. Keep it factual and brief (1-3 sentences).`,
           messages: [
-            {
-              role: "system",
-              content: `You summarize dive tasks for ADCI dive log forms. Create a concise "Task / Work Accomplished" summary from raw log entries for a single diver. Include specific tasks, equipment, and locations. Do NOT calculate dive times or decompression data. Keep it factual and brief (1-3 sentences).`
-            },
             {
               role: "user",
               content: `Diver: ${diverName}\nRaw log entries:\n${rawEntries}\n\nWrite the Task / Work Accomplished summary.`
@@ -2452,7 +2447,8 @@ export async function registerRoutes(
           ],
         });
         
-        const summary = response.choices[0]?.message?.content?.trim() || dive.taskSummary || "UNKNOWN";
+        const textBlock = response.content.find((b: any) => b.type === "text");
+        const summary = textBlock?.text?.trim() || dive.taskSummary || "UNKNOWN";
         await storage.updateDive(dive.id, { taskSummary: summary });
         res.json({ taskSummary: summary });
       } catch (aiErr) {
@@ -3201,10 +3197,8 @@ export async function registerRoutes(
     try {
       const { messages, currentPlan, projectContext } = req.body;
       
-      const openai = new (await import("openai")).default({
-        apiKey: process.env.OPENAI_API_KEY,
-        baseURL: process.env.OPENAI_BASE_URL || undefined,
-      });
+      const { getAnthropicClient, AI_MODEL } = await import("./ai-client");
+      const anthropic = getAnthropicClient();
 
       const taskLibrary = (await import("@shared/schema")).DD5_CONTROLLED_TASK_LIBRARY;
 
@@ -3284,20 +3278,27 @@ Respond with ONLY the updated JSON object. No other text.`;
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
 
-      const stream = await openai.chat.completions.create({
-        model: "gpt-4o",
-        max_completion_tokens: 2000,
-        temperature: 0.3,
-        messages: chatMessages,
-        stream: true,
+      // Convert OpenAI-style messages to Anthropic format (extract system, keep user/assistant)
+      const systemContent = chatMessages.find(m => m.role === "system")?.content || "";
+      const nonSystemMessages = chatMessages
+        .filter(m => m.role !== "system")
+        .map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+      const stream = anthropic.messages.stream({
+        model: AI_MODEL,
+        max_tokens: 2000,
+        system: systemContent,
+        messages: nonSystemMessages,
       });
 
       let fullContent = "";
-      for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta?.content || "";
-        if (delta) {
-          fullContent += delta;
-          res.write(`data: ${JSON.stringify({ type: "delta", content: delta })}\n\n`);
+      for await (const event of stream) {
+        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+          const delta = event.delta.text || "";
+          if (delta) {
+            fullContent += delta;
+            res.write(`data: ${JSON.stringify({ type: "delta", content: delta })}\n\n`);
+          }
         }
       }
 

@@ -457,6 +457,29 @@ export function registerSafetyRoutes(app: Express): void {
       const nearMisses = await safetyStorage.getNearMissesByProject(data.projectId);
       const recentNearMisses = nearMisses.slice(0, 10);
 
+      // RAG cross-check: query knowledge base for relevant safety documents, SOPs, and incident data
+      let ragContext: string | undefined;
+      let ragSources: Array<{ title: string; source: string; score: number; excerpt: string }> = [];
+      try {
+        const { getRAGContextFull } = await import("../services/azure-search");
+        const operations = (data.plannedOperations || []).join(", ") || "commercial diving operations";
+        const equipment = (data.equipmentInUse || []).join(", ");
+        const ragQuery = `JHA hazard analysis ${operations} ${equipment} ${data.location || ""} safety SOP incident`.trim();
+
+        const ragResult = await getRAGContextFull({
+          query: ragQuery,
+          topK: 8,
+          mode: "hybrid",
+          documentType: undefined,
+        });
+        ragContext = ragResult.contextText;
+        ragSources = ragResult.sources;
+        logger.info({ ragResultCount: ragResult.totalResults, query: ragQuery }, "RAG context retrieved for JHA generation");
+      } catch (ragErr) {
+        logger.warn({ err: ragErr }, "RAG query failed for JHA generation — proceeding without knowledge base context");
+        ragContext = "No relevant documents found in the knowledge base.";
+      }
+
       const { generateJhaWithAI } = await import("../safety-ai");
       const jhaContent = await generateJhaWithAI({
         plannedOperations: data.plannedOperations || [],
@@ -469,6 +492,8 @@ export function registerSafetyRoutes(app: Express): void {
           description: nm.description,
           severity: nm.severity,
         })),
+        ragContext,
+        ragSources,
       });
 
       const today = new Date().toISOString().split("T")[0];
@@ -583,6 +608,28 @@ export function registerSafetyRoutes(app: Express): void {
       const recentMeetings = await safetyStorage.getMeetingsByProject(data.projectId);
       const lastMeeting = recentMeetings[0];
 
+      // RAG cross-check: query knowledge base for near-miss reports, safety bulletins, and relevant SOPs
+      let ragContext: string | undefined;
+      let ragSources: Array<{ title: string; source: string; score: number; excerpt: string }> = [];
+      try {
+        const { getRAGContextFull } = await import("../services/azure-search");
+        const operations = (data.plannedOperations || []).join(", ") || "commercial diving operations";
+        const ragQuery = `safety meeting near-miss report safety bulletin ${operations} lessons learned SOP`.trim();
+
+        const ragResult = await getRAGContextFull({
+          query: ragQuery,
+          topK: 6,
+          mode: "hybrid",
+          documentType: undefined,
+        });
+        ragContext = ragResult.contextText;
+        ragSources = ragResult.sources;
+        logger.info({ ragResultCount: ragResult.totalResults, query: ragQuery }, "RAG context retrieved for meeting generation");
+      } catch (ragErr) {
+        logger.warn({ err: ragErr }, "RAG query failed for meeting generation — proceeding without knowledge base context");
+        ragContext = "No relevant documents found in the knowledge base.";
+      }
+
       const { generateMeetingWithAI } = await import("../safety-ai");
       const agenda = await generateMeetingWithAI({
         plannedOperations: data.plannedOperations || [],
@@ -594,6 +641,8 @@ export function registerSafetyRoutes(app: Express): void {
           severity: nm.severity,
         })),
         previousMeetingNotes: lastMeeting?.notes || undefined,
+        ragContext,
+        ragSources,
       });
 
       const today = new Date().toISOString().split("T")[0];
@@ -800,6 +849,127 @@ export function registerSafetyRoutes(app: Express): void {
       res.status(201).json({ message: "Default checklists seeded", count: allChecklists.length, checklists: allChecklists });
     } catch (err: any) {
       logger.error({ err }, "Failed to seed checklists");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Seed All Safety Data (topics, hazards, and expanded checklists) ──
+
+  app.post("/api/safety/seed-all", requireAuth, requireSafetyFlag, requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const { SAFETY_TOPICS, JHA_HAZARDS, CHECKLIST_TEMPLATES } = await import("../safety-seed-data");
+      const results: Record<string, any> = {};
+
+      // Seed safety topics
+      const topicCount = await safetyStorage.getSafetyTopicCount();
+      if (topicCount === 0) {
+        const topics = await safetyStorage.bulkCreateSafetyTopics(
+          SAFETY_TOPICS.map(t => ({ ...t, isActive: true }))
+        );
+        results.safetyTopics = { seeded: topics.length };
+      } else {
+        results.safetyTopics = { existing: topicCount, message: "Already seeded" };
+      }
+
+      // Seed JHA hazards
+      const hazardCount = await safetyStorage.getJhaHazardCount();
+      if (hazardCount === 0) {
+        const hazards = await safetyStorage.bulkCreateJhaHazards(
+          JHA_HAZARDS.map(h => ({ ...h, isActive: true }))
+        );
+        results.jhaHazards = { seeded: hazards.length };
+      } else {
+        results.jhaHazards = { existing: hazardCount, message: "Already seeded" };
+      }
+
+      results.checklistTemplates = { available: CHECKLIST_TEMPLATES.length, message: "Use POST /api/safety/:projectId/seed-checklists to seed checklists for a specific project" };
+
+      res.status(201).json({ message: "Safety seed data loaded", results });
+    } catch (err: any) {
+      logger.error({ err }, "Failed to seed safety data");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Seed expanded checklists for a project ─────────────────────────
+
+  app.post("/api/safety/:projectId/seed-expanded-checklists", requireAuth, requireSafetyFlag, requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const projectId = p(req, "projectId");
+      const user = req.user as any;
+      const { CHECKLIST_TEMPLATES } = await import("../safety-seed-data");
+
+      const existing = await safetyStorage.getChecklistsByProject(projectId);
+      if (existing.length > 0) {
+        return res.json({ message: "Checklists already exist for this project", count: existing.length });
+      }
+
+      let totalChecklists = 0;
+      let totalItems = 0;
+
+      for (const template of CHECKLIST_TEMPLATES) {
+        const checklist = await safetyStorage.createChecklist({
+          projectId,
+          checklistType: template.checklistType,
+          title: template.title,
+          description: template.description,
+          roleScope: template.roleScope,
+          createdBy: user.id,
+          isActive: true,
+          version: 1,
+        });
+
+        const items = template.items.map(item => ({
+          checklistId: checklist.id,
+          sortOrder: item.sortOrder,
+          category: item.category,
+          label: item.label,
+          description: item.description,
+          itemType: item.itemType,
+          isRequired: item.isRequired,
+          equipmentCategory: item.equipmentCategory,
+        }));
+
+        await safetyStorage.bulkCreateChecklistItems(items);
+        totalChecklists++;
+        totalItems += items.length;
+      }
+
+      const allChecklists = await safetyStorage.getChecklistsByProject(projectId);
+      res.status(201).json({
+        message: "Expanded checklists seeded",
+        checklistsCreated: totalChecklists,
+        itemsCreated: totalItems,
+        checklists: allChecklists,
+      });
+    } catch (err: any) {
+      logger.error({ err }, "Failed to seed expanded checklists");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Safety Topic Library Endpoints ─────────────────────────────────
+
+  app.get("/api/safety/topics", requireAuth, requireSafetyFlag, async (req: Request, res: Response) => {
+    try {
+      const category = req.query.category as string | undefined;
+      const topics = await safetyStorage.getSafetyTopics(category);
+      res.json(topics);
+    } catch (err: any) {
+      logger.error({ err }, "Failed to get safety topics");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── JHA Hazard Library Endpoints ───────────────────────────────────
+
+  app.get("/api/safety/hazards", requireAuth, requireSafetyFlag, async (req: Request, res: Response) => {
+    try {
+      const category = req.query.category as string | undefined;
+      const hazards = await safetyStorage.getJhaHazards(category);
+      res.json(hazards);
+    } catch (err: any) {
+      logger.error({ err }, "Failed to get JHA hazards");
       res.status(500).json({ error: err.message });
     }
   });

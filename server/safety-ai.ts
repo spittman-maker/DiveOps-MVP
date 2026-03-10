@@ -1,14 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { getAnthropicClient, AI_MODEL } from "./ai-client";
 import type { JhaContent, SafetyMeetingAgenda } from "@shared/safety-schema";
 import logger from "./logger";
-
-const AI_MODEL = "claude-sonnet-4-20250514";
-
-function getAnthropicClient(): Anthropic {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new Error("ANTHROPIC_API_KEY is not set");
-  return new Anthropic({ apiKey: key });
-}
 
 // ────────────────────────────────────────────────────────────────────────────
 // AI JHA Generation
@@ -21,6 +13,8 @@ interface JhaGenerationInput {
   equipmentInUse: string[];
   location: string;
   historicalNearMisses: { title: string; description: string; severity: string }[];
+  ragContext?: string;
+  ragSources?: Array<{ title: string; source: string; score: number; excerpt: string }>;
 }
 
 export async function generateJhaWithAI(input: JhaGenerationInput): Promise<JhaContent> {
@@ -31,6 +25,10 @@ export async function generateJhaWithAI(input: JhaGenerationInput): Promise<JhaC
     ? `\n\nHistorical near-misses at this project (consider these when identifying hazards):\n${input.historicalNearMisses.map(nm => `- [${nm.severity.toUpperCase()}] ${nm.title}: ${nm.description}`).join("\n")}`
     : "";
 
+  const ragSection = input.ragContext && input.ragContext !== "No relevant documents found in the knowledge base."
+    ? `\n\nREFERENCE DOCUMENTS FROM KNOWLEDGE BASE (use these to ground your analysis — cite specific SOPs, standards, or incident data where applicable):\n${input.ragContext}`
+    : "\n\nNOTE: No reference documents were found in the knowledge base for this operation. Generate the JHA based on industry standards and best practices only.";
+
   const prompt = `You are a commercial diving safety expert creating a Job Hazard Analysis (JHA) for a diving operation. Generate a comprehensive JHA based on the following information:
 
 PLANNED OPERATIONS: ${input.plannedOperations.length > 0 ? input.plannedOperations.join(", ") : "General diving operations"}
@@ -38,7 +36,7 @@ WEATHER CONDITIONS: ${input.weatherConditions}
 DIVE DEPTH: ${input.diveDepth ? `${input.diveDepth} feet` : "Not specified"}
 EQUIPMENT IN USE: ${input.equipmentInUse.length > 0 ? input.equipmentInUse.join(", ") : "Standard surface-supplied diving equipment"}
 LOCATION: ${input.location}
-DATE: ${today}${nearMissContext}
+DATE: ${today}${nearMissContext}${ragSection}
 
 Generate a thorough JHA following USACE EM 385-1-1 and Navy Dive Manual standards. Include at least 6-8 hazards with specific controls. Focus on real commercial diving hazards. Do NOT include any references to differential pressure hazards.
 
@@ -64,14 +62,14 @@ Respond ONLY with valid JSON matching this exact structure (no markdown, no code
   "additionalNotes": "string",
   "historicalIncidentsSummary": "string or null",
   "aiModel": "${AI_MODEL}",
-  "aiPromptVersion": "1.0"
+  "aiPromptVersion": "1.1"
 }`;
 
   try {
     const response = await client.messages.create({
       model: AI_MODEL,
       max_tokens: 4000,
-      system: "You are a commercial diving safety expert with deep knowledge of USACE EM 385-1-1, Navy Dive Manual, OSHA 29 CFR 1926 Subpart Y, and ADCI consensus standards. Respond only with valid JSON. No markdown formatting, no code fences, no explanatory text.",
+      system: "You are a commercial diving safety expert with deep knowledge of USACE EM 385-1-1, Navy Dive Manual, OSHA 29 CFR 1926 Subpart Y, and ADCI consensus standards. When reference documents are provided from the knowledge base, incorporate their guidance into your analysis and cite them where relevant. Respond only with valid JSON. No markdown formatting, no code fences, no explanatory text.",
       messages: [
         { role: "user", content: prompt }
       ],
@@ -107,6 +105,8 @@ interface MeetingGenerationInput {
   supervisorNotes: string;
   recentNearMisses: { title: string; description: string; severity: string }[];
   previousMeetingNotes?: string;
+  ragContext?: string;
+  ragSources?: Array<{ title: string; source: string; score: number; excerpt: string }>;
 }
 
 export async function generateMeetingWithAI(input: MeetingGenerationInput): Promise<SafetyMeetingAgenda> {
@@ -120,11 +120,15 @@ export async function generateMeetingWithAI(input: MeetingGenerationInput): Prom
     ? `\nPrevious meeting notes: ${input.previousMeetingNotes}`
     : "";
 
+  const ragSection = input.ragContext && input.ragContext !== "No relevant documents found in the knowledge base."
+    ? `\n\nREFERENCE DOCUMENTS FROM KNOWLEDGE BASE (use these to ground your safety meeting — reference specific near-miss reports, safety bulletins, SOPs, or lessons learned where applicable):\n${input.ragContext}`
+    : "\n\nNOTE: No reference documents were found in the knowledge base for this operation. Generate the meeting agenda based on industry standards and best practices only.";
+
   const prompt = `You are a commercial diving safety supervisor preparing a 10-minute morning safety meeting agenda. Generate a comprehensive meeting agenda based on:
 
 PLANNED OPERATIONS: ${input.plannedOperations.length > 0 ? input.plannedOperations.join(", ") : "General diving operations for the day"}
 WEATHER CONDITIONS: ${input.weatherConditions}
-SUPERVISOR NOTES: ${input.supervisorNotes || "None provided"}${nearMissContext}${previousContext}
+SUPERVISOR NOTES: ${input.supervisorNotes || "None provided"}${nearMissContext}${previousContext}${ragSection}
 
 The meeting should cover:
 1. Safety topic of the day (relevant to the planned operations)
@@ -163,7 +167,7 @@ Respond ONLY with valid JSON matching this exact structure (no markdown, no code
     const response = await client.messages.create({
       model: AI_MODEL,
       max_tokens: 3000,
-      system: "You are a commercial diving safety supervisor with extensive field experience. You understand the real hazards divers face and create practical, actionable safety meeting agendas — not generic corporate safety fluff. Respond only with valid JSON. No markdown formatting, no code fences, no explanatory text.",
+      system: "You are a commercial diving safety supervisor with extensive field experience. You understand the real hazards divers face and create practical, actionable safety meeting agendas — not generic corporate safety fluff. When reference documents are provided from the knowledge base, incorporate relevant near-miss reports, safety bulletins, and lessons learned into the meeting agenda. Respond only with valid JSON. No markdown formatting, no code fences, no explanatory text.",
       messages: [
         { role: "user", content: prompt }
       ],

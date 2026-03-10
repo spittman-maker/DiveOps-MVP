@@ -253,3 +253,73 @@ export const nearMissReports = pgTable("near_miss_reports", {
 export const insertNearMissReportSchema = createInsertSchema(nearMissReports).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertNearMissReport = z.infer<typeof insertNearMissReportSchema>;
 export type NearMissReport = typeof nearMissReports.$inferSelect;
+
+
+// ────────────────────────────────────────────────────────────────────────────
+// SAFETY TOPIC LIBRARY (Pre-loaded safety meeting topics)
+// ────────────────────────────────────────────────────────────────────────────
+
+export type SafetyTopicCategory =
+  | "entanglement"
+  | "loss_of_gas"
+  | "communications_failure"
+  | "hypothermia"
+  | "barotrauma"
+  | "equipment_failure"
+  | "weather_current"
+  | "crane_operations"
+  | "cutting_welding"
+  | "confined_space"
+  | "contaminated_water"
+  | "general";
+
+export const safetyTopicLibrary = pgTable("safety_topic_library", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  category: text("category").notNull().$type<SafetyTopicCategory>(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  talkingPoints: jsonb("talking_points").$type<string[]>().notNull().default([]),
+  applicableDiveTypes: jsonb("applicable_dive_types").$type<string[]>().default([]),
+  regulatoryReferences: jsonb("regulatory_references").$type<string[]>().default([]),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  categoryIdx: index("safety_topic_library_category_idx").on(t.category),
+}));
+
+export const insertSafetyTopicSchema = createInsertSchema(safetyTopicLibrary).omit({ id: true, createdAt: true });
+export type InsertSafetyTopic = z.infer<typeof insertSafetyTopicSchema>;
+export type SafetyTopic = typeof safetyTopicLibrary.$inferSelect;
+
+// ────────────────────────────────────────────────────────────────────────────
+// JHA HAZARD LIBRARY (Common commercial diving hazards for JHA generation)
+// ────────────────────────────────────────────────────────────────────────────
+
+export type JhaHazardCategory =
+  | "environmental"
+  | "equipment"
+  | "physiological"
+  | "operational"
+  | "chemical"
+  | "mechanical"
+  | "electrical";
+
+export const jhaHazardLibrary = pgTable("jha_hazard_library", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  category: text("category").notNull().$type<JhaHazardCategory>(),
+  hazard: text("hazard").notNull(),
+  description: text("description").notNull(),
+  defaultRiskLevel: text("default_risk_level").notNull().$type<"low" | "medium" | "high" | "critical">().default("medium"),
+  standardControls: jsonb("standard_controls").$type<string[]>().notNull().default([]),
+  requiredPpe: jsonb("required_ppe").$type<string[]>().default([]),
+  applicableOperations: jsonb("applicable_operations").$type<string[]>().default([]),
+  regulatoryBasis: text("regulatory_basis"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  categoryIdx: index("jha_hazard_library_category_idx").on(t.category),
+}));
+
+export const insertJhaHazardSchema = createInsertSchema(jhaHazardLibrary).omit({ id: true, createdAt: true });
+export type InsertJhaHazard = z.infer<typeof insertJhaHazardSchema>;
+export type JhaHazard = typeof jhaHazardLibrary.$inferSelect;

@@ -1129,6 +1129,8 @@ export {
   jhaRecords, insertJhaRecordSchema,
   safetyMeetings, insertSafetyMeetingSchema,
   nearMissReports, insertNearMissReportSchema,
+  safetyTopicLibrary, insertSafetyTopicSchema,
+  jhaHazardLibrary, insertJhaHazardSchema,
 } from "./safety-schema";
 export type {
   SafetyChecklist, InsertSafetyChecklist,
@@ -1137,10 +1139,13 @@ export type {
   JhaRecord, InsertJhaRecord,
   SafetyMeeting, InsertSafetyMeeting,
   NearMissReport, InsertNearMissReport,
+  SafetyTopic, InsertSafetyTopic,
+  JhaHazard, InsertJhaHazard,
   ChecklistType, ChecklistItemType,
   ChecklistRole, CompletionStatus,
   NearMissSeverity, NearMissStatus,
   JhaStatus, SafetyMeetingStatus,
+  SafetyTopicCategory, JhaHazardCategory,
   ChecklistResponse, JhaContent, SafetyMeetingAgenda,
 } from "./safety-schema";
 
