@@ -278,6 +278,7 @@ async function ensureCriticalTables(pool: InstanceType<typeof Pool>): Promise<vo
         "item_type" text NOT NULL DEFAULT 'checkbox',
         "is_required" boolean NOT NULL DEFAULT true,
         "equipment_category" text,
+        "regulatory_reference" text,
         "created_at" timestamp with time zone DEFAULT now() NOT NULL
       );`,
       indexes: [
@@ -492,5 +493,13 @@ async function ensureCriticalTables(pool: InstanceType<typeof Pool>): Promise<vo
         console.error("[MIGRATE] ✗ Failed to create jha_hazard_library:", err.message);
       }
     }
+  }
+
+  // Ensure regulatory_reference column exists on checklist_items (may have been created before this column was added)
+  try {
+    await pool.query(`ALTER TABLE "checklist_items" ADD COLUMN IF NOT EXISTS "regulatory_reference" text;`);
+    console.log("[MIGRATE] ✓ Ensured regulatory_reference column on checklist_items");
+  } catch (err: any) {
+    console.error("[MIGRATE] Could not add regulatory_reference column:", err.message);
   }
 }
