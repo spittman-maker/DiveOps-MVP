@@ -8,7 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
-import { Download, Database, MessageSquare, FileText, Package, BookOpen, Plus, Pencil, Trash2, ToggleLeft, ToggleRight, AlertTriangle, Shield, Clock, CheckCircle2 } from "lucide-react";
+import { Download, Database, MessageSquare, FileText, Package, BookOpen, Plus, Pencil, Trash2, ToggleLeft, ToggleRight, AlertTriangle, Shield, Clock, CheckCircle2, ClipboardList, LogIn, LogOut, KeyRound, UserPlus, ChevronUp, ChevronDown, ChevronsUpDown, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
@@ -26,6 +26,14 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useProject } from "@/hooks/use-project";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 interface SopRecord {
   id: string;
@@ -448,6 +456,332 @@ function MLDataExportSection() {
         </Card>
       </div>
     </ScrollArea>
+  );
+}
+
+// AuditLogSection component - to be inserted into admin.tsx before AdminTab()
+
+interface AuditEvent {
+  id: string;
+  correlationId: string;
+  action: string;
+  userId: string | null;
+  userRole: string | null;
+  projectId: string | null;
+  dayId: string | null;
+  targetId: string | null;
+  targetType: string | null;
+  metadata: Record<string, any> | null;
+  before: Record<string, any> | null;
+  after: Record<string, any> | null;
+  ipAddress: string | null;
+  timestamp: string;
+}
+
+type SortDir = "asc" | "desc";
+
+function getEventIcon(action: string) {
+  if (action === "auth.login") return <LogIn className="w-4 h-4 text-green-400" />;
+  if (action === "auth.login_failed") return <LogIn className="w-4 h-4 text-red-400" />;
+  if (action === "auth.logout") return <LogOut className="w-4 h-4 text-navy-400" />;
+  if (action === "auth.password_change") return <KeyRound className="w-4 h-4 text-yellow-400" />;
+  if (action === "user.create") return <UserPlus className="w-4 h-4 text-blue-400" />;
+  if (action === "user.update") return <Shield className="w-4 h-4 text-blue-300" />;
+  return <ClipboardList className="w-4 h-4 text-navy-400" />;
+}
+
+function getEventBadgeClass(action: string): string {
+  if (action === "auth.login") return "bg-green-900/50 text-green-300 border-green-700";
+  if (action === "auth.login_failed") return "bg-red-900/50 text-red-300 border-red-700";
+  if (action === "auth.logout") return "bg-navy-700/50 text-navy-300 border-navy-600";
+  if (action === "auth.password_change") return "bg-yellow-900/50 text-yellow-300 border-yellow-700";
+  if (action.startsWith("user.")) return "bg-blue-900/50 text-blue-300 border-blue-700";
+  if (action.startsWith("day.")) return "bg-purple-900/50 text-purple-300 border-purple-700";
+  if (action.startsWith("export.")) return "bg-orange-900/50 text-orange-300 border-orange-700";
+  return "bg-navy-700/50 text-navy-300 border-navy-600";
+}
+
+function formatEventLabel(action: string): string {
+  const labels: Record<string, string> = {
+    "auth.login": "Login",
+    "auth.login_failed": "Login Failed",
+    "auth.logout": "Logout",
+    "auth.password_change": "Password Changed",
+    "user.create": "User Created",
+    "user.update": "User Updated",
+    "day.create": "Day Created",
+    "day.activate": "Day Activated",
+    "day.close": "Day Closed",
+    "day.close_override": "Day Closed (Override)",
+    "day.reopen": "Day Reopened",
+    "log_event.create": "Log Event Created",
+    "log_event.update": "Log Event Updated",
+    "log_event.delete": "Log Event Deleted",
+    "risk.create": "Risk Created",
+    "risk.update": "Risk Updated",
+    "dive.create": "Dive Created",
+    "dive.update": "Dive Updated",
+    "export.generate": "Export Generated",
+  };
+  return labels[action] || action;
+}
+
+function getEventDetails(event: AuditEvent): string {
+  const meta = event.metadata || {};
+  if (event.action === "auth.login") return `User: ${meta.username || event.userId || "—"} · Role: ${meta.role || event.userRole || "—"}`;
+  if (event.action === "auth.login_failed") return `Attempted: ${meta.username || "—"} · ${meta.reason || "Invalid credentials"}`;
+  if (event.action === "auth.logout") return `User: ${meta.username || event.userId || "—"}`;
+  if (event.action === "auth.password_change") return `User: ${meta.username || event.userId || "—"}${meta.forced ? " · Forced reset" : ""}`;
+  if (event.action === "user.create") return `Created: ${meta.createdUsername || event.targetId || "—"} · Role: ${meta.role || "—"}`;
+  if (event.action === "user.update") return `Updated user ${event.targetId || "—"}`;
+  if (event.targetId) return `${event.targetType || "entity"}: ${event.targetId}`;
+  return "—";
+}
+
+const ALL_EVENT_TYPES = [
+  "auth.login",
+  "auth.login_failed",
+  "auth.logout",
+  "auth.password_change",
+  "user.create",
+  "user.update",
+  "day.create",
+  "day.activate",
+  "day.close",
+  "day.close_override",
+  "day.reopen",
+  "log_event.create",
+  "log_event.update",
+  "log_event.delete",
+  "risk.create",
+  "risk.update",
+  "dive.create",
+  "dive.update",
+  "export.generate",
+];
+
+function AuditLogSection({ allUsers }: { allUsers: UserRecord[] }) {
+  const [filterAction, setFilterAction] = useState<string>("all");
+  const [filterUserId, setFilterUserId] = useState<string>("all");
+  const [filterDateFrom, setFilterDateFrom] = useState<string>("");
+  const [filterDateTo, setFilterDateTo] = useState<string>("");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  const queryParams = new URLSearchParams();
+  if (filterAction !== "all") queryParams.set("action", filterAction);
+  if (filterUserId !== "all") queryParams.set("userId", filterUserId);
+  if (filterDateFrom) queryParams.set("dateFrom", filterDateFrom);
+  if (filterDateTo) queryParams.set("dateTo", filterDateTo);
+  queryParams.set("limit", "500");
+
+  const { data, isLoading, refetch, isFetching } = useQuery<{ events: AuditEvent[]; pagination: any }>({
+    queryKey: ["audit-events", filterAction, filterUserId, filterDateFrom, filterDateTo],
+    queryFn: async () => {
+      const res = await fetch(`/api/audit-events?${queryParams.toString()}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch audit events");
+      return res.json();
+    },
+    staleTime: 30_000,
+  });
+
+  const events = data?.events ?? [];
+
+  const sorted = [...events].sort((a, b) => {
+    const ta = new Date(a.timestamp).getTime();
+    const tb = new Date(b.timestamp).getTime();
+    return sortDir === "desc" ? tb - ta : ta - tb;
+  });
+
+  function toggleSort() {
+    setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+  }
+
+  function clearFilters() {
+    setFilterAction("all");
+    setFilterUserId("all");
+    setFilterDateFrom("");
+    setFilterDateTo("");
+  }
+
+  const hasFilters = filterAction !== "all" || filterUserId !== "all" || filterDateFrom || filterDateTo;
+
+  return (
+    <div className="flex flex-col gap-4 h-[calc(100vh-240px)]">
+      {/* Filter Bar */}
+      <Card className="bg-navy-800/50 border-navy-600 flex-shrink-0">
+        <CardContent className="py-3">
+          <div className="flex flex-wrap gap-3 items-end">
+            {/* Event Type Filter */}
+            <div className="flex flex-col gap-1 min-w-[180px]">
+              <Label className="text-navy-400 text-xs">Event Type</Label>
+              <Select value={filterAction} onValueChange={setFilterAction}>
+                <SelectTrigger className="bg-navy-700 border-navy-600 text-white h-8 text-sm">
+                  <SelectValue placeholder="All events" />
+                </SelectTrigger>
+                <SelectContent className="bg-navy-800 border-navy-600">
+                  <SelectItem value="all" className="text-white hover:bg-navy-700">All Events</SelectItem>
+                  {ALL_EVENT_TYPES.map((t) => (
+                    <SelectItem key={t} value={t} className="text-white hover:bg-navy-700">
+                      {formatEventLabel(t)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* User Filter */}
+            <div className="flex flex-col gap-1 min-w-[180px]">
+              <Label className="text-navy-400 text-xs">User</Label>
+              <Select value={filterUserId} onValueChange={setFilterUserId}>
+                <SelectTrigger className="bg-navy-700 border-navy-600 text-white h-8 text-sm">
+                  <SelectValue placeholder="All users" />
+                </SelectTrigger>
+                <SelectContent className="bg-navy-800 border-navy-600">
+                  <SelectItem value="all" className="text-white hover:bg-navy-700">All Users</SelectItem>
+                  {allUsers.map((u) => (
+                    <SelectItem key={u.id} value={u.id} className="text-white hover:bg-navy-700">
+                      {u.fullName || u.username}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Date From */}
+            <div className="flex flex-col gap-1">
+              <Label className="text-navy-400 text-xs">From</Label>
+              <Input
+                type="date"
+                value={filterDateFrom}
+                onChange={(e) => setFilterDateFrom(e.target.value)}
+                className="bg-navy-700 border-navy-600 text-white h-8 text-sm w-36"
+              />
+            </div>
+
+            {/* Date To */}
+            <div className="flex flex-col gap-1">
+              <Label className="text-navy-400 text-xs">To</Label>
+              <Input
+                type="date"
+                value={filterDateTo}
+                onChange={(e) => setFilterDateTo(e.target.value)}
+                className="bg-navy-700 border-navy-600 text-white h-8 text-sm w-36"
+              />
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2 items-end pb-0.5">
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-navy-500 h-8 text-xs"
+                onClick={() => refetch()}
+                disabled={isFetching}
+              >
+                <RefreshCw className={`w-3 h-3 mr-1 ${isFetching ? "animate-spin" : ""}`} />
+                Refresh
+              </Button>
+              {hasFilters && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-navy-500 h-8 text-xs text-navy-400"
+                  onClick={clearFilters}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
+
+            {/* Count */}
+            <div className="ml-auto flex items-end pb-0.5">
+              <span className="text-navy-400 text-xs">{sorted.length} event{sorted.length !== 1 ? "s" : ""}</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Table */}
+      <div className="flex-1 overflow-auto rounded-md border border-navy-600">
+        {isLoading ? (
+          <div className="flex items-center justify-center h-40">
+            <RefreshCw className="w-6 h-6 animate-spin text-navy-400" />
+          </div>
+        ) : sorted.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-40 gap-2">
+            <ClipboardList className="w-8 h-8 text-navy-500" />
+            <p className="text-navy-400 text-sm">No audit events found</p>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader className="bg-navy-800 sticky top-0 z-10">
+              <TableRow className="border-navy-600 hover:bg-navy-800">
+                <TableHead className="text-navy-300 font-semibold w-[180px]">User</TableHead>
+                <TableHead className="text-navy-300 font-semibold w-[180px]">Event Type</TableHead>
+                <TableHead
+                  className="text-navy-300 font-semibold w-[180px] cursor-pointer select-none"
+                  onClick={toggleSort}
+                >
+                  <div className="flex items-center gap-1">
+                    Timestamp
+                    {sortDir === "desc" ? (
+                      <ChevronDown className="w-3 h-3" />
+                    ) : (
+                      <ChevronUp className="w-3 h-3" />
+                    )}
+                  </div>
+                </TableHead>
+                <TableHead className="text-navy-300 font-semibold">Details</TableHead>
+                <TableHead className="text-navy-300 font-semibold w-[120px]">IP Address</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sorted.map((event) => {
+                const actor = allUsers.find((u) => u.id === event.userId);
+                const actorLabel = actor
+                  ? (actor.fullName || actor.username)
+                  : event.metadata?.username || event.userId || "—";
+                const ts = new Date(event.timestamp);
+                const dateStr = ts.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+                const timeStr = ts.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+                return (
+                  <TableRow key={event.id} className="border-navy-700 hover:bg-navy-800/40">
+                    <TableCell className="text-white text-sm py-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-navy-700 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+                          {actor?.initials || actorLabel.slice(0, 2).toUpperCase()}
+                        </div>
+                        <span className="truncate max-w-[120px]" title={actorLabel}>{actorLabel}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-2">
+                      <div className="flex items-center gap-1.5">
+                        {getEventIcon(event.action)}
+                        <Badge className={`text-xs border ${getEventBadgeClass(event.action)}`}>
+                          {formatEventLabel(event.action)}
+                        </Badge>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-navy-300 text-xs py-2">
+                      <div>{dateStr}</div>
+                      <div className="text-navy-500">{timeStr}</div>
+                    </TableCell>
+                    <TableCell className="text-navy-300 text-sm py-2 max-w-[300px]">
+                      <span className="truncate block" title={getEventDetails(event)}>
+                        {getEventDetails(event)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-navy-500 text-xs py-2 font-mono">
+                      {event.ipAddress || "—"}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1017,6 +1351,13 @@ export function AdminTab() {
               System
             </TabsTrigger>
           )}
+          <TabsTrigger
+            data-testid="admin-tab-audit"
+            value="audit"
+            className="data-[state=active]:bg-navy-700"
+          >
+            Audit Log
+          </TabsTrigger>
         </TabsList>
 
         {/* ───── PROJECTS TAB ───── */}
@@ -1376,6 +1717,10 @@ export function AdminTab() {
             </div>
           </TabsContent>
         )}
+        {/* ───── AUDIT LOG TAB ───── */}
+        <TabsContent value="audit" className="h-full mt-0">
+          <AuditLogSection allUsers={allUsers} />
+        </TabsContent>
       </Tabs>
 
       {/* ───── CREATE PROJECT DIALOG ───── */}

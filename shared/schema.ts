@@ -930,7 +930,8 @@ export type AuditAction =
   | "dive.create" | "dive.update"
   | "day.create" | "day.activate" | "day.close" | "day.close_override" | "day.reopen"
   | "export.generate"
-  | "user.create" | "user.update";
+  | "user.create" | "user.update"
+  | "auth.login" | "auth.login_failed" | "auth.logout" | "auth.password_change";
 
 export const auditEvents = pgTable("audit_events", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

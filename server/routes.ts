@@ -192,16 +192,34 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/auth/login", authLimiter, passport.authenticate("local"), (req: Request, res: Response) => {
-    const user = getUser(req);
-    // Explicit session save to ensure cookie is set reliably
-    req.session.save((err) => {
-      if (err) {
-        console.error("[auth] Session save error:", err);
-        return res.status(500).json({ message: "Session save failed" });
+  app.post("/api/auth/login", authLimiter, (req: Request, res: Response, next: NextFunction) => {
+    passport.authenticate("local", (err: any, user: any, info: any) => {
+      if (err) return next(err);
+      if (!user) {
+        // Log failed login attempt
+        const correlationId = generateCorrelationId();
+        const attemptedUsername = (req.body?.username || "").trim();
+        emitAuditEvent(
+          { correlationId, userId: undefined, ipAddress: req.ip || "unknown" },
+          "auth.login_failed",
+          { metadata: { username: attemptedUsername, reason: info?.message || "Invalid credentials" } }
+        ).catch(() => {});
+        return res.status(401).json({ message: info?.message || "Invalid username or password" });
       }
-      res.json({ id: user.id, username: user.username, role: user.role, fullName: user.fullName, mustChangePassword: user.mustChangePassword });
-    });
+      req.login(user, (loginErr) => {
+        if (loginErr) return next(loginErr);
+        const correlationId = generateCorrelationId();
+        const ctx = { correlationId, userId: user.id, ipAddress: req.ip || "unknown" };
+        emitAuditEvent(ctx, "auth.login", { metadata: { username: user.username, role: user.role } }).catch(() => {});
+        req.session.save((err) => {
+          if (err) {
+            console.error("[auth] Session save error:", err);
+            return res.status(500).json({ message: "Session save failed" });
+          }
+          res.json({ id: user.id, username: user.username, role: user.role, fullName: user.fullName, mustChangePassword: user.mustChangePassword });
+        });
+      });
+    })(req, res, next);
   });
 
   // CRIT-06 FIX: Explicit handler for the commonly-guessed /api/login path.
@@ -214,8 +232,14 @@ export async function registerRoutes(
   });
 
   app.post("/api/auth/logout", (req: Request, res: Response) => {
+    const logoutUser = req.user as any;
     req.logout((err) => {
       if (err) return res.status(500).json({ message: "Logout failed" });
+      if (logoutUser?.id) {
+        const correlationId = generateCorrelationId();
+        const ctx = { correlationId, userId: logoutUser.id, ipAddress: req.ip || "unknown" };
+        emitAuditEvent(ctx, "auth.logout", { metadata: { username: logoutUser.username } }).catch(() => {});
+      }
       res.json({ message: "Logged out" });
     });
   });
@@ -3741,6 +3765,10 @@ If you're not confident about specific facilities, say so in the notes field. Al
       });
 
       const { password, ...sanitized } = user;
+      const createUserCorrelationId = generateCorrelationId();
+      const createUserActor = getUser(req);
+      const createUserCtx = { correlationId: createUserCorrelationId, userId: createUserActor.id, ipAddress: req.ip || "unknown" };
+      emitAuditEvent(createUserCtx, "user.create", { targetId: user.id, targetType: "user", metadata: { createdUsername: user.username, role: user.role } }).catch(() => {});
       // Return the temp password so the admin can share it with the user
       res.status(201).json({ ...sanitized, temporaryPassword: tempPassword });
     } catch (error) {
@@ -3785,22 +3813,22 @@ If you're not confident about specific facilities, say so in the notes field. Al
   app.get("/api/audit-events", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
       // SEC-07 FIX: Add pagination with offset and cap limit to prevent unbounded queries
-      const rawLimit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+      const rawLimit = req.query.limit ? parseInt(req.query.limit as string) : 200;
       const limit = Math.min(Math.max(rawLimit, 1), 500); // Cap between 1 and 500
       const offset = req.query.offset ? Math.max(parseInt(req.query.offset as string), 0) : 0;
-
       const events = await storage.getAuditEvents({
         targetId: req.query.targetId as string | undefined,
         targetType: req.query.targetType as string | undefined,
         action: req.query.action as string | undefined,
         dayId: req.query.dayId as string | undefined,
+        userId: req.query.userId as string | undefined,
+        dateFrom: req.query.dateFrom as string | undefined,
+        dateTo: req.query.dateTo as string | undefined,
         limit: limit + 1, // Fetch one extra to determine if there are more
         offset,
       });
-
       const hasMore = events.length > limit;
       const page = hasMore ? events.slice(0, limit) : events;
-
       res.json({
         events: page,
         pagination: {
@@ -4855,11 +4883,13 @@ If you're not confident about specific facilities, say so in the notes field. Al
         }
       }
 
-      await storage.updateUser(user.id, {
+       await storage.updateUser(user.id, {
         password: hashPassword(newPassword),
         mustChangePassword: false,
       });
-
+      const pwCorrelationId = generateCorrelationId();
+      const pwCtx = { correlationId: pwCorrelationId, userId: user.id, ipAddress: req.ip || "unknown" };
+      emitAuditEvent(pwCtx, "auth.password_change", { metadata: { username: user.username, forced: fullUser.mustChangePassword } }).catch(() => {});
       res.json({ message: "Password changed successfully" });
     } catch (error: any) {
       res.status(500).json({ message: error?.message || "Failed to change password" });

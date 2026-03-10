@@ -2,7 +2,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import pkg from "pg";
 const { Pool } = pkg;
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, gte, lte, sql } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import type {
   User, InsertUser,
@@ -1362,19 +1362,26 @@ export class DbStorage implements IStorage {
   }
 
   // Audit Events
-  async getAuditEvents(filters: { targetId?: string; targetType?: string; action?: string; dayId?: string; limit?: number; offset?: number }): Promise<any[]> {
-    const conditions = [];
+  async getAuditEvents(filters: { targetId?: string; targetType?: string; action?: string; dayId?: string; userId?: string; dateFrom?: string; dateTo?: string; limit?: number; offset?: number }): Promise<any[]> {
+    const conditions: any[] = [];
     if (filters.targetId) conditions.push(eq(schema.auditEvents.targetId, filters.targetId));
     if (filters.targetType) conditions.push(eq(schema.auditEvents.targetType, filters.targetType));
     if (filters.action) conditions.push(eq(schema.auditEvents.action, filters.action));
     if (filters.dayId) conditions.push(eq(schema.auditEvents.dayId, filters.dayId));
-    
+    if (filters.userId) conditions.push(eq(schema.auditEvents.userId, filters.userId));
+    if (filters.dateFrom) conditions.push(gte(schema.auditEvents.timestamp, new Date(filters.dateFrom)));
+    if (filters.dateTo) {
+      const end = new Date(filters.dateTo);
+      end.setHours(23, 59, 59, 999);
+      conditions.push(lte(schema.auditEvents.timestamp, end));
+    }
+
     // SEC-07 FIX: Added offset support for pagination
     let query = db.select().from(schema.auditEvents)
       .orderBy(desc(schema.auditEvents.timestamp))
       .limit(filters.limit || 100)
       .offset(filters.offset || 0);
-    
+
     if (conditions.length > 0) {
       return await (query as any).where(and(...conditions));
     }
