@@ -3810,7 +3810,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
   // AUDIT TRAIL API
   // ────────────────────────────────────────────────────────────────────────────
 
-  app.get("/api/audit-events", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+  app.get("/api/audit-events", requireRole("GOD"), async (req: Request, res: Response) => {
     try {
       // SEC-07 FIX: Add pagination with offset and cap limit to prevent unbounded queries
       const rawLimit = req.query.limit ? parseInt(req.query.limit as string) : 200;

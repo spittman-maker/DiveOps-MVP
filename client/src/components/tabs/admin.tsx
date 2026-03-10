@@ -1351,6 +1351,7 @@ export function AdminTab() {
               System
             </TabsTrigger>
           )}
+          {isGod && (
           <TabsTrigger
             data-testid="admin-tab-audit"
             value="audit"
@@ -1358,6 +1359,7 @@ export function AdminTab() {
           >
             Audit Log
           </TabsTrigger>
+          )}
         </TabsList>
 
         {/* ───── PROJECTS TAB ───── */}
@@ -1718,9 +1720,11 @@ export function AdminTab() {
           </TabsContent>
         )}
         {/* ───── AUDIT LOG TAB ───── */}
+        {isGod && (
         <TabsContent value="audit" className="h-full mt-0">
           <AuditLogSection allUsers={allUsers} />
         </TabsContent>
+        )}
       </Tabs>
 
       {/* ───── CREATE PROJECT DIALOG ───── */}
