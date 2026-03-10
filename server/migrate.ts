@@ -243,4 +243,74 @@ async function ensureCriticalTables(pool: InstanceType<typeof Pool>): Promise<vo
       console.error("[MIGRATE] ✗ Failed to create equipment_certifications indexes:", err.message);
     }
   }
+
+  // Check if safety_topic_library table exists
+  const { rows: stRows } = await pool.query(`
+    SELECT EXISTS (
+      SELECT FROM information_schema.tables 
+      WHERE table_schema = 'public' AND table_name = 'safety_topic_library'
+    ) as exists;
+  `);
+  if (!stRows[0]?.exists) {
+    console.log("[MIGRATE] Creating missing safety_topic_library table...");
+    try {
+      await pool.query(`
+        CREATE TABLE "safety_topic_library" (
+          "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+          "category" text NOT NULL,
+          "title" text NOT NULL,
+          "description" text NOT NULL,
+          "talking_points" jsonb NOT NULL DEFAULT '[]'::jsonb,
+          "applicable_dive_types" jsonb DEFAULT '[]'::jsonb,
+          "regulatory_references" jsonb DEFAULT '[]'::jsonb,
+          "is_active" boolean NOT NULL DEFAULT true,
+          "created_at" timestamp with time zone DEFAULT now() NOT NULL
+        );
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS "safety_topic_library_category_idx" ON "safety_topic_library" ("category");`);
+      console.log("[MIGRATE] ✓ Created safety_topic_library table");
+    } catch (err: any) {
+      if (err.code === "42P07") {
+        console.log("[MIGRATE] safety_topic_library already exists (race condition)");
+      } else {
+        console.error("[MIGRATE] ✗ Failed to create safety_topic_library:", err.message);
+      }
+    }
+  }
+
+  // Check if jha_hazard_library table exists
+  const { rows: jhRows } = await pool.query(`
+    SELECT EXISTS (
+      SELECT FROM information_schema.tables 
+      WHERE table_schema = 'public' AND table_name = 'jha_hazard_library'
+    ) as exists;
+  `);
+  if (!jhRows[0]?.exists) {
+    console.log("[MIGRATE] Creating missing jha_hazard_library table...");
+    try {
+      await pool.query(`
+        CREATE TABLE "jha_hazard_library" (
+          "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+          "category" text NOT NULL,
+          "hazard" text NOT NULL,
+          "description" text NOT NULL,
+          "default_risk_level" text NOT NULL DEFAULT 'medium',
+          "standard_controls" jsonb NOT NULL DEFAULT '[]'::jsonb,
+          "required_ppe" jsonb DEFAULT '[]'::jsonb,
+          "applicable_operations" jsonb DEFAULT '[]'::jsonb,
+          "regulatory_basis" text,
+          "is_active" boolean NOT NULL DEFAULT true,
+          "created_at" timestamp with time zone DEFAULT now() NOT NULL
+        );
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS "jha_hazard_library_category_idx" ON "jha_hazard_library" ("category");`);
+      console.log("[MIGRATE] ✓ Created jha_hazard_library table");
+    } catch (err: any) {
+      if (err.code === "42P07") {
+        console.log("[MIGRATE] jha_hazard_library already exists (race condition)");
+      } else {
+        console.error("[MIGRATE] ✗ Failed to create jha_hazard_library:", err.message);
+      }
+    }
+  }
 }
