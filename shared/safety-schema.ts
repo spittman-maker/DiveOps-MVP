@@ -50,6 +50,7 @@ export const checklistItems = pgTable("checklist_items", {
   itemType: text("item_type").notNull().$type<ChecklistItemType>().default("checkbox"),
   isRequired: boolean("is_required").default(true).notNull(),
   equipmentCategory: text("equipment_category"),
+  regulatoryReference: text("regulatory_reference"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   checklistIdx: index("checklist_items_checklist_idx").on(t.checklistId),

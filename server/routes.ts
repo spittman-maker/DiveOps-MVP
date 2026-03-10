@@ -899,6 +899,44 @@ export async function registerRoutes(
         jobsiteLng: jobsiteLng || null,
         timezone: timezone || "America/New_York",
       });
+
+      // Auto-seed default safety checklists for the new project (non-blocking)
+      if (isEnabled("safetyTab")) {
+        const user = getUser(req);
+        try {
+          const { CHECKLIST_TEMPLATES } = await import("./safety-seed-data");
+          const { safetyStorage } = await import("./safety-storage");
+          for (const template of CHECKLIST_TEMPLATES) {
+            const checklist = await safetyStorage.createChecklist({
+              projectId: project.id,
+              checklistType: template.checklistType,
+              title: template.title,
+              description: template.description,
+              roleScope: template.roleScope,
+              createdBy: user.id,
+              isActive: true,
+              version: 1,
+            });
+            const items = template.items.map((item: any) => ({
+              checklistId: checklist.id,
+              sortOrder: item.sortOrder,
+              category: item.category,
+              label: item.label,
+              description: item.description,
+              itemType: item.itemType,
+              isRequired: item.isRequired,
+              equipmentCategory: item.equipmentCategory,
+              regulatoryReference: item.regulatoryReference,
+            }));
+            await safetyStorage.bulkCreateChecklistItems(items);
+          }
+          console.log(`[Safety] Auto-seeded ${CHECKLIST_TEMPLATES.length} default checklists for new project ${project.id}`);
+        } catch (seedErr) {
+          // Non-blocking — checklists will be seeded on first access if this fails
+          console.error("[Safety] Failed to auto-seed checklists on project creation:", seedErr);
+        }
+      }
+
       res.status(201).json(project);
     } catch (error: any) {
       console.error("Create project error:", error);

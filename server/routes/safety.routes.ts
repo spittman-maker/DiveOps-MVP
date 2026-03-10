@@ -15,6 +15,69 @@ function p(req: Request, name: string): string {
   return (Array.isArray(v) ? v[0] : v) ?? "";
 }
 
+// Track projects currently being seeded to prevent concurrent duplicate seeding
+const seedingInProgress = new Set<string>();
+
+/**
+ * Auto-seed regulation-grounded checklists for a project.
+ * Uses the CHECKLIST_TEMPLATES from safety-seed-data.ts which reference
+ * Navy Dive Manual (NAVSEA SS521-AG-PRO-010) and USACE EM 385-1-1 Section 30.
+ *
+ * @param projectId - The project to seed checklists for
+ * @param createdBy - The user ID to attribute the checklists to
+ * @returns The number of checklists created, or 0 if already seeded
+ */
+async function seedDefaultChecklistsForProject(projectId: string, createdBy: string): Promise<number> {
+  // Check if already seeded
+  const existing = await safetyStorage.getChecklistsByProject(projectId);
+  if (existing.length > 0) return 0;
+
+  // Prevent concurrent seeding for the same project
+  if (seedingInProgress.has(projectId)) return 0;
+  seedingInProgress.add(projectId);
+
+  try {
+    const { CHECKLIST_TEMPLATES } = await import("../safety-seed-data");
+    let totalChecklists = 0;
+
+    for (const template of CHECKLIST_TEMPLATES) {
+      const checklist = await safetyStorage.createChecklist({
+        projectId,
+        checklistType: template.checklistType,
+        title: template.title,
+        description: template.description,
+        roleScope: template.roleScope,
+        createdBy,
+        isActive: true,
+        version: 1,
+      });
+
+      const items = template.items.map(item => ({
+        checklistId: checklist.id,
+        sortOrder: item.sortOrder,
+        category: item.category,
+        label: item.label,
+        description: item.description,
+        itemType: item.itemType,
+        isRequired: item.isRequired,
+        equipmentCategory: item.equipmentCategory,
+        regulatoryReference: item.regulatoryReference,
+      }));
+
+      await safetyStorage.bulkCreateChecklistItems(items);
+      totalChecklists++;
+    }
+
+    logger.info({ projectId, totalChecklists }, "Auto-seeded default safety checklists for project");
+    return totalChecklists;
+  } catch (err) {
+    logger.error({ err, projectId }, "Failed to auto-seed default checklists");
+    return 0;
+  } finally {
+    seedingInProgress.delete(projectId);
+  }
+}
+
 function requireSafetyFlag(_req: Request, res: Response, next: NextFunction) {
   if (!isEnabled("safetyTab")) {
     return res.status(404).json({ message: "Safety features are not enabled" });
@@ -40,6 +103,7 @@ const createChecklistSchema = z.object({
     itemType: z.enum(["checkbox", "pass_fail_flag", "text_input", "numeric_input", "gas_analysis"]).default("checkbox"),
     isRequired: z.boolean().default(true),
     equipmentCategory: z.string().optional(),
+    regulatoryReference: z.string().optional(),
   })).optional(),
 });
 
@@ -200,7 +264,17 @@ export function registerSafetyRoutes(app: Express): void {
     try {
       const projectId = p(req, "projectId");
       const type = typeof req.query.type === "string" ? req.query.type : undefined;
-      const checklists = await safetyStorage.getChecklistsByProject(projectId, type);
+      let checklists = await safetyStorage.getChecklistsByProject(projectId, type);
+
+      // Auto-seed default checklists on first access if none exist
+      if (checklists.length === 0 && !type) {
+        const user = req.user as any;
+        const seeded = await seedDefaultChecklistsForProject(projectId, user.id);
+        if (seeded > 0) {
+          checklists = await safetyStorage.getChecklistsByProject(projectId, type);
+        }
+      }
+
       res.json(checklists);
     } catch (err: any) {
       logger.error({ err }, "Failed to get checklists");
@@ -246,6 +320,7 @@ export function registerSafetyRoutes(app: Express): void {
           itemType: item.itemType,
           isRequired: item.isRequired,
           equipmentCategory: item.equipmentCategory || null,
+          regulatoryReference: item.regulatoryReference || null,
         }));
         await safetyStorage.bulkCreateChecklistItems(items);
       }
@@ -928,6 +1003,7 @@ export function registerSafetyRoutes(app: Express): void {
           itemType: item.itemType,
           isRequired: item.isRequired,
           equipmentCategory: item.equipmentCategory,
+          regulatoryReference: item.regulatoryReference,
         }));
 
         await safetyStorage.bulkCreateChecklistItems(items);
