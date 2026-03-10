@@ -1118,231 +1118,29 @@ export type InsertMlPrediction = z.infer<typeof insertMlPredictionSchema>;
 export type MlPrediction = typeof mlPredictions.$inferSelect;
 
 // ════════════════════════════════════════════════════════════════════
-// SAFETY TAB — Checklists, JHA, Safety Meetings, Near-Miss Reports
+// SAFETY TAB — Re-exported from shared/safety-schema.ts
+// The canonical safety table definitions live in safety-schema.ts.
+// We re-export everything here so existing imports keep working.
 // ════════════════════════════════════════════════════════════════════
+export {
+  safetyChecklists, insertSafetyChecklistSchema,
+  checklistItems, insertChecklistItemSchema,
+  checklistCompletions, insertChecklistCompletionSchema,
+  jhaRecords, insertJhaRecordSchema,
+  safetyMeetings, insertSafetyMeetingSchema,
+  nearMissReports, insertNearMissReportSchema,
+} from "./safety-schema";
+export type {
+  SafetyChecklist, InsertSafetyChecklist,
+  ChecklistItem, InsertChecklistItem,
+  ChecklistCompletion, InsertChecklistCompletion,
+  JhaRecord, InsertJhaRecord,
+  SafetyMeeting, InsertSafetyMeeting,
+  NearMissReport, InsertNearMissReport,
+  ChecklistType, ChecklistItemType,
+  ChecklistRole, CompletionStatus,
+  NearMissSeverity, NearMissStatus,
+  JhaStatus, SafetyMeetingStatus,
+  ChecklistResponse, JhaContent, SafetyMeetingAgenda,
+} from "./safety-schema";
 
-export type ChecklistType = "pre_dive" | "post_dive" | "equipment";
-export type RoleScope = "all" | "diver" | "tender" | "supervisor";
-export type ClientType = "navy" | "usace" | "commercial" | "all";
-export type ChecklistCompletionStatus = "in_progress" | "completed" | "signed_off";
-export type JhaStatus = "draft" | "review" | "approved" | "superseded";
-export type SafetyMeetingStatus = "draft" | "finalized" | "archived";
-export type NearMissReportType = "near_miss" | "incident" | "observation" | "unsafe_condition";
-export type NearMissSeverity = "low" | "medium" | "high" | "critical";
-export type NearMissStatus = "open" | "investigating" | "resolved" | "closed";
-export type ChecklistItemStatus = "pass" | "fail" | "flag" | "na";
-
-// ────────────────────────────────────────────────────────────────────────────
-// SAFETY CHECKLISTS (Template definitions)
-// ────────────────────────────────────────────────────────────────────────────
-
-export const safetyChecklists = pgTable("safety_checklists", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  checklistType: text("checklist_type").notNull().$type<ChecklistType>(),
-  title: text("title").notNull(),
-  description: text("description"),
-  roleScope: text("role_scope").notNull().default("all").$type<RoleScope>(),
-  clientType: text("client_type").default("commercial").$type<ClientType>(),
-  isActive: boolean("is_active").notNull().default(true),
-  sortOrder: integer("sort_order").notNull().default(0),
-  createdBy: varchar("created_by").references(() => users.id),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => ({
-  projectIdx: index("safety_checklists_project_idx").on(t.projectId),
-  typeIdx: index("safety_checklists_type_idx").on(t.checklistType),
-}));
-
-export const insertSafetyChecklistSchema = createInsertSchema(safetyChecklists).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertSafetyChecklist = z.infer<typeof insertSafetyChecklistSchema>;
-export type SafetyChecklist = typeof safetyChecklists.$inferSelect;
-
-// ────────────────────────────────────────────────────────────────────────────
-// CHECKLIST ITEMS (Individual items within a checklist template)
-// ────────────────────────────────────────────────────────────────────────────
-
-export const checklistItems = pgTable("checklist_items", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  checklistId: varchar("checklist_id").notNull().references(() => safetyChecklists.id, { onDelete: "cascade" }),
-  itemText: text("item_text").notNull(),
-  category: text("category"),
-  isCritical: boolean("is_critical").notNull().default(false),
-  requiresNote: boolean("requires_note").notNull().default(false),
-  sortOrder: integer("sort_order").notNull().default(0),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => ({
-  checklistIdx: index("checklist_items_checklist_idx").on(t.checklistId),
-}));
-
-export const insertChecklistItemSchema = createInsertSchema(checklistItems).omit({ id: true, createdAt: true });
-export type InsertChecklistItem = z.infer<typeof insertChecklistItemSchema>;
-export type ChecklistItem = typeof checklistItems.$inferSelect;
-
-// ────────────────────────────────────────────────────────────────────────────
-// CHECKLIST COMPLETIONS (Filled-out checklist instances)
-// ────────────────────────────────────────────────────────────────────────────
-
-export interface ChecklistResponse {
-  itemId: string;
-  itemText: string;
-  status: ChecklistItemStatus;
-  note?: string;
-  flaggedForRisk?: boolean;
-}
-
-export const checklistCompletions = pgTable("checklist_completions", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  checklistId: varchar("checklist_id").notNull().references(() => safetyChecklists.id, { onDelete: "cascade" }),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  dayId: varchar("day_id").references(() => days.id, { onDelete: "set null" }),
-  completedBy: varchar("completed_by").notNull().references(() => users.id),
-  completedAt: timestamp("completed_at", { withTimezone: true }).notNull().defaultNow(),
-  status: text("status").notNull().default("in_progress").$type<ChecklistCompletionStatus>(),
-  responses: jsonb("responses").notNull().default([]).$type<ChecklistResponse[]>(),
-  notes: text("notes"),
-  supervisorSignature: varchar("supervisor_signature").references(() => users.id),
-  supervisorSignedAt: timestamp("supervisor_signed_at", { withTimezone: true }),
-  digitalSignatureData: text("digital_signature_data"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => ({
-  projectIdx: index("checklist_completions_project_idx").on(t.projectId),
-  dayIdx: index("checklist_completions_day_idx").on(t.dayId),
-  checklistIdx: index("checklist_completions_checklist_idx").on(t.checklistId),
-}));
-
-export const insertChecklistCompletionSchema = createInsertSchema(checklistCompletions).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertChecklistCompletion = z.infer<typeof insertChecklistCompletionSchema>;
-export type ChecklistCompletion = typeof checklistCompletions.$inferSelect;
-
-// ────────────────────────────────────────────────────────────────────────────
-// JHA RECORDS (Job Hazard Analysis)
-// ────────────────────────────────────────────────────────────────────────────
-
-export interface JhaHazardEntry {
-  step: string;
-  hazard: string;
-  riskLevel: "low" | "medium" | "high" | "critical";
-  controls: string;
-  responsibleParty: string;
-  ppe?: string;
-}
-
-export const jhaRecords = pgTable("jha_records", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  dayId: varchar("day_id").references(() => days.id, { onDelete: "set null" }),
-  title: text("title").notNull(),
-  status: text("status").notNull().default("draft").$type<JhaStatus>(),
-  generatedByAi: boolean("generated_by_ai").notNull().default(false),
-  aiModel: text("ai_model"),
-  aiPromptContext: jsonb("ai_prompt_context").$type<Record<string, any>>(),
-  hazardEntries: jsonb("hazard_entries").notNull().default([]).$type<JhaHazardEntry[]>(),
-  weatherConditions: text("weather_conditions"),
-  diveDepthRange: text("dive_depth_range"),
-  equipmentInUse: jsonb("equipment_in_use").default([]).$type<string[]>(),
-  plannedOperations: text("planned_operations"),
-  historicalContext: text("historical_context"),
-  supervisorNotes: text("supervisor_notes"),
-  approvedBy: varchar("approved_by").references(() => users.id),
-  approvedAt: timestamp("approved_at", { withTimezone: true }),
-  digitalSignatureData: text("digital_signature_data"),
-  createdBy: varchar("created_by").notNull().references(() => users.id),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  version: integer("version").notNull().default(1),
-}, (t) => ({
-  projectIdx: index("jha_records_project_idx").on(t.projectId),
-  dayIdx: index("jha_records_day_idx").on(t.dayId),
-  statusIdx: index("jha_records_status_idx").on(t.status),
-}));
-
-export const insertJhaRecordSchema = createInsertSchema(jhaRecords).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertJhaRecord = z.infer<typeof insertJhaRecordSchema>;
-export type JhaRecord = typeof jhaRecords.$inferSelect;
-
-// ────────────────────────────────────────────────────────────────────────────
-// SAFETY MEETINGS (Morning safety meeting records)
-// ────────────────────────────────────────────────────────────────────────────
-
-export interface SafetyMeetingAgenda {
-  safetyTopic?: string;
-  previousShiftSummary?: string;
-  plannedOperations?: string;
-  associatedHazards?: string;
-  mitigationPlan?: string;
-  openDiscussionPoints?: string;
-  additionalNotes?: string;
-}
-
-export const safetyMeetings = pgTable("safety_meetings", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  dayId: varchar("day_id").references(() => days.id, { onDelete: "set null" }),
-  title: text("title").notNull(),
-  status: text("status").notNull().default("draft").$type<SafetyMeetingStatus>(),
-  meetingDate: text("meeting_date").notNull(),
-  generatedByAi: boolean("generated_by_ai").notNull().default(false),
-  aiModel: text("ai_model"),
-  supervisorQuestions: jsonb("supervisor_questions").default([]).$type<string[]>(),
-  supervisorAnswers: jsonb("supervisor_answers").default([]).$type<string[]>(),
-  safetyTopic: text("safety_topic"),
-  previousShiftSummary: text("previous_shift_summary"),
-  plannedOperations: text("planned_operations"),
-  associatedHazards: text("associated_hazards"),
-  mitigationPlan: text("mitigation_plan"),
-  openDiscussionPoints: text("open_discussion_points"),
-  agendaJson: jsonb("agenda_json").notNull().default({}).$type<SafetyMeetingAgenda>(),
-  attendees: jsonb("attendees").default([]).$type<string[]>(),
-  notes: text("notes"),
-  finalizedBy: varchar("finalized_by").references(() => users.id),
-  finalizedAt: timestamp("finalized_at", { withTimezone: true }),
-  digitalSignatureData: text("digital_signature_data"),
-  createdBy: varchar("created_by").notNull().references(() => users.id),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => ({
-  projectIdx: index("safety_meetings_project_idx").on(t.projectId),
-  dayIdx: index("safety_meetings_day_idx").on(t.dayId),
-  dateIdx: index("safety_meetings_date_idx").on(t.meetingDate),
-}));
-
-export const insertSafetyMeetingSchema = createInsertSchema(safetyMeetings).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertSafetyMeeting = z.infer<typeof insertSafetyMeetingSchema>;
-export type SafetyMeeting = typeof safetyMeetings.$inferSelect;
-
-// ────────────────────────────────────────────────────────────────────────────
-// NEAR-MISS REPORTS (Incident / near-miss capture)
-// ────────────────────────────────────────────────────────────────────────────
-
-export const nearMissReports = pgTable("near_miss_reports", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  dayId: varchar("day_id").references(() => days.id, { onDelete: "set null" }),
-  reportedBy: varchar("reported_by").notNull().references(() => users.id),
-  reportType: text("report_type").notNull().default("near_miss").$type<NearMissReportType>(),
-  severity: text("severity").notNull().default("low").$type<NearMissSeverity>(),
-  description: text("description").notNull(),
-  location: text("location"),
-  personnelInvolved: jsonb("personnel_involved").default([]).$type<string[]>(),
-  immediateActions: text("immediate_actions"),
-  rootCause: text("root_cause"),
-  correctiveActions: text("corrective_actions"),
-  voiceTranscript: text("voice_transcript"),
-  linkedRiskId: varchar("linked_risk_id"),
-  status: text("status").notNull().default("open").$type<NearMissStatus>(),
-  reviewedBy: varchar("reviewed_by").references(() => users.id),
-  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => ({
-  projectIdx: index("near_miss_reports_project_idx").on(t.projectId),
-  dayIdx: index("near_miss_reports_day_idx").on(t.dayId),
-  statusIdx: index("near_miss_reports_status_idx").on(t.status),
-  severityIdx: index("near_miss_reports_severity_idx").on(t.severity),
-}));
-
-export const insertNearMissReportSchema = createInsertSchema(nearMissReports).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertNearMissReport = z.infer<typeof insertNearMissReportSchema>;
-export type NearMissReport = typeof nearMissReports.$inferSelect;
