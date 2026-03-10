@@ -1,6 +1,7 @@
 import { ReactNode, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/hooks/use-theme";
+import { useFeatureFlags } from "@/hooks/use-feature-flags";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ChatAssistant } from "./chat-assistant";
@@ -22,6 +23,7 @@ const TABS = [
   { id: "certifications", label: "Certifications" },
   { id: "library", label: "Library" },
   { id: "admin", label: "Admin" },
+  { id: "safety", label: "Safety" },
 ];
 
 const ROLE_DISPLAY: Record<string, string> = {
@@ -41,6 +43,7 @@ const ROLE_COLORS: Record<string, string> = {
 export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayoutProps) {
   const { user, logout, isAdmin, isSupervisor } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const featureFlags = useFeatureFlags();
   const [chatOpen, setChatOpen] = useState(false);
 
   const isDark = theme === "dark";
@@ -110,6 +113,7 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
           {TABS.map((tab) => {
             if (tab.id === "admin" && !isAdmin) return null;
             if (tab.id === "certifications" && !isSupervisor) return null;
+            if (tab.id === "safety" && !featureFlags.safetyTab) return null;
 
             return (
               <button

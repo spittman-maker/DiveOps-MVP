@@ -8,6 +8,7 @@ import { LibraryTab } from "@/components/tabs/library";
 import { AdminTab } from "@/components/tabs/admin";
 import { RiskRegisterTab } from "@/components/tabs/risk-register";
 import { CertificationsTab } from "@/components/tabs/certifications";
+import { SafetyTab } from "@/components/tabs/safety";
 
 export default function ConsolePage() {
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -30,6 +31,8 @@ export default function ConsolePage() {
         return <RiskRegisterTab />;
       case "certifications":
         return <CertificationsTab />;
+      case "safety":
+        return <SafetyTab />;
       default:
         return <DashboardTab />;
     }
