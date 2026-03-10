@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Settings, GripVertical, X, Save, RotateCcw, Sun, Cloud, CloudRain, Wind, Droplets, Zap, Waves, Radio, Activity, ChevronDown, AlertTriangle, Shield, ShieldCheck } from "lucide-react";
+import { Plus, Settings, GripVertical, X, Save, RotateCcw, Sun, Cloud, CloudRain, Wind, Droplets, Zap, Waves, Radio, Activity, ChevronDown, AlertTriangle, Shield, ShieldCheck, Send, Loader2, Users } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -144,6 +145,7 @@ const WIDGET_TYPES = [
   { type: "equipment_certs", label: "Equipment Certifications", defaultW: 2, defaultH: 2 },
   { type: "expiring_certs", label: "Expiring Certifications", defaultW: 2, defaultH: 2 },
   { type: "cert_status", label: "Certification Status", defaultW: 2, defaultH: 2 },
+  { type: "my_crew_quick_entry", label: "My Crew Quick-Entry", defaultW: 2, defaultH: 3 },
 ];
 
 // ─── Shared hook for live board data ─────────────────────────────────────────
@@ -937,6 +939,167 @@ function EquipmentCertsWidget({ projectId }: { projectId?: string } = {}) {
   );
 }
 
+// ─── My Crew Quick-Entry Widget ─────────────────────────────────────────────
+
+const CREW_STATIONS = ["Dive Team 1", "Dive Team 2", "Dive Team 3", "Subcontractor Dive Team 1", "Subcontractor Dive Team 2", "Night Shift"];
+
+function MyCrewQuickEntryWidget({ projectId }: { projectId?: string }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { activeProject, activeDay } = useProject();
+  const { canWriteLogEvents } = useAuth();
+  const [quickInput, setQuickInput] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Read the persisted station from localStorage (same key as daily-log)
+  const [myCrew, setMyCrew] = useState<string>(() => {
+    try {
+      return localStorage.getItem("diveops_selected_station") || "";
+    } catch {
+      return "";
+    }
+  });
+
+  // Listen for storage changes (in case user changes crew in daily-log tab)
+  useEffect(() => {
+    const syncCrew = () => {
+      try {
+        const stored = localStorage.getItem("diveops_selected_station") || "";
+        setMyCrew(stored);
+      } catch {}
+    };
+    window.addEventListener("storage", syncCrew);
+    // Also poll periodically in case same-tab changes
+    const interval = setInterval(syncCrew, 2000);
+    return () => {
+      window.removeEventListener("storage", syncCrew);
+      clearInterval(interval);
+    };
+  }, []);
+
+  const handleCrewChange = (newCrew: string) => {
+    setMyCrew(newCrew);
+    try {
+      localStorage.setItem("diveops_selected_station", newCrew);
+    } catch {}
+  };
+
+  const handleQuickSubmit = async () => {
+    if (!quickInput.trim() || !activeDay || !activeProject) return;
+    setIsSubmitting(true);
+    try {
+      const res = await fetch("/api/log-events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          rawText: quickInput.trim(),
+          dayId: activeDay.id,
+          projectId: activeProject.id,
+          station: myCrew || undefined,
+          clientTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to create event");
+      setQuickInput("");
+      queryClient.invalidateQueries({ queryKey: ["log-events"] });
+      queryClient.invalidateQueries({ queryKey: ["master-log"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-recent-logs"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-live-board"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/days"] });
+      queryClient.invalidateQueries({ queryKey: ["dives"] });
+      queryClient.invalidateQueries({ queryKey: ["risks"] });
+      toast({ title: "Entry saved", description: `Logged to ${myCrew || "no station"}` });
+    } catch {
+      toast({ title: "Error", description: "Failed to save log entry", variant: "destructive" });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const dayIsClosed = activeDay?.status === "CLOSED";
+  const canSubmit = canWriteLogEvents && !!activeDay && !dayIsClosed;
+
+  if (!activeDay) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-navy-500" data-testid="widget-my-crew-quick-entry">
+        <Users className="h-8 w-8 mb-2 opacity-30" />
+        <p className="text-xs">No active shift</p>
+        <p className="text-[10px] mt-1">Start a shift in the Daily Log tab</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden" data-testid="widget-my-crew-quick-entry">
+      {/* Crew header */}
+      <div className="flex items-center gap-2 mb-2 shrink-0">
+        <Users className="h-3.5 w-3.5 text-cyan-400" />
+        <select
+          data-testid="my-crew-select"
+          value={myCrew}
+          onChange={(e) => handleCrewChange(e.target.value)}
+          className="bg-navy-900 border border-navy-600 text-white text-xs rounded px-2 py-1 focus:outline-none focus:border-amber-500 flex-1"
+        >
+          <option value="">Select your crew</option>
+          {CREW_STATIONS.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+        {myCrew && (
+          <Badge className="text-[9px] bg-cyan-700 text-cyan-100 shrink-0">{myCrew}</Badge>
+        )}
+      </div>
+
+      {dayIsClosed && (
+        <div className="flex items-center gap-1.5 text-xs text-red-400 mb-2">
+          <span>Shift is closed — read only</span>
+        </div>
+      )}
+
+      {!canWriteLogEvents && !dayIsClosed && (
+        <div className="flex items-center gap-1.5 text-xs text-navy-400 mb-2">
+          <span>Log entry requires Supervisor role</span>
+        </div>
+      )}
+
+      {/* Quick entry input */}
+      {canSubmit && (
+        <div className="flex flex-col gap-2 mt-auto">
+          <Textarea
+            data-testid="my-crew-quick-input"
+            placeholder={myCrew ? `Quick log for ${myCrew}...` : "Select a crew first, then type your log entry..."}
+            value={quickInput}
+            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setQuickInput(e.target.value)}
+            className="bg-navy-900 border-navy-600 text-white font-mono text-sm min-h-[48px] max-h-[100px] resize-none"
+            onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleQuickSubmit();
+              }
+            }}
+          />
+          <Button
+            data-testid="my-crew-quick-submit"
+            size="sm"
+            onClick={handleQuickSubmit}
+            disabled={!quickInput.trim() || isSubmitting}
+            className="h-8 btn-gold-metallic hover:btn-gold-metallic text-xs gap-1.5 self-end"
+          >
+            {isSubmitting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Send className="h-3.5 w-3.5" />
+            )}
+            {isSubmitting ? "Sending..." : "Send"}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function renderWidget(type: string, stats: DashboardStats, projectId?: string) {
   switch (type) {
     case "daily_summary":
@@ -969,6 +1132,8 @@ function renderWidget(type: string, stats: DashboardStats, projectId?: string) {
       return <LiveLogFeedWidget projectId={projectId} />;
     case "station_overview":
       return <StationOverviewWidget projectId={projectId} />;
+    case "my_crew_quick_entry":
+      return <MyCrewQuickEntryWidget projectId={projectId} />;
     default:
       return <div className="text-navy-400 text-sm">Unknown widget type</div>;
   }
@@ -1182,6 +1347,7 @@ export function DashboardTab() {
       { id: "w3", type: "station_overview", title: "Station Overview", x: 2, y: 3, w: 2, h: 3 },
       { id: "w4", type: "daily_summary", title: "Today's Summary", x: 0, y: 6, w: 2, h: 2 },
       { id: "w5", type: "safety_incidents", title: "Safety Status", x: 2, y: 6, w: 2, h: 2 },
+      { id: "w6", type: "my_crew_quick_entry", title: "My Crew Quick-Entry", x: 4, y: 0, w: 2, h: 3 },
     ]);
   };
 

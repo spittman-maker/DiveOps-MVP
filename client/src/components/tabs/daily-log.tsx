@@ -273,7 +273,22 @@ export function DailyLogTab() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [rawInput, setRawInput] = useState("");
-  const [selectedStation, setSelectedStation] = useState<string>("");
+  const [selectedStation, setSelectedStation] = useState<string>(() => {
+    try {
+      return localStorage.getItem("diveops_selected_station") || "";
+    } catch {
+      return "";
+    }
+  });
+
+  // Persist station selection to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem("diveops_selected_station", selectedStation);
+    } catch {
+      // localStorage unavailable
+    }
+  }, [selectedStation]);
 
   const [isRecording, setIsRecording] = useState(false);
   const [pttTranscript, setPttTranscript] = useState("");
