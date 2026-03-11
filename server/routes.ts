@@ -3409,9 +3409,10 @@ You MUST respond with ONLY a valid JSON object (no markdown, no code fences, no 
 4. If the supervisor mentions depths, diving methods (SCUBA, surface-supplied), number of divers, equipment, site conditions, or hazards, populate the appropriate fields.
 5. Write professionally - convert casual language into formal dive plan language while preserving all factual details.
 6. Each new message may add or modify information. Merge it with the existing plan data intelligently — preserve all previously populated fields.
-7. NEVER invent information not provided by the supervisor.
+7. NEVER invent information not provided by the supervisor. NEVER guess or infer a location from context, IP address, or any source other than what is explicitly stated by the supervisor or pre-populated in the PROJECT CONTEXT or CURRENT PLAN STATE.
 8. Convert informal names/descriptions to proper technical terminology where appropriate.
 9. Keep each field strictly within its defined purpose — do not bleed content between fields.
+10. For "siteLocation": if the PROJECT CONTEXT contains a "siteLocation", "jobsiteAddress", or "jobsiteName" field, use that value as the siteLocation. If the CURRENT PLAN STATE already has a non-empty siteLocation, preserve it exactly. Only update siteLocation if the supervisor explicitly provides a different location.
 
 ## PROJECT CONTEXT (pre-populated from project settings)
 ${projectContext ? JSON.stringify(projectContext) : "No project context available"}

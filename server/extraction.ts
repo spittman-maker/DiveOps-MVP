@@ -146,7 +146,46 @@ const RISK_PATTERNS = [
   /\bvulnerabilit/i,
 ];
 
+/**
+ * End-of-day / demobilization phrases that should NEVER trigger stop-work or
+ * risk flags. These are normal shift-close operations, not hazard events.
+ * BUG-RISK-01 FIX: Defined before hasRiskKeywords/isStopWork/detectHazards so
+ * the guard can be applied at the top of each function.
+ */
+const EOD_DEMOB_PATTERNS = [
+  /\bbreak\s*down\s*(?:the\s*)?dive\s*station\b/i,
+  /\bbreak\s*down\s*(?:the\s*)?(?:dive\s*)?equipment\b/i,
+  /\bbreak\s*down\s*(?:the\s*)?(?:dive\s*)?gear\b/i,
+  /\bsecure\s*(?:the\s*)?barge\b/i,
+  /\bsecure\s*(?:the\s*)?(?:vessel|boat|work\s*boat)\b/i,
+  /\bsecure\s*for\s*(?:the\s*)?day\b/i,
+  /\bsecure\s*(?:the\s*)?site\b/i,
+  /\bsecure\s*(?:the\s*)?deck\b/i,
+  /\bsecure\s*(?:the\s*)?area\b/i,
+  /\bsecure\s*(?:all\s*)?(?:tools|equipment|gear)\b/i,
+  /\bdemobiliz/i,
+  /\bdemob\b/i,
+  /\bend\s*of\s*(?:the\s*)?(?:day|shift|ops|operations)\b/i,
+  /\bshift\s*(?:is\s*)?(?:over|complete|ended|concluded)\b/i,
+  /\bwrap\s*(?:up|it\s*up)\b/i,
+  /\bsecuring\s*(?:the\s*)?(?:barge|vessel|site|deck|area|equipment|gear)\b/i,
+  /\bbreaking\s*down\s*(?:the\s*)?(?:dive\s*)?(?:station|equipment|gear)\b/i,
+  /\bstow(?:ing|ed)?\s*(?:all\s*)?(?:equipment|gear|tools)\b/i,
+  /\bpacking\s*up\b/i,
+  /\bclean(?:ing|ed)?\s*up\s*(?:the\s*)?(?:dive\s*)?station\b/i,
+];
+
+/**
+ * Returns true if the text matches a known end-of-day / demobilization phrase.
+ * Used to suppress false-positive stop-work and risk flags.
+ */
+export function isEodDemob(rawText: string): boolean {
+  return EOD_DEMOB_PATTERNS.some(p => p.test(rawText));
+}
+
 export function hasRiskKeywords(rawText: string): boolean {
+  // BUG-RISK-01 FIX: Suppress risk keyword detection for EOD/demob language
+  if (isEodDemob(rawText)) return false;
   return RISK_PATTERNS.some(p => p.test(rawText));
 }
 
@@ -160,6 +199,8 @@ const STOP_WORK_PATTERNS = [
 ];
 
 export function isStopWork(rawText: string): boolean {
+  // BUG-RISK-01 FIX: Suppress stop-work flag for normal EOD/demob language
+  if (isEodDemob(rawText)) return false;
   return STOP_WORK_PATTERNS.some(p => p.test(rawText));
 }
 
@@ -232,6 +273,9 @@ export const HAZARD_MAP: Record<string, { hazard: string; controls: string; stop
 };
 
 export function detectHazards(rawText: string): Array<{ keyword: string; hazard: string; controls: string; stopWorkTrigger: string }> {
+  // BUG-RISK-01 FIX: Skip hazard detection entirely for EOD/demob language
+  if (isEodDemob(rawText)) return [];
+
   const detected: Array<{ keyword: string; hazard: string; controls: string; stopWorkTrigger: string }> = [];
   const lower = rawText.toLowerCase();
   for (const [keyword, entry] of Object.entries(HAZARD_MAP)) {

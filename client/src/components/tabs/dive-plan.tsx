@@ -246,17 +246,154 @@ function PlanCanvas({ planData, isGenerating }: { planData: AIDivePlanData | nul
   );
 }
 
+const LOCKED_SECTION_CONTENT: Record<string, string> = {
+  "2.5": `Applicable Codes and Standards governing this dive operation:
+
+• OSHA 29 CFR 1910 Subpart T — Commercial Diving Operations
+• ADCI Consensus Standards for Commercial Diving and Underwater Operations (current edition)
+• U.S. Navy Diving Manual (NAVSEA SS521-AG-PRO-010), current revision
+• USACE EM 385-1-1 Safety and Health Requirements Manual
+• U.S. Coast Guard regulations (33 CFR Parts 140–147) where applicable
+• ANSI/ACDE-01 — American Commercial Diver Education Standards
+• NFPA 70 (National Electrical Code) for underwater electrical work
+• All applicable federal, state, and local regulations
+
+Compliance with the above standards is mandatory. Where standards conflict, the more stringent requirement applies.`,
+
+  "2.12": `Emergency Action Plan — All personnel must be briefed prior to dive operations.
+
+1. DIVER IN DISTRESS: Pull diver immediately. Dive Supervisor assumes command. Initiate emergency ascent protocol per USN Dive Manual.
+2. DECOMPRESSION SICKNESS (DCS): Administer 100% O₂ via demand mask. Contact nearest recompression chamber. Call DAN: +1-919-684-9111.
+3. NEAR-DROWNING / UNCONSCIOUS DIVER: Remove from water, initiate CPR if no pulse. Call 911. Maintain O₂ administration.
+4. FIRE / EXPLOSION: Evacuate all non-essential personnel. Pull divers. Activate vessel fire suppression. Call Coast Guard Ch. 16.
+5. MAN OVERBOARD: Throw life ring. Mark GPS position. Assign lookout. Initiate recovery.
+6. MEDICAL EMERGENCY (non-dive): Call 911. Administer first aid per trained responder. Do not move injured personnel unless in immediate danger.
+
+Evacuation Routes: Designated muster point is [to be completed per site-specific plan].
+Nearest Hospital: [to be completed per site-specific plan].
+Nearest Recompression Chamber: See chamber search results above.
+Emergency Contacts: Dive Supervisor, Project Manager, Client Safety Officer — see Section 2.11.`,
+
+  "4.9": `Pre-Dive Checklist — Must be completed and signed by Dive Supervisor before any diver enters the water.
+
+□ All diving equipment inspected and function-tested
+□ Umbilical / SCUBA rig inspected for damage, kinks, and proper connections
+□ Helmet / mask communications tested (both directions)
+□ Breathing gas analyzed and documented (O₂%, CO%, CO₂%)
+□ Standby diver dressed and ready
+□ Dive Supervisor briefed all divers on task, hazards, and abort criteria
+□ Emergency equipment staged and accessible (O₂ kit, first aid, throw bag)
+□ Dive station exclusion zone established and communicated
+□ Weather and sea state within operational limits
+□ Dive tables / decompression schedule reviewed
+□ All personnel aware of emergency procedures
+□ Dive log opened and time recorded`,
+
+  "4.10": `In-Water Procedures — Standard operating requirements for all dives.
+
+• Descent Rate: Not to exceed 75 ft/min unless operationally required
+• Ascent Rate: Not to exceed 30 ft/min per USN Dive Manual
+• Bottom Time: Track from leaving surface to beginning final ascent
+• Decompression Obligations: Strictly follow USN Table selected for depth/bottom time
+• Communications: Continuous voice comms maintained throughout dive; check-in every 5 minutes minimum
+• Abort Criteria: Abort dive immediately if — loss of comms, diver distress signal, equipment failure, weather deterioration, or Dive Supervisor order
+• Standby Diver: Remains dressed and ready to enter water throughout all dives
+• Umbilical Management: Tender maintains proper slack; no kinks or snags permitted`,
+
+  "4.11": `Post-Dive Procedures — Required after every dive.
+
+1. Diver surfaces and is assisted aboard; equipment secured
+2. Dive Supervisor conducts post-dive debrief with diver
+3. Diver monitored for DCS symptoms for minimum 1 hour post-dive
+4. All equipment inspected, rinsed, and stowed
+5. Breathing gas cylinders checked and logged
+6. Dive log completed: RS time, max depth, bottom time, decompression completed, diver condition
+7. Any equipment deficiencies reported and tagged out of service
+8. Surface interval tracked for subsequent dives (repetitive dive planning)
+9. Incident or near-miss reports completed if applicable`,
+
+  "4.12": `Accident / Incident Reporting Requirements.
+
+IMMEDIATE NOTIFICATION (within 1 hour):
+• Dive Supervisor → Project Manager → Client Safety Officer
+• Any injury requiring medical attention beyond first aid
+• Any DCS case or pressure-related injury
+• Any equipment failure that caused or could have caused injury
+• Any near-miss event
+
+OSHA RECORDKEEPING:
+• OSHA 300 Log entry required for recordable incidents
+• OSHA 301 Incident Report within 7 days
+• Fatalities and hospitalizations: OSHA notification within 8 hours (1-800-321-OSHA)
+
+DOCUMENTATION:
+• Written incident report completed within 24 hours
+• Witness statements collected
+• Equipment involved tagged and preserved for investigation
+• Photographs taken if safe to do so
+• Root cause analysis completed within 72 hours`,
+
+  "4.13–4.18": `Operational Safety Protocols — Applicable as required by site conditions.
+
+§4.13 LOCKOUT/TAGOUT (LOTO): All energy sources isolated and verified zero-energy state before work begins on equipment. Written LOTO procedure required. Affected employees notified.
+
+§4.14 CONFINED SPACE ENTRY: Permit-required confined space procedures per OSHA 29 CFR 1910.146. Atmospheric testing, ventilation, rescue plan, and attendant required.
+
+§4.15 HAZARDOUS MATERIALS: SDS sheets on-site for all chemicals. PPE per SDS requirements. Spill containment plan in place. No hazmat disposal into waterway.
+
+§4.16 HOT WORK PERMITS: Written permit required for all welding, cutting, and grinding operations. Fire watch for minimum 30 minutes post-work. Fire extinguisher staged at work site.
+
+§4.17 CRANE / RIGGING OPERATIONS: Lift plan required for all lifts over 2,000 lbs or near power lines. Rigging inspected daily. Exclusion zone established. Signal person designated.
+
+§4.18 VESSEL OPERATIONS: All vessel operators hold required USCG credentials. Pre-departure safety check completed. Navigation lights operational. PFDs accessible for all personnel.`,
+
+  "5.0": `Appendices — The following documents are incorporated by reference and maintained on file.
+
+Appendix A: U.S. Navy Standard Air Decompression Tables (USN Dive Manual, Rev 7)
+Appendix B: USACE EM 385-1-1 Applicable Tables and Checklists
+Appendix C: Job Hazard Analysis (JHA) — see Safety Tab
+Appendix D: Equipment Certification Records (current)
+Appendix E: Diver Qualification and Certification Records
+Appendix F: Vessel Documentation and Insurance
+Appendix G: Site-Specific Emergency Response Plan
+Appendix H: Material Safety Data Sheets (as applicable)
+Appendix I: Client-Supplied Permits and Authorizations
+
+All appendices must be current and available for inspection at the dive site.`,
+};
+
 function LockedSection({ number, title, description }: { number: string; title: string; description: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const fullContent = LOCKED_SECTION_CONTENT[number];
+
   return (
-    <div className="bg-navy-800/40 border border-navy-700/50 rounded px-3 py-2 flex items-start gap-3">
-      <div className="shrink-0 mt-0.5">
-        <span className="text-[10px] font-mono text-navy-500 bg-navy-800 rounded px-1.5 py-0.5 border border-navy-700">§{number}</span>
-      </div>
-      <div className="min-w-0">
-        <p className="text-xs font-medium text-navy-300">{title}</p>
-        <p className="text-[10px] text-navy-500 mt-0.5 leading-relaxed">{description}</p>
-      </div>
-      <svg className="w-3 h-3 text-navy-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+    <div className="bg-navy-800/40 border border-navy-700/50 rounded overflow-hidden">
+      <button
+        className="w-full px-3 py-2 flex items-start gap-3 text-left hover:bg-navy-700/20 transition-colors"
+        onClick={() => setExpanded(prev => !prev)}
+        title={expanded ? "Collapse section" : "Expand to read full content"}
+      >
+        <div className="shrink-0 mt-0.5">
+          <span className="text-[10px] font-mono text-navy-500 bg-navy-800 rounded px-1.5 py-0.5 border border-navy-700">§{number}</span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium text-navy-300">{title}</p>
+          <p className="text-[10px] text-navy-500 mt-0.5 leading-relaxed">{description}</p>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+          <svg className="w-3 h-3 text-navy-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+          {expanded
+            ? <svg className="w-3 h-3 text-navy-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+            : <svg className="w-3 h-3 text-navy-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+          }
+        </div>
+      </button>
+      {expanded && fullContent && (
+        <div className="px-3 pb-3 border-t border-navy-700/40">
+          <pre className="text-[10px] text-navy-300 leading-relaxed whitespace-pre-wrap font-sans mt-2">{fullContent}</pre>
+          <p className="text-[9px] text-navy-600 mt-2 italic">Read-only — content locked per DD5 Master Template</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -620,13 +757,40 @@ export function DivePlanTab() {
     setIsGenerating(true);
 
     try {
+      // BUG-LOCATION FIX: Derive siteLocation from project settings so the AI
+      // doesn't invent a location from container IP / geolocation.
+      // Priority: jobsiteAddress > jobsiteName > project name
+      const projectJobsiteName = (activeProject as any).jobsiteName as string | undefined;
+      const projectJobsiteAddress = (activeProject as any).jobsiteAddress as string | undefined;
+      const derivedSiteLocation =
+        projectJobsiteAddress?.trim() ||
+        projectJobsiteName?.trim() ||
+        activeProject.name?.trim() ||
+        "";
+
       const projectContext = activeProject ? {
         name: activeProject.name,
         clientName: (activeProject as any).clientName,
-        jobsiteName: (activeProject as any).jobsiteName,
-        jobsiteAddress: (activeProject as any).jobsiteAddress,
+        jobsiteName: projectJobsiteName,
+        jobsiteAddress: projectJobsiteAddress,
         jobNumber: activeProject.id.substring(0, 8).toUpperCase(),
+        // Explicit hint so the AI rule "leave empty if not mentioned" doesn't blank it out
+        siteLocation: derivedSiteLocation,
       } : null;
+
+      // Also seed the current plan's siteLocation if it is blank, so the AI
+      // preserves the project-derived value rather than leaving it empty.
+      const seededPlanData = planData
+        ? {
+            ...planData,
+            coverPage: {
+              ...planData.coverPage,
+              siteLocation:
+                planData.coverPage?.siteLocation?.trim() ||
+                derivedSiteLocation,
+            },
+          }
+        : null;
 
       const res = await fetch("/api/dive-plan/ai-generate", {
         method: "POST",
@@ -637,7 +801,7 @@ export function DivePlanTab() {
             role: m.role,
             content: m.role === "assistant" ? `[Previous plan update acknowledged]` : m.content,
           })),
-          currentPlan: planData,
+          currentPlan: seededPlanData,
           projectContext,
         }),
       });
