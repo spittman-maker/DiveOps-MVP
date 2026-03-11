@@ -63,7 +63,7 @@ export async function runMigrations(): Promise<void> {
     }
 
     const files = fs.readdirSync(actualDir)
-      .filter(f => f.endsWith(".sql"))
+      .filter(f => f.endsWith(".sql") && /^\d/.test(f))
       .sort();
 
     let migrationsRun = 0;
@@ -79,10 +79,30 @@ export async function runMigrations(): Promise<void> {
       console.log(`[MIGRATE] Applying migration: ${file}`);
 
       // Split on statement breakpoints if present (drizzle-kit format)
-      const statements = sql
-        .split("--> statement-breakpoint")
-        .map(s => s.trim())
-        .filter(s => s.length > 0 && !s.startsWith("--"));
+      const hasBreakpoints = sql.includes("--> statement-breakpoint");
+      let statements: string[];
+
+      if (hasBreakpoints) {
+        // Drizzle-kit format: split on breakpoints, strip leading comments from each chunk
+        statements = sql
+          .split("--> statement-breakpoint")
+          .map(s => s.replace(/^(\s*--[^\n]*\n)*/g, "").trim())
+          .filter(s => s.length > 0);
+      } else {
+        // Plain SQL file: strip comment-only lines, then send as a single statement
+        // PostgreSQL handles multi-statement strings natively
+        const cleaned = sql
+          .split("\n")
+          .filter(line => {
+            const trimmed = line.trim();
+            // Keep non-empty lines that aren't pure comments
+            // But keep inline comments within SQL (e.g., after a statement)
+            return trimmed.length > 0 && !trimmed.startsWith("--");
+          })
+          .join("\n")
+          .trim();
+        statements = cleaned.length > 0 ? [cleaned] : [];
+      }
 
       let allStatementsOk = true;
       for (const stmt of statements) {
