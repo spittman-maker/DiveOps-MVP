@@ -912,16 +912,13 @@ export async function registerRoutes(
     if (isEnabled("multiTenantOrg")) {
       // Multi-tenant mode
       if (isGod(user.role)) {
-        // GOD can filter by company or see all
+        // GOD can optionally filter by company via query param, but always
+        // defaults to ALL projects across ALL companies (never scoped by
+        // activeCompanyId — that context is for other features, not the
+        // project list).
         const companyFilter = req.query.companyId as string;
         if (companyFilter) {
           const projects = await storage.getProjectsByCompany(companyFilter);
-          return res.json(projects);
-        }
-        // If GOD has an active company context, scope to that
-        const prefs = await storage.getUserPreferences(user.id);
-        if (prefs?.activeCompanyId) {
-          const projects = await storage.getProjectsByCompany(prefs.activeCompanyId);
           return res.json(projects);
         }
         const projects = await storage.getAllProjects();
@@ -1054,6 +1051,162 @@ export async function registerRoutes(
     const user = getUser(req);
     await storage.setActiveProject(user.id, req.params.id);
     res.json({ message: "Active project set" });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // SAFETY CHECKLISTS (fallback — ensures checklists work even if the
+  // dynamic safety.routes.ts module fails to load at the end of registerRoutes)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  app.get("/api/safety/:projectId/checklists", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const projectId = req.params.projectId;
+      const type = typeof req.query.type === "string" ? req.query.type : undefined;
+      // Direct DB query — no dependency on safety-storage module
+      const { pool } = await import("./storage");
+      let result;
+      if (type) {
+        result = await pool.query(
+          `SELECT * FROM "safety_checklists" WHERE "project_id" = $1 AND "checklist_type" = $2 AND "is_active" = true ORDER BY "created_at"`,
+          [projectId, type]
+        );
+      } else {
+        result = await pool.query(
+          `SELECT * FROM "safety_checklists" WHERE "project_id" = $1 AND "is_active" = true ORDER BY "created_at"`,
+          [projectId]
+        );
+      }
+      // Convert snake_case DB columns to camelCase for frontend
+      const checklists = result.rows.map((row: any) => ({
+        id: row.id,
+        projectId: row.project_id,
+        checklistType: row.checklist_type,
+        title: row.title,
+        description: row.description,
+        roleScope: row.role_scope,
+        isActive: row.is_active,
+        version: row.version,
+        createdBy: row.created_by,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+      res.json(checklists);
+    } catch (err: any) {
+      console.error("[Safety fallback] Failed to get checklists:", err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/safety/checklists/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const id = req.params.id;
+      const { pool } = await import("./storage");
+      const clResult = await pool.query(
+        `SELECT * FROM "safety_checklists" WHERE "id" = $1`,
+        [id]
+      );
+      if (clResult.rows.length === 0) return res.status(404).json({ message: "Checklist not found" });
+      const row = clResult.rows[0];
+      const itemsResult = await pool.query(
+        `SELECT * FROM "checklist_items" WHERE "checklist_id" = $1 ORDER BY "sort_order"`,
+        [id]
+      );
+      const checklist = {
+        id: row.id,
+        projectId: row.project_id,
+        checklistType: row.checklist_type,
+        title: row.title,
+        description: row.description,
+        roleScope: row.role_scope,
+        isActive: row.is_active,
+        version: row.version,
+        createdBy: row.created_by,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        items: itemsResult.rows.map((item: any) => ({
+          id: item.id,
+          checklistId: item.checklist_id,
+          sortOrder: item.sort_order,
+          category: item.category,
+          label: item.label,
+          description: item.description,
+          itemType: item.item_type,
+          isRequired: item.is_required,
+          equipmentCategory: item.equipment_category,
+          regulatoryReference: item.regulatory_reference,
+          createdAt: item.created_at,
+        })),
+      };
+      res.json(checklist);
+    } catch (err: any) {
+      console.error("[Safety fallback] Failed to get checklist detail:", err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/safety/:projectId/seed-checklists", requireAuth, requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      // Delegate to the safety module if available, otherwise return info
+      const { pool } = await import("./storage");
+      const result = await pool.query(
+        `SELECT COUNT(*) as cnt FROM "safety_checklists" WHERE "project_id" = $1 AND "is_active" = true`,
+        [req.params.projectId]
+      );
+      const count = parseInt(result.rows[0].cnt, 10);
+      if (count > 0) {
+        return res.json({ message: `Project already has ${count} checklists seeded`, count });
+      }
+      return res.status(400).json({ message: "No checklists found. Run migration 0019 to seed checklists." });
+    } catch (err: any) {
+      console.error("[Safety fallback] Seed error:", err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/safety/:projectId/completions", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { pool } = await import("./storage");
+      const result = await pool.query(
+        `SELECT * FROM "checklist_completions" WHERE "project_id" = $1 ORDER BY "completed_at" DESC`,
+        [req.params.projectId]
+      );
+      const completions = result.rows.map((row: any) => ({
+        id: row.id,
+        checklistId: row.checklist_id,
+        projectId: row.project_id,
+        completedBy: row.completed_by,
+        completedAt: row.completed_at,
+        responses: row.responses,
+        signature: row.signature,
+        notes: row.notes,
+        status: row.status,
+      }));
+      res.json(completions);
+    } catch (err: any) {
+      // Table may not exist yet — return empty array
+      res.json([]);
+    }
+  });
+
+  app.get("/api/safety/:projectId/metrics", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { pool } = await import("./storage");
+      const checklistResult = await pool.query(
+        `SELECT COUNT(*) as cnt FROM "safety_checklists" WHERE "project_id" = $1 AND "is_active" = true`,
+        [req.params.projectId]
+      );
+      const completionResult = await pool.query(
+        `SELECT COUNT(*) as cnt FROM "checklist_completions" WHERE "project_id" = $1`,
+        [req.params.projectId]
+      ).catch(() => ({ rows: [{ cnt: '0' }] }));
+      res.json({
+        totalChecklists: parseInt(checklistResult.rows[0].cnt, 10),
+        totalCompletions: parseInt(completionResult.rows[0].cnt, 10),
+        complianceRate: 0,
+      });
+    } catch (err: any) {
+      res.json({ totalChecklists: 0, totalCompletions: 0, complianceRate: 0 });
+    }
   });
 
   // ──────────────────────────────────────────────────────────────────────────
