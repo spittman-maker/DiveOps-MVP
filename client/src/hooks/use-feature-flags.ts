@@ -10,12 +10,12 @@ interface FeatureFlags {
 }
 
 const DEFAULT_FLAGS: FeatureFlags = {
-  closeDay: false,
-  riskCreation: false,
-  exportGeneration: false,
-  aiProcessing: false,
-  safetyTab: false,
-  multiTenantOrg: false,
+  closeDay: true,
+  riskCreation: true,
+  exportGeneration: true,
+  aiProcessing: true,
+  safetyTab: true,
+  multiTenantOrg: true,
 };
 
 export function useFeatureFlags() {

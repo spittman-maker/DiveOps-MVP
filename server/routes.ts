@@ -256,6 +256,10 @@ export async function registerRoutes(
         activeCompanyId = prefs.activeCompanyId;
         const company = await storage.getCompany(prefs.activeCompanyId);
         if (company) companyName = company.companyName;
+      } else if (user.role === "GOD" && companyId) {
+        // BUG-01 FIX: GOD user also gets companyName from their own companyId
+        const company = await storage.getCompany(companyId);
+        if (company) companyName = company.companyName;
       } else if (companyId) {
         const company = await storage.getCompany(companyId);
         if (company) companyName = company.companyName;
@@ -328,6 +332,27 @@ export async function registerRoutes(
       }
       console.error("Setup init error:", error);
       res.status(500).json({ message: "Setup failed" });
+    }
+  });
+
+  // BUG-11 FIX: POST /api/auth/switch-company — GOD users can switch active company context
+  app.post("/api/auth/switch-company", requireRole("GOD"), async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const { companyId } = req.body;
+      if (!companyId) {
+        // Clear active company
+        await storage.setActiveCompany(user.id, "");
+        return res.json({ message: "Active company cleared" });
+      }
+      // Verify company exists
+      const company = await storage.getCompany(companyId);
+      if (!company) return res.status(404).json({ message: "Company not found" });
+      await storage.setActiveCompany(user.id, companyId);
+      return res.json({ message: "Active company set", companyId, companyName: company.companyName });
+    } catch (error: any) {
+      console.error("Switch company error:", error);
+      res.status(500).json({ message: error?.message || "Failed to switch company" });
     }
   });
 
@@ -444,6 +469,17 @@ export async function registerRoutes(
     }
   });
 
+  // BUG-14 FIX: Reset dashboard layout to default
+  app.delete("/api/dashboard/layout", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      await pool.query('DELETE FROM "dashboard_layouts" WHERE "user_id" = $1', [user.id]);
+      res.json({ message: "Dashboard layout reset to default" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Save user's dashboard layout
   app.post("/api/dashboard/layout", requireAuth, async (req: Request, res: Response) => {
     try {
@@ -472,6 +508,13 @@ export async function registerRoutes(
         const projects = await storage.getAllProjects();
         if (projects.length > 0) {
           projectId = projects[0].id;
+        }
+      }
+      // BUG-04 FIX: Verify projectId belongs to user's company
+      if (projectId && isEnabled("multiTenantOrg") && !isGod(user.role)) {
+        const project = await storage.getProject(projectId);
+        if (project?.companyId && user.companyId && project.companyId !== user.companyId) {
+          return res.status(403).json({ message: "Forbidden: project belongs to a different company" });
         }
       }
       
@@ -560,6 +603,13 @@ export async function registerRoutes(
       if (!projectId) {
         return res.json([]);
       }
+      // BUG-04 FIX: Verify projectId belongs to user's company
+      if (isEnabled("multiTenantOrg") && !isGod(user.role)) {
+        const project = await storage.getProject(projectId);
+        if (project?.companyId && user.companyId && project.companyId !== user.companyId) {
+          return res.status(403).json({ message: "Forbidden: project belongs to a different company" });
+        }
+      }
       
       const day = await storage.getMostRecentDayByProject(projectId);
       if (!day) {
@@ -613,6 +663,13 @@ export async function registerRoutes(
 
       if (!projectId) {
         return res.json({ activeDives: [], completedDives: [], logEntries: [], stations: [] });
+      }
+      // BUG-04 FIX: Verify projectId belongs to user's company
+      if (isEnabled("multiTenantOrg") && !isGod(user.role)) {
+        const project = await storage.getProject(projectId);
+        if (project?.companyId && user.companyId && project.companyId !== user.companyId) {
+          return res.status(403).json({ message: "Forbidden: project belongs to a different company" });
+        }
       }
 
       // Get ALL days for this project (covers all shifts / stations)
@@ -1097,6 +1154,47 @@ export async function registerRoutes(
     }
   });
 
+  // BUG-10 FIX: GET /api/safety/checklists (no projectId) — returns all checklists for user's company projects
+  app.get("/api/safety/checklists", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const { pool } = await import("./storage");
+      let result;
+      if (isGod(user.role)) {
+        result = await pool.query(
+          `SELECT * FROM "safety_checklists" WHERE "is_active" = true ORDER BY "created_at"`
+        );
+      } else if (user.companyId) {
+        result = await pool.query(
+          `SELECT sc.* FROM "safety_checklists" sc
+           JOIN "projects" p ON sc."project_id" = p."id"
+           WHERE p."company_id" = $1 AND sc."is_active" = true
+           ORDER BY sc."created_at"`,
+          [user.companyId]
+        );
+      } else {
+        result = { rows: [] };
+      }
+      const checklists = result.rows.map((row: any) => ({
+        id: row.id,
+        projectId: row.project_id,
+        checklistType: row.checklist_type,
+        title: row.title,
+        description: row.description,
+        roleScope: row.role_scope,
+        isActive: row.is_active,
+        version: row.version,
+        createdBy: row.created_by,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+      res.json(checklists);
+    } catch (err: any) {
+      console.error("[Safety fallback] Failed to get all checklists:", err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/safety/checklists/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const id = req.params.id;
@@ -1475,6 +1573,16 @@ export async function registerRoutes(
   app.get("/api/days/:id/compliance", requireAuth, async (req: Request, res: Response) => {
     const day = await storage.getDay(req.params.id);
     if (!day) return res.status(404).json({ message: "Day not found" });
+    // BUG-03 FIX: Enforce company boundary on compliance endpoint
+    if (isEnabled("multiTenantOrg")) {
+      const user = getUser(req);
+      if (!isGod(user.role)) {
+        const project = await storage.getProject(day.projectId);
+        if (project?.companyId && user.companyId && project.companyId !== user.companyId) {
+          return res.status(403).json({ message: "Forbidden: project belongs to a different company" });
+        }
+      }
+    }
     
     const dives = await storage.getDivesByDay(req.params.id);
     const events = await storage.getLogEventsByDay(req.params.id);
@@ -2643,6 +2751,58 @@ export async function registerRoutes(
     });
     
     res.json(enriched);
+  });
+
+  // BUG-09 FIX: POST /api/days/:dayId/dives — Create a new dive
+  app.post("/api/days/:dayId/dives", requireRole("SUPERVISOR", "ADMIN", "GOD"), requireDayAccess(), async (req: Request, res: Response) => {
+    try {
+      const day = await storage.getDay(req.params.dayId);
+      if (!day) return res.status(404).json({ message: "Day not found" });
+      const existingDives = await storage.getDivesByDay(day.id);
+      const nextDiveNumber = existingDives.length + 1;
+      const dive = await storage.createDive({
+        dayId: day.id,
+        projectId: day.projectId,
+        diveNumber: nextDiveNumber,
+        diverDisplayName: req.body.diverDisplayName || null,
+        diverUserId: req.body.diverUserId || null,
+        maxDepthFsw: req.body.maxDepthFsw || null,
+        breathingGas: req.body.breathingGas || day.defaultBreathingGas || "Air",
+        fo2Percent: req.body.fo2Percent || null,
+        lsTime: req.body.lsTime || null,
+        rbTime: req.body.rbTime || null,
+        lbTime: req.body.lbTime || null,
+        rsTime: req.body.rsTime || null,
+        bottomTimeMinutes: req.body.bottomTimeMinutes || null,
+        tableUsed: req.body.tableUsed || null,
+        decoRequired: req.body.decoRequired ?? false,
+        repetitiveDive: req.body.repetitiveDive ?? false,
+        status: "in_progress",
+      });
+      res.status(201).json(dive);
+    } catch (error: any) {
+      console.error("Create dive error:", error);
+      res.status(500).json({ message: error?.message || "Failed to create dive" });
+    }
+  });
+
+  // BUG-09 FIX: GET /api/dives/:id — Get a single dive by ID
+  app.get("/api/dives/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const dive = await storage.getDive(req.params.id);
+      if (!dive) return res.status(404).json({ message: "Dive not found" });
+      // Company isolation
+      if (isEnabled("multiTenantOrg") && !isGod(user.role)) {
+        const project = await storage.getProject(dive.projectId);
+        if (project?.companyId && user.companyId && project.companyId !== user.companyId) {
+          return res.status(403).json({ message: "Forbidden: dive belongs to a different company" });
+        }
+      }
+      res.json(dive);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message || "Failed to fetch dive" });
+    }
   });
 
   app.get("/api/users/:userId/dives", requireAuth, async (req: Request, res: Response) => {
@@ -4030,6 +4190,25 @@ If you're not confident about specific facilities, say so in the notes field. Al
   // ──────────────────────────────────────────────────────────────────────────
 
   app.get("/api/library", requireAuth, async (req: Request, res: Response) => {
+    // BUG-06 FIX: Non-GOD users should only see library docs from their company's projects
+    const user = getUser(req);
+    if (isEnabled("multiTenantOrg") && !isGod(user.role) && user.companyId) {
+      try {
+        const projects = await storage.getProjectsByCompany(user.companyId);
+        const allDocs: any[] = [];
+        // Get global docs (projectId IS NULL)
+        const globalDocs = await storage.getLibraryDocuments();
+        allDocs.push(...globalDocs);
+        // Get project-scoped docs for each company project
+        for (const p of projects) {
+          const pDocs = await storage.getLibraryDocuments(p.id);
+          allDocs.push(...pDocs);
+        }
+        return res.json(allDocs);
+      } catch (error: any) {
+        return res.status(500).json({ message: error?.message || "Failed to fetch library" });
+      }
+    }
     // Get global documents (no project ID)
     const globalDocs = await storage.getLibraryDocuments();
     res.json(globalDocs);
@@ -4042,6 +4221,15 @@ If you're not confident about specific facilities, say so in the notes field. Al
   });
 
   app.post("/api/library", requireRole("GOD"), async (req: Request, res: Response) => {
+    // BUG-19 FIX: Validate required fields before creating
+    const { title, docType, content } = req.body;
+    const validDocTypes = ["navy_diving_manual", "em_385", "company_manual", "project_doc"];
+    if (!docType || !validDocTypes.includes(docType)) {
+      return res.status(400).json({ message: `Missing or invalid docType. Must be one of: ${validDocTypes.join(", ")}` });
+    }
+    if (!title) {
+      return res.status(400).json({ message: "Missing required field: title" });
+    }
     const user = getUser(req);
     
     const doc = await storage.createLibraryDocument({
@@ -4248,6 +4436,10 @@ If you're not confident about specific facilities, say so in the notes field. Al
         if (!isGod(creator.role) && data.role === "GOD") {
           return res.status(403).json({ message: "Only GOD can create GOD users" });
         }
+        // BUG-16 FIX: Require companyId for non-GOD users
+        if (data.role !== "GOD" && !newUserCompanyId) {
+          return res.status(400).json({ message: "companyId is required for non-GOD users" });
+        }
       }
       const user = await storage.createUser({
         username: data.username,
@@ -4349,7 +4541,8 @@ If you're not confident about specific facilities, say so in the notes field. Al
       const { db } = await import("./db");
       const { conversations } = await import("@shared/schema");
       const title = req.body.title || "DiveOps Assistant";
-      const [conv] = await db.insert(conversations).values({ title }).returning();
+      const user = getUser(req);
+      const [conv] = await db.insert(conversations).values({ title, userId: user.id }).returning();
       res.status(201).json(conv);
     } catch (error) {
       console.error("Create conversation error:", error);
@@ -4357,6 +4550,29 @@ If you're not confident about specific facilities, say so in the notes field. Al
     }
   });
 
+  // BUG-08 FIX: GET /api/conversations — list conversations scoped to the authenticated user
+  app.get("/api/conversations", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { db } = await import("./db");
+      const { conversations } = await import("@shared/schema");
+      const { eq, desc, isNull, or } = await import("drizzle-orm");
+      const user = getUser(req);
+      let convs;
+      if (isGod(user.role)) {
+        convs = await db.select().from(conversations).orderBy(desc(conversations.createdAt));
+      } else {
+        convs = await db.select().from(conversations)
+          .where(or(eq(conversations.userId, user.id), isNull(conversations.userId)))
+          .orderBy(desc(conversations.createdAt));
+      }
+      res.json(convs);
+    } catch (error) {
+      console.error("List conversations error:", error);
+      res.status(500).json({ message: "Failed to list conversations" });
+    }
+  });
+
+  // BUG-08 FIX: GET /api/conversations/:id — verify conversation belongs to user
   app.get("/api/conversations/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const { db } = await import("./db");
@@ -4367,6 +4583,11 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
       const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
       if (!conv) return res.status(404).json({ message: "Conversation not found" });
+      // BUG-08: Verify conversation belongs to user (GOD bypasses)
+      const user = getUser(req);
+      if (!isGod(user.role) && conv.userId && conv.userId !== user.id) {
+        return res.status(403).json({ message: "Forbidden: conversation belongs to another user" });
+      }
 
       const msgs = await db.select().from(messagesTable)
         .where(eq(messagesTable.conversationId, id))
@@ -5004,8 +5225,16 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.get("/api/sops", requireAuth, async (req: Request, res: Response) => {
     try {
+      const user = getUser(req);
       const projectId = req.query.projectId as string;
       if (!projectId) return res.status(400).json({ message: "projectId query param is required" });
+      // BUG-06 FIX: Verify projectId belongs to user's company
+      if (isEnabled("multiTenantOrg") && !isGod(user.role)) {
+        const project = await storage.getProject(projectId);
+        if (project?.companyId && user.companyId && project.companyId !== user.companyId) {
+          return res.status(403).json({ message: "Forbidden: project belongs to a different company" });
+        }
+      }
       const sops = await storage.getProjectSops(projectId);
       res.json(sops);
     } catch (error) {
@@ -5243,10 +5472,26 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.get("/api/diver-certifications", requireAuth, async (req: Request, res: Response) => {
     try {
+      const user = getUser(req);
       const userId = req.query.userId as string | undefined;
+      // BUG-05 FIX: If a userId is provided, verify the target user belongs to the same company
+      if (userId && isEnabled("multiTenantOrg") && !isGod(user.role)) {
+        const targetUser = await storage.getUser(userId);
+        if (targetUser?.companyId && user.companyId && targetUser.companyId !== user.companyId) {
+          return res.status(403).json({ message: "Forbidden: user belongs to a different company" });
+        }
+      }
       if (userId) {
         const certs = await storage.getDiverCertifications(userId);
         return res.json(certs);
+      }
+      // BUG-05 FIX: Non-GOD users should only see certs for users in their company
+      if (isEnabled("multiTenantOrg") && !isGod(user.role) && user.companyId) {
+        const companyUsers = await storage.getUsersByCompany(user.companyId);
+        const companyUserIds = companyUsers.map((u: any) => u.id);
+        const allCerts = await storage.getAllDiverCertifications();
+        const filtered = allCerts.filter((c: any) => companyUserIds.includes(c.userId));
+        return res.json(filtered);
       }
       const certs = await storage.getAllDiverCertifications();
       res.json(certs);
@@ -5290,7 +5535,25 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.get("/api/equipment-certifications", requireAuth, async (req: Request, res: Response) => {
     try {
+      const user = getUser(req);
       const projectId = req.query.projectId as string | undefined;
+      // BUG-05 FIX: Verify projectId belongs to user's company
+      if (projectId && isEnabled("multiTenantOrg") && !isGod(user.role)) {
+        const project = await storage.getProject(projectId);
+        if (project?.companyId && user.companyId && project.companyId !== user.companyId) {
+          return res.status(403).json({ message: "Forbidden: project belongs to a different company" });
+        }
+      }
+      // BUG-05 FIX: If no projectId, non-GOD users only see certs from their company's projects
+      if (!projectId && isEnabled("multiTenantOrg") && !isGod(user.role) && user.companyId) {
+        const projects = await storage.getProjectsByCompany(user.companyId);
+        const allCerts: any[] = [];
+        for (const p of projects) {
+          const pCerts = await storage.getEquipmentCertifications(p.id);
+          allCerts.push(...pCerts);
+        }
+        return res.json(allCerts);
+      }
       const certs = await storage.getEquipmentCertifications(projectId || undefined);
       res.json(certs);
     } catch (error: any) {
@@ -5363,6 +5626,10 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
       if (!newPassword || newPassword.length < 8) {
         return res.status(400).json({ message: "New password must be at least 8 characters" });
+      }
+      // BUG-18 FIX: Reject same password
+      if (currentPassword && newPassword === currentPassword) {
+        return res.status(400).json({ message: "New password must be different from current password" });
       }
 
       // If user must change password (invite flow), currentPassword is the temp password
@@ -5457,10 +5724,19 @@ If you're not confident about specific facilities, say so in the notes field. Al
   // GET /api/crew-hours?station=X&date=YYYY-MM-DD
   app.get("/api/crew-hours", requireAuth, async (req: Request, res: Response) => {
     try {
+      const user = getUser(req);
       const station = req.query.station as string;
       const date = req.query.date as string;
+      const projectId = req.query.projectId as string | undefined;
       if (!station || !date) {
         return res.status(400).json({ message: "station and date query params required" });
+      }
+      // BUG-06 FIX: Verify projectId belongs to user's company
+      if (projectId && isEnabled("multiTenantOrg") && !isGod(user.role)) {
+        const project = await storage.getProject(projectId);
+        if (project?.companyId && user.companyId && project.companyId !== user.companyId) {
+          return res.status(403).json({ message: "Forbidden: project belongs to a different company" });
+        }
       }
       const key = `${station}::${date}`;
       const data = crewHoursStore[key];

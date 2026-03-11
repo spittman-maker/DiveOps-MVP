@@ -47,6 +47,10 @@ function Router() {
           <ConsolePage />
         </ProtectedRoute>
       </Route>
+      {/* BUG-15 FIX: /login route shows login page */}
+      <Route path="/login">
+        <LoginPage />
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );
