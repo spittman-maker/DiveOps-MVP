@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useProject } from "@/hooks/use-project";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -71,6 +72,7 @@ export function SafetyChecklists() {
   const { activeProject, activeDay } = useProject();
   const { isSupervisor, user } = useAuth();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [selectedChecklist, setSelectedChecklist] = useState<Checklist | null>(null);
   const [fillMode, setFillMode] = useState(false);
   const [responses, setResponses] = useState<Record<string, ResponseEntry>>({});
@@ -142,14 +144,21 @@ export function SafetyChecklists() {
       if (!res.ok) throw new Error("Failed to submit checklist");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["safety-completions"] });
       queryClient.invalidateQueries({ queryKey: ["safety-metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["library"] });
       setFillMode(false);
       setResponses({});
       setSignature("");
       setNotes("");
       setSelectedChecklist(null);
+      toast({
+        title: data?.savedToLibrary ? "Checklist saved to Library" : "Checklist submitted",
+        description: data?.savedToLibrary
+          ? "The completed checklist is now available in the Library tab."
+          : "Checklist submitted successfully.",
+      });
     },
   });
 

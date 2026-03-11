@@ -1188,6 +1188,94 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/safety/completions", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { pool } = await import("./storage");
+      const { checklistId, projectId, dayId, responses, digitalSignature, notes } = req.body;
+      if (!checklistId || !projectId || !Array.isArray(responses)) {
+        return res.status(400).json({ message: "checklistId, projectId, and responses are required" });
+      }
+      const user = getUser(req);
+      const failedItems = responses.filter((r: any) => r.status === "fail" || r.status === "flag");
+      const status = failedItems.length > 0 ? "completed_with_issues" : "completed";
+
+      // Insert completion
+      const completionResult = await pool.query(
+        `INSERT INTO "checklist_completions" ("checklist_id", "project_id", "day_id", "completed_by",
+          "completed_by_name", "status", "responses", "digital_signature", "signed_at", "notes",
+          "auto_generated_risk_ids", "created_at", "updated_at")
+        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, '[]'::jsonb, now(), now())
+        RETURNING *`,
+        [
+          checklistId, projectId, dayId || null, user.id,
+          user.fullName || user.username, status,
+          JSON.stringify(responses), digitalSignature || null,
+          digitalSignature ? new Date() : null, notes || null,
+        ]
+      );
+      const row = completionResult.rows[0];
+      const completion = {
+        id: row.id, checklistId: row.checklist_id, projectId: row.project_id,
+        dayId: row.day_id, completedBy: row.completed_by, completedByName: row.completed_by_name,
+        status: row.status, responses: row.responses, digitalSignature: row.digital_signature,
+        signedAt: row.signed_at, notes: row.notes, createdAt: row.created_at,
+      };
+
+      // Auto-save to Library
+      try {
+        const clResult = await pool.query(`SELECT * FROM "safety_checklists" WHERE "id" = $1`, [checklistId]);
+        if (clResult.rows.length > 0) {
+          const cl = clResult.rows[0];
+          const completedAt = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+          const statusLabel = failedItems.length > 0 ? "Completed with Issues" : "Completed";
+          const responseSummary = responses.map((r: any) => {
+            const statusStr = r.status ? ` [${r.status.toUpperCase()}]` : "";
+            const notesStr = r.notes ? `\n    Notes: ${r.notes}` : "";
+            return `  \u2022 ${r.label}${statusStr}${notesStr}`;
+          }).join("\n");
+          const content = [
+            `SAFETY CHECKLIST COMPLETION RECORD`,
+            `====================================`,
+            `Checklist: ${cl.title}`,
+            `Type: ${cl.checklist_type.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}`,
+            `Completed By: ${user.fullName || user.username}`,
+            `Completed At: ${completedAt}`,
+            `Status: ${statusLabel}`,
+            digitalSignature ? `Digital Signature: ${digitalSignature}` : "",
+            notes ? `Notes: ${notes}` : "",
+            ``,
+            `RESPONSES (${responses.length} items):`,
+            responseSummary,
+            ``,
+            `Completion ID: ${row.id}`,
+          ].filter(Boolean).join("\n");
+          await pool.query(
+            `INSERT INTO "library_documents" ("title", "doc_type", "project_id", "content", "metadata", "locked", "uploaded_by", "uploaded_at")
+            VALUES ($1, 'project_doc', $2, $3, $4::jsonb, false, $5, now())`,
+            [
+              `${cl.title} \u2014 ${statusLabel} ${completedAt}`,
+              projectId, content,
+              JSON.stringify({
+                source: "safety_checklist_completion",
+                completionId: row.id, checklistId, checklistType: cl.checklist_type,
+                completedBy: user.id, completedByName: user.fullName || user.username,
+                status, failedItemCount: failedItems.length, completedAt: new Date().toISOString(),
+              }),
+              user.id,
+            ]
+          );
+        }
+      } catch (libErr: any) {
+        console.warn("[Safety fallback] Failed to auto-save checklist to Library:", libErr.message);
+      }
+
+      res.status(201).json({ ...completion, savedToLibrary: true });
+    } catch (err: any) {
+      console.error("[Safety fallback] Failed to create completion:", err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/safety/:projectId/metrics", requireAuth, async (req: Request, res: Response) => {
     try {
       const { pool } = await import("./storage");
@@ -1315,10 +1403,36 @@ export async function registerRoutes(
     res.json(updated);
   });
 
+   // DELETE /api/days/:id — GOD only, cascade-deletes dives and log events
+  app.delete("/api/days/:id", requireRole("GOD"), async (req: Request, res: Response) => {
+    try {
+      const dayId = req.params.id;
+      const day = await storage.getDay(dayId);
+      if (!day) return res.status(404).json({ message: "Day not found" });
+
+      // Cascade: delete log events, then dives, then the day itself
+      const { pool } = await import("./storage");
+      await pool.query(`DELETE FROM "log_events" WHERE "day_id" = $1`, [dayId]);
+      await pool.query(`DELETE FROM "dives" WHERE "day_id" = $1`, [dayId]);
+      await pool.query(`DELETE FROM "days" WHERE "id" = $1`, [dayId]);
+
+      const user = getUser(req);
+      emitAuditEvent(req.auditCtx!, "day.delete", {
+        targetId: dayId, targetType: "day",
+        before: sanitizeForAudit(day),
+        after: null,
+      });
+
+      res.json({ message: "Day and all associated dives and log events deleted", dayId });
+    } catch (error: any) {
+      console.error("Delete day error:", error);
+      res.status(500).json({ message: error?.message || "Failed to delete day" });
+    }
+  });
+
   app.patch("/api/days/:id/breathing-gas", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
     const day = await storage.getDay(req.params.id);
     if (!day) return res.status(404).json({ message: "Day not found" });
-
     if (day.status === "CLOSED") {
       const user = getUser(req);
       if (!isGod(user.role)) {
@@ -2636,6 +2750,29 @@ export async function registerRoutes(
       }
       console.error("Dive update error:", error);
       res.status(500).json({ message: "Failed to update dive" });
+    }
+  });
+
+  // DELETE /api/dives/:id — GOD only
+  app.delete("/api/dives/:id", requireRole("GOD"), async (req: Request, res: Response) => {
+    try {
+      const diveId = req.params.id;
+      const dive = await storage.getDive(diveId);
+      if (!dive) return res.status(404).json({ message: "Dive not found" });
+
+      const { pool } = await import("./storage");
+      await pool.query(`DELETE FROM "dives" WHERE "id" = $1`, [diveId]);
+
+      emitAuditEvent(req.auditCtx!, "dive.delete", {
+        targetId: diveId, targetType: "dive",
+        before: sanitizeForAudit(dive),
+        after: null,
+      });
+
+      res.json({ message: "Dive deleted", diveId });
+    } catch (error: any) {
+      console.error("Delete dive error:", error);
+      res.status(500).json({ message: error?.message || "Failed to delete dive" });
     }
   });
 
