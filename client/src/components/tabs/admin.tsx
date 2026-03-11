@@ -1131,6 +1131,8 @@ export function AdminTab() {
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [editUserOpen, setEditUserOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserRecord | null>(null);
+  const [createCompanyFromUsersOpen, setCreateCompanyFromUsersOpen] = useState(false);
+  const [newCompanyName, setNewCompanyName] = useState("");
 
   const [createFacilityOpen, setCreateFacilityOpen] = useState(false);
   const [editFacilityOpen, setEditFacilityOpen] = useState(false);
@@ -1173,6 +1175,7 @@ export function AdminTab() {
     initials: "",
     email: "",
     role: "DIVER" as string,
+    companyId: "",
   });
 
   const [facilityForm, setFacilityForm] = useState({
@@ -1212,6 +1215,54 @@ export function AdminTab() {
       const res = await fetch("/api/users", { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
+    },
+  });
+
+  // Companies list for the create-user company selector
+  // GOD fetches all companies; ADMIN only sees their own (derived from user.companyId)
+  const { data: companiesForUserForm = [], refetch: refetchCompaniesForUserForm } = useQuery<CompanyRecord[]>({
+    queryKey: ["companies-for-user-form"],
+    queryFn: async () => {
+      if (isGod) {
+        const res = await fetch("/api/companies", { credentials: "include" });
+        if (!res.ok) return [];
+        return res.json();
+      }
+      // ADMIN: return a synthetic list containing only their own company
+      if (user?.companyId && user?.companyName) {
+        return [{ companyId: user.companyId, companyName: user.companyName }];
+      }
+      return [];
+    },
+    enabled: isAdmin,
+  });
+
+  const createCompanyFromUsersMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const res = await fetch("/api/companies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ companyName: name }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Failed to create company" }));
+        throw new Error(err.message || "Failed to create company");
+      }
+      return res.json();
+    },
+    onSuccess: (created: any) => {
+      queryClient.invalidateQueries({ queryKey: ["companies"] });
+      queryClient.invalidateQueries({ queryKey: ["companies-for-user-form"] });
+      refetchCompaniesForUserForm();
+      setCreateCompanyFromUsersOpen(false);
+      setNewCompanyName("");
+      // Auto-select the newly created company in the user form
+      setUserForm((prev) => ({ ...prev, companyId: created.companyId || "" }));
+      toast({ title: "Company created", description: `"${created.companyName}" is now available in the company selector.` });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error?.message || "Failed to create company", variant: "destructive" });
     },
   });
 
@@ -1499,7 +1550,9 @@ export function AdminTab() {
   }
 
   function resetUserForm() {
-    setUserForm({ username: "", password: "", fullName: "", initials: "", email: "", role: "DIVER" });
+    // ADMIN users are locked to their own company; GOD can pick any
+    const defaultCompanyId = isGod ? "" : (user?.companyId || "");
+    setUserForm({ username: "", password: "", fullName: "", initials: "", email: "", role: "DIVER", companyId: defaultCompanyId });
   }
 
   function resetFacilityForm() {
@@ -1779,16 +1832,33 @@ export function AdminTab() {
         <TabsContent value="users" className="h-full mt-0">
           <ScrollArea className="h-[calc(100vh-240px)]">
             <div className="grid gap-4">
-              <Button
-                data-testid="button-create-user"
-                className="btn-gold-metallic hover:btn-gold-metallic w-full"
-                onClick={() => {
-                  resetUserForm();
-                  setCreateUserOpen(true);
-                }}
-              >
-                Create User
-              </Button>
+              <div className={isGod ? "grid grid-cols-2 gap-2" : ""}>
+                <Button
+                  data-testid="button-create-user"
+                  className="btn-gold-metallic hover:btn-gold-metallic w-full"
+                  onClick={() => {
+                    resetUserForm();
+                    setCreateUserOpen(true);
+                  }}
+                >
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Create User
+                </Button>
+                {isGod && (
+                  <Button
+                    data-testid="button-create-company-from-users"
+                    variant="outline"
+                    className="border-navy-500 text-white w-full"
+                    onClick={() => {
+                      setNewCompanyName("");
+                      setCreateCompanyFromUsersOpen(true);
+                    }}
+                  >
+                    <Building2 className="h-4 w-4 mr-2" />
+                    Create Company
+                  </Button>
+                )}
+              </div>
 
               {allUsers.map((u) => (
                 <Card
@@ -2443,6 +2513,57 @@ export function AdminTab() {
                 onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
               />
             </div>
+            {/* Company selector — required for non-GOD roles */}
+            {userForm.role !== "GOD" && (
+              <div>
+                <Label className="text-navy-300">
+                  Company {userForm.role !== "GOD" && <span className="text-red-400">*</span>}
+                </Label>
+                {isGod ? (
+                  <div className="flex gap-2">
+                    <Select
+                      value={userForm.companyId}
+                      onValueChange={(v) => setUserForm({ ...userForm, companyId: v })}
+                    >
+                      <SelectTrigger
+                        data-testid="select-user-company"
+                        className="bg-navy-800 border-navy-600 text-white flex-1"
+                      >
+                        <SelectValue placeholder="Select company..." />
+                      </SelectTrigger>
+                      <SelectContent className="bg-navy-800 border-navy-600">
+                        {companiesForUserForm.map((c) => (
+                          <SelectItem key={c.companyId} value={c.companyId} className="text-white">
+                            {c.companyName}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="border-navy-500 text-white shrink-0"
+                      title="Create a new company"
+                      onClick={() => {
+                        setNewCompanyName("");
+                        setCreateCompanyFromUsersOpen(true);
+                      }}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  // ADMIN: locked to their own company
+                  <Input
+                    className="bg-navy-700 border-navy-600 text-navy-300"
+                    value={companiesForUserForm[0]?.companyName || user?.companyName || user?.companyId || ""}
+                    disabled
+                    readOnly
+                  />
+                )}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button
@@ -2464,6 +2585,58 @@ export function AdminTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ───── CREATE COMPANY (from Users tab) DIALOG ─ GOD only ───── */}
+      {isGod && (
+        <Dialog open={createCompanyFromUsersOpen} onOpenChange={setCreateCompanyFromUsersOpen}>
+          <DialogContent className="bg-navy-900 border-navy-600 text-white">
+            <DialogHeader>
+              <DialogTitle className="text-white flex items-center gap-2">
+                <Building2 className="h-5 w-5 text-amber-400" />
+                Create Company
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label className="text-navy-300">Company Name <span className="text-red-400">*</span></Label>
+                <Input
+                  data-testid="input-company-name-from-users"
+                  className="bg-navy-800 border-navy-600 text-white"
+                  placeholder="e.g., SEA Engineering"
+                  value={newCompanyName}
+                  onChange={(e) => setNewCompanyName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && newCompanyName.trim()) {
+                      createCompanyFromUsersMutation.mutate(newCompanyName.trim());
+                    }
+                  }}
+                  autoFocus
+                />
+              </div>
+              <p className="text-xs text-navy-400">
+                After creating, the new company will be automatically selected in the user form.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                className="border-navy-500"
+                onClick={() => setCreateCompanyFromUsersOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                data-testid="button-submit-create-company-from-users"
+                className="btn-gold-metallic"
+                onClick={() => createCompanyFromUsersMutation.mutate(newCompanyName.trim())}
+                disabled={createCompanyFromUsersMutation.isPending || !newCompanyName.trim()}
+              >
+                {createCompanyFromUsersMutation.isPending ? "Creating..." : "Create Company"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* ───── EDIT USER DIALOG ───── */}
       <Dialog open={editUserOpen} onOpenChange={setEditUserOpen}>
