@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Send, FileText, Download, Trash2, CheckCircle, History,
   Save, Loader2, MessageSquare, Sparkles, ChevronDown, ChevronRight,
-  Mic, Square
+  Mic, Square, BookOpen, Library, CheckCircle2
 } from "lucide-react";
 import { usePTT } from "@/hooks/use-ptt";
 import type { ProjectDivePlan, ProjectDivePlanData } from "@shared/schema";
@@ -585,6 +585,7 @@ export function DivePlanTab() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [planData, setPlanData] = useState<AIDivePlanData | null>(null);
   const [pttPendingSubmit, setPttPendingSubmit] = useState(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -601,6 +602,12 @@ export function DivePlanTab() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Restore draft plan from DB on mount / project switch
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    restoredRef.current = false;
+  }, [activeProject?.id]);
+
   const { data: projectPlans = [] } = useQuery<ProjectDivePlan[]>({
     queryKey: ["project-dive-plans", activeProject?.id],
     queryFn: async () => {
@@ -611,6 +618,72 @@ export function DivePlanTab() {
     },
     enabled: !!activeProject?.id,
   });
+
+  // Restore the most recent Draft into canvas when plans load (only once per project)
+  useEffect(() => {
+    if (restoredRef.current) return;
+    if (!projectPlans.length) return;
+    if (planData) return; // don't overwrite if user already has something
+    const draft = projectPlans.find(p => p.status === "Draft");
+    if (draft) {
+      restoredRef.current = true;
+      loadPlanToCanvas(draft);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectPlans]);
+
+  // Silent auto-save helper — called after every AI response
+  const autoSavePlan = useCallback(async (data: AIDivePlanData) => {
+    if (!activeProject?.id) return;
+    setAutoSaveStatus("saving");
+    try {
+      const fullPlanData: ProjectDivePlanData = {
+        coverPage: {
+          companyName: data.coverPage?.companyName || "Precision Subsea Group LLC",
+          projectTitle: data.coverPage?.projectTitle || activeProject.name || "",
+          jobNumber: data.coverPage?.jobNumber || activeProject.id.substring(0, 8).toUpperCase(),
+          client: data.coverPage?.client || (activeProject as any).clientName || "",
+          siteLocation: data.coverPage?.siteLocation || "",
+          submissionDate: data.coverPage?.submissionDate || new Date().toISOString().split("T")[0],
+          revisionNumber: data.coverPage?.revisionNumber || 0,
+        },
+        projectContacts: {
+          primeContractor: data.projectContacts?.primeContractor || "",
+          siteAddress: data.projectContacts?.siteAddress || "",
+          keyContacts: data.projectContacts?.keyContacts || [],
+        },
+        natureOfWork: { selectedTasks: data.natureOfWork?.selectedTasks || [] },
+        revisionHistory: [{
+          revision: 0,
+          date: new Date().toISOString().split("T")[0],
+          description: "AI-generated initial release",
+          section: "All",
+          changedBy: user?.fullName || user?.username || "System",
+        }],
+        scopeOfWork: data.scopeOfWork || undefined,
+        divingMode: data.divingMode || undefined,
+        maxDepth: data.maxDepth || undefined,
+        estimatedDuration: data.estimatedDuration || undefined,
+        personnelCount: data.personnelCount || undefined,
+        equipmentNotes: data.equipmentNotes || undefined,
+        siteConditions: data.siteConditions || undefined,
+        hazardNotes: data.hazardNotes || undefined,
+        additionalNotes: data.additionalNotes || undefined,
+        decompressionSchedules: data.decompressionSchedules || undefined,
+      };
+      await fetch(`/api/projects/${activeProject.id}/project-dive-plans/autosave`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ planData: fullPlanData }),
+      });
+      queryClient.invalidateQueries({ queryKey: ["project-dive-plans", activeProject.id] });
+      setAutoSaveStatus("saved");
+      setTimeout(() => setAutoSaveStatus("idle"), 2000);
+    } catch {
+      setAutoSaveStatus("idle");
+    }
+  }, [activeProject, user, queryClient]);
 
   const savePlanMutation = useMutation({
     mutationFn: async () => {
@@ -836,6 +909,8 @@ export function DivePlanTab() {
               if (summary) {
                 assistantSummary = summary;
               }
+              // Auto-save silently after every AI response
+              autoSavePlan(parsed.data);
             }
           } catch {}
         }
@@ -1073,15 +1148,57 @@ export function DivePlanTab() {
             <p className="text-xs text-navy-400">Live preview - updates as you describe your operation</p>
           </div>
           {planData && (
-            <Button
-              size="sm"
-              onClick={() => savePlanMutation.mutate()}
-              disabled={savePlanMutation.isPending}
-              className="btn-gold-metallic hover:btn-gold-metallic text-xs"
-            >
-              <Save className="w-3 h-3 mr-1" />
-              Save
-            </Button>
+            <div className="flex items-center gap-2">
+              {autoSaveStatus === "saving" && (
+                <span className="text-[10px] text-navy-500 flex items-center gap-1">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Saving...
+                </span>
+              )}
+              {autoSaveStatus === "saved" && (
+                <span className="text-[10px] text-green-500 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" /> Saved
+                </span>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  // Save to library: save as draft first, then show confirmation
+                  await savePlanMutation.mutateAsync();
+                  toast({ title: "Saved to Library", description: "Your dive plan is now available in the Saved Plans list below." });
+                }}
+                disabled={savePlanMutation.isPending}
+                className="border-navy-600 text-navy-300 hover:text-white text-xs"
+                data-testid="button-save-to-library"
+              >
+                <Library className="w-3 h-3 mr-1" />
+                Save to Library
+              </Button>
+              <Button
+                size="sm"
+                onClick={async () => {
+                  // Export to Word: save first to get a plan ID, then download
+                  try {
+                    const savedPlan = await savePlanMutation.mutateAsync();
+                    if (savedPlan?.id) {
+                      await downloadPlan(savedPlan.id, savedPlan.revision);
+                    } else {
+                      // Fall back: find the draft plan and download it
+                      const draft = projectPlans.find(p => p.status === "Draft");
+                      if (draft) await downloadPlan(draft.id, draft.revision);
+                    }
+                  } catch {
+                    toast({ title: "Export failed", description: "Could not export dive plan.", variant: "destructive" });
+                  }
+                }}
+                disabled={savePlanMutation.isPending}
+                className="btn-gold-metallic hover:btn-gold-metallic text-xs"
+                data-testid="button-export-word"
+              >
+                <Download className="w-3 h-3 mr-1" />
+                Export to Word
+              </Button>
+            </div>
           )}
         </div>
         <PlanCanvas planData={planData} isGenerating={isGenerating} />

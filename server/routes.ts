@@ -3345,6 +3345,38 @@ export async function registerRoutes(
     res.json({ message: "Plan deleted" });
   });
 
+  // Auto-save endpoint: upserts the in-progress draft plan for a project.
+  // Creates a new Draft rev 0 if none exists, or updates planData on the most recent Draft.
+  // Called silently after every AI response so plan survives tab switches.
+  app.put("/api/projects/:projectId/project-dive-plans/autosave", requireRole("SUPERVISOR", "ADMIN", "GOD"), requireProjectAccess(), async (req: Request, res: Response) => {
+    const user = getUser(req);
+    const { projectId } = req.params;
+    const { planData } = req.body;
+    if (!planData) return res.status(400).json({ message: "planData is required" });
+
+    // Find the most recent Draft plan for this project
+    const allPlans = await storage.getProjectDivePlansByProject(projectId);
+    const draftPlan = allPlans.find(p => p.status === "Draft");
+
+    if (draftPlan) {
+      // Update existing draft
+      const updated = await storage.updateProjectDivePlan(draftPlan.id, { planData });
+      return res.json(updated);
+    } else {
+      // Create a new draft at revision 0
+      const latestRevision = await storage.getLatestProjectDivePlanRevision(projectId);
+      const newRevision = latestRevision + 1;
+      const created = await storage.createProjectDivePlan({
+        projectId,
+        revision: newRevision,
+        status: "Draft",
+        planData,
+        createdBy: user.id,
+      });
+      return res.status(201).json(created);
+    }
+  });
+
   app.post("/api/dive-plan/ai-generate", requireRole("SUPERVISOR", "GOD", "ADMIN"), async (req: Request, res: Response) => {
     try {
       const { messages, currentPlan, projectContext } = req.body;
@@ -3353,6 +3385,30 @@ export async function registerRoutes(
       if (!messages || !Array.isArray(messages) || messages.length === 0) {
         return res.status(400).json({ message: "messages array is required and must not be empty" });
       }
+
+      // BUG-LOCATION FIX: Forcibly inject siteLocation from projectContext on the SERVER side
+      // so the AI always receives a pre-populated value and never invents one from geolocation.
+      // Priority: currentPlan.coverPage.siteLocation (if already set) > projectContext.siteLocation
+      //           > projectContext.jobsiteAddress > projectContext.jobsiteName
+      const derivedSiteLocation: string =
+        (currentPlan?.coverPage?.siteLocation as string | undefined)?.trim() ||
+        (projectContext?.siteLocation as string | undefined)?.trim() ||
+        (projectContext?.jobsiteAddress as string | undefined)?.trim() ||
+        (projectContext?.jobsiteName as string | undefined)?.trim() ||
+        "";
+
+      // Build a seeded currentPlan with the correct siteLocation baked in
+      const seededCurrentPlan = currentPlan
+        ? {
+            ...currentPlan,
+            coverPage: {
+              ...(currentPlan.coverPage || {}),
+              siteLocation: derivedSiteLocation,
+            },
+          }
+        : derivedSiteLocation
+          ? { coverPage: { siteLocation: derivedSiteLocation } }
+          : null;
 
       const { getAnthropicClient, AI_MODEL } = await import("./ai-client");
       const anthropic = getAnthropicClient();
@@ -3418,7 +3474,7 @@ You MUST respond with ONLY a valid JSON object (no markdown, no code fences, no 
 ${projectContext ? JSON.stringify(projectContext) : "No project context available"}
 
 ## CURRENT PLAN STATE
-${currentPlan ? JSON.stringify(currentPlan) : "Empty - starting fresh"}
+${seededCurrentPlan ? JSON.stringify(seededCurrentPlan) : "Empty - starting fresh"}
 
 IMPORTANT: Always respond in English only. Never translate to any other language.
 
