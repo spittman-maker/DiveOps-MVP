@@ -31,6 +31,11 @@ export async function setupVite(server: Server, app: Express) {
 
   app.use(vite.middlewares);
 
+  // BUG-EDGE-01 FIX: Return JSON 404 for any unmatched /api/* routes in dev mode
+  app.use("/api/{*path}", (_req, res) => {
+    res.status(404).json({ message: "Not found" });
+  });
+
   app.use("/{*path}", async (req, res, next) => {
     const url = req.originalUrl;
 

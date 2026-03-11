@@ -36,7 +36,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
         return [];
       }
     },
-    enabled: !!user && isMultiTenant,
+    enabled: !!user && isMultiTenant && isGod,
   });
 
   // Derive active company from user session data

@@ -158,6 +158,8 @@ export async function runMigrations(): Promise<void> {
     // Safety net: ensure critical tables exist even if migrations failed
     await ensureCriticalTables(pool);
     await upgradeChecklistsToRegulationGrounded(pool);
+    // BUG-AUTH-01/02 FIX: Reset passwords for jspurlock and cgarcia
+    await fixUserLogins(pool);
   } catch (err) {
     console.error("[MIGRATE] Migration failed:", err);
     // Don't crash the app — log the error and continue
@@ -550,5 +552,63 @@ async function upgradeChecklistsToRegulationGrounded(pool: any) {
     }
   } catch (err: any) {
     console.error("[MIGRATE] Could not upgrade checklists:", err.message);
+  }
+}
+
+// BUG-AUTH-01/02 FIX: Reset passwords for jspurlock and cgarcia
+// Uses the same scrypt hashing as the application auth module.
+async function fixUserLogins(pool: any) {
+  const crypto = await import("crypto");
+  function hashPassword(password: string): string {
+    const salt = crypto.randomBytes(16).toString("hex");
+    const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+    return `${salt}.${hash}`;
+  }
+
+  const targetUsers = ["jspurlock", "cgarcia"];
+  const newPasswordHash = hashPassword("123456789");
+
+  for (const username of targetUsers) {
+    try {
+      // Check if user exists and needs password fix
+      const { rows } = await pool.query(
+        `SELECT id, password, must_change_password FROM users WHERE username = $1`,
+        [username]
+      );
+      if (rows.length === 0) {
+        console.log(`[MIGRATE] User '${username}' not found — skipping password reset`);
+        continue;
+      }
+
+      const user = rows[0];
+      // Only reset if password doesn't work (no salt.hash format or mustChangePassword already true)
+      const hasValidFormat = user.password && user.password.includes(".");
+      if (!hasValidFormat || user.must_change_password === true) {
+        // Password is invalid or already flagged — reset it
+        const freshHash = hashPassword("123456789");
+        await pool.query(
+          `UPDATE users SET password = $1, must_change_password = true WHERE username = $2`,
+          [freshHash, username]
+        );
+        console.log(`[MIGRATE] ✓ Reset password for '${username}' (mustChangePassword=true)`);
+      } else {
+        // Try to verify the existing password — if it works, skip
+        const [salt, hash] = user.password.split(".");
+        const derived = crypto.scryptSync("123456789", salt, 64).toString("hex");
+        if (derived === hash) {
+          console.log(`[MIGRATE] Password for '${username}' already correct — skipping`);
+        } else {
+          // Password exists but doesn't match 123456789 — reset it
+          const freshHash = hashPassword("123456789");
+          await pool.query(
+            `UPDATE users SET password = $1, must_change_password = true WHERE username = $2`,
+            [freshHash, username]
+          );
+          console.log(`[MIGRATE] ✓ Reset password for '${username}' (mustChangePassword=true)`);
+        }
+      }
+    } catch (err: any) {
+      console.error(`[MIGRATE] Failed to fix login for '${username}':`, err.message);
+    }
   }
 }

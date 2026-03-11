@@ -950,6 +950,13 @@ export async function registerRoutes(
   app.get("/api/projects/:id", requireAuth, async (req: Request, res: Response) => {
     const project = await storage.getProject(req.params.id);
     if (!project) return res.status(404).json({ message: "Project not found" });
+    // BUG-ISO-01 FIX: Enforce company boundary on direct project access
+    if (isEnabled("multiTenantOrg")) {
+      const user = getUser(req);
+      if (!isGod(user.role) && project.companyId && user.companyId && project.companyId !== user.companyId) {
+        return res.status(403).json({ message: "Forbidden: project belongs to a different company" });
+      }
+    }
     res.json(project);
   });
 
@@ -1090,6 +1097,16 @@ export async function registerRoutes(
   app.get("/api/days/:id", requireAuth, async (req: Request, res: Response) => {
     const day = await storage.getDay(req.params.id);
     if (!day) return res.status(404).json({ message: "Day not found" });
+    // BUG-ISO-02 FIX: Enforce company boundary on direct day access
+    if (isEnabled("multiTenantOrg")) {
+      const user = getUser(req);
+      if (!isGod(user.role)) {
+        const project = await storage.getProject(day.projectId);
+        if (project?.companyId && user.companyId && project.companyId !== user.companyId) {
+          return res.status(403).json({ message: "Forbidden: project belongs to a different company" });
+        }
+      }
+    }
     res.json(day);
   });
 
@@ -1536,7 +1553,15 @@ export async function registerRoutes(
       if (!day) return res.status(404).json({ message: "Day not found" });
       const projectId = data.projectId || day.projectId;
       if (!projectId) return res.status(400).json({ message: "Could not determine projectId" });
-      
+
+      // BUG-ISO-03 FIX: Enforce company boundary on log-event writes
+      if (isEnabled("multiTenantOrg") && !isGod(user.role)) {
+        const project = await storage.getProject(projectId);
+        if (project?.companyId && user.companyId && project.companyId !== user.companyId) {
+          return res.status(403).json({ message: "Forbidden: project belongs to a different company" });
+        }
+      }
+
       // Check if day is closed
       if (day.status === "CLOSED" && !isGod(user.role)) {
         return res.status(403).json({ message: "Day is closed" });
@@ -3130,10 +3155,7 @@ export async function registerRoutes(
     res.json(items);
   });
 
-  app.get("/api/companies", requireAuth, async (_req: Request, res: Response) => {
-    const companies = await storage.getAllCompanies();
-    res.json(companies);
-  });
+  // BUG-ROLE-01 FIX: First duplicate removed — the canonical handler is in the Company Management section below.
 
   app.get("/api/companies/:companyId/roles", requireAuth, async (req: Request, res: Response) => {
     const roles = await storage.getCompanyRoles(req.params.companyId as string);
@@ -3326,7 +3348,12 @@ export async function registerRoutes(
   app.post("/api/dive-plan/ai-generate", requireRole("SUPERVISOR", "GOD", "ADMIN"), async (req: Request, res: Response) => {
     try {
       const { messages, currentPlan, projectContext } = req.body;
-      
+
+      // BUG-12a FIX: Guard against missing messages array to prevent crash
+      if (!messages || !Array.isArray(messages) || messages.length === 0) {
+        return res.status(400).json({ message: "messages array is required and must not be empty" });
+      }
+
       const { getAnthropicClient, AI_MODEL } = await import("./ai-client");
       const anthropic = getAnthropicClient();
 
@@ -3916,7 +3943,8 @@ If you're not confident about specific facilities, say so in the notes field. Al
   // AUDIT TRAIL API
   // ────────────────────────────────────────────────────────────────────────────
 
-  app.get("/api/audit-events", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+  // BUG-ROLE-02 FIX: Restrict audit events to GOD-only (was ADMIN + GOD)
+  app.get("/api/audit-events", requireRole("GOD"), async (req: Request, res: Response) => {
     try {
       // SEC-07 FIX: Add pagination with offset and cap limit to prevent unbounded queries
       const rawLimit = req.query.limit ? parseInt(req.query.limit as string) : 200;
@@ -5107,19 +5135,15 @@ If you're not confident about specific facilities, say so in the notes field. Al
   // COMPANY MANAGEMENT (GOD-only CRUD)
   // ════════════════════════════════════════════════════════════════════
 
+  // BUG-ROLE-01 FIX: Restrict company listing to GOD-only. ADMIN should not see other companies.
   app.get("/api/companies", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
-      if (isGod(user.role)) {
-        const companies = await storage.getAllCompanies();
-        return res.json(companies);
+      if (!isGod(user.role)) {
+        return res.status(403).json({ message: "Forbidden: GOD only" });
       }
-      // Non-GOD: return only their company
-      if (user.companyId) {
-        const company = await storage.getCompany(user.companyId);
-        return res.json(company ? [company] : []);
-      }
-      res.json([]);
+      const companies = await storage.getAllCompanies();
+      return res.json(companies);
     } catch (error) {
       res.status(500).json({ message: "Failed to list companies" });
     }
