@@ -34,6 +34,14 @@ export async function runMigrations(): Promise<void> {
       );
     `);
 
+    // Clean up stale entries from the broken deploy that marked 0013/0014 as
+    // applied even though zero SQL was executed (comment-filter bug).
+    // These were renamed to 0015/0016 — remove the phantom entries.
+    await pool.query(
+      `DELETE FROM "${MIGRATIONS_TABLE}" WHERE "name" IN ($1, $2)`,
+      ["0013_multi_tenant_org.sql", "0014_multi_tenant_org_assignments.sql"]
+    );
+
     // Get already-applied migrations
     const { rows: applied } = await pool.query(
       `SELECT "name" FROM "${MIGRATIONS_TABLE}" ORDER BY "id"`
