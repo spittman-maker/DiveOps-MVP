@@ -16,7 +16,7 @@ const defaults: FeatureFlags = {
   exportGeneration: true,
   aiProcessing: true,
   safetyTab: true,
-  multiTenantOrg: false, // OFF by default; enabled explicitly after migration
+  multiTenantOrg: true, // ON — company mappings approved, org layer enforced
 };
 
 let overrides: Partial<FeatureFlags> = {};
