@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Settings, GripVertical, X, Save, RotateCcw, Sun, Cloud, CloudRain, Wind, Droplets, Zap, Waves, Radio, Activity, ChevronDown, AlertTriangle, Shield, ShieldCheck, Send, Loader2, Users } from "lucide-react";
+import { Plus, Settings, GripVertical, X, Save, RotateCcw, Sun, Cloud, CloudRain, Wind, Droplets, Zap, Waves, Radio, Activity, ChevronDown, AlertTriangle, Shield, ShieldCheck, Send, Loader2, Users, Clock, Edit2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
@@ -339,60 +340,331 @@ function LiveLogFeedWidget({ projectId }: { projectId?: string } = {}) {
 
 // ─── NEW: Station Overview Widget ────────────────────────────────────────────
 
-function StationOverviewWidget({ projectId }: { projectId?: string } = {}) {
-  const { data } = useLiveBoardData(projectId);
-  const stations = data?.stations || [];
+// ─── Crew Hours Types ───────────────────────────────────────────────────────
 
-  if (stations.length === 0) {
+interface CrewMemberHours {
+  id: string;
+  name: string;
+  trade: string;
+  startTime: string;
+  endTime: string;
+  totalHours: number;
+  notes: string;
+}
+
+const TRADE_OPTIONS = ["Diver", "Tender", "Standby Diver", "Supervisor", "DMT", "Crane Operator", "Rigger", "Welder", "Inspector", "Other"];
+
+function StationOverviewWidget({ projectId }: { projectId?: string } = {}) {
+  const { toast } = useToast();
+  const { activeDay } = useProject();
+
+  // Read crew from localStorage (same key as daily-log / quick-entry)
+  const [selectedCrew, setSelectedCrew] = useState<string>(() => {
+    try {
+      return localStorage.getItem("diveops_selected_station") || "";
+    } catch {
+      return "";
+    }
+  });
+
+  // Sync crew selection with localStorage
+  useEffect(() => {
+    const syncCrew = () => {
+      try {
+        const stored = localStorage.getItem("diveops_selected_station") || "";
+        setSelectedCrew(stored);
+      } catch {}
+    };
+    window.addEventListener("storage", syncCrew);
+    const interval = setInterval(syncCrew, 2000);
+    return () => {
+      window.removeEventListener("storage", syncCrew);
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Get today's date string for localStorage key
+  const todayStr = activeDay?.date || new Date().toISOString().slice(0, 10);
+  const storageKey = `diveops_crew_hours_${selectedCrew}_${todayStr}`;
+
+  // Load crew members from localStorage
+  const [members, setMembers] = useState<CrewMemberHours[]>(() => {
+    try {
+      const stored = localStorage.getItem(storageKey);
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return [];
+  });
+
+  // Reload when crew or day changes
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        setMembers(JSON.parse(stored));
+      } else {
+        setMembers([]);
+      }
+    } catch {
+      setMembers([]);
+    }
+  }, [storageKey]);
+
+  // Persist to localStorage and backend whenever members change
+  const saveMembers = useCallback((updated: CrewMemberHours[]) => {
+    setMembers(updated);
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(updated));
+    } catch {}
+    // Also save to backend
+    fetch("/api/crew-hours", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        station: selectedCrew,
+        date: todayStr,
+        members: updated,
+      }),
+    }).catch(() => {});
+  }, [storageKey, selectedCrew, todayStr]);
+
+  // Fetch from backend on mount
+  useEffect(() => {
+    if (!selectedCrew) return;
+    fetch(`/api/crew-hours?station=${encodeURIComponent(selectedCrew)}&date=${todayStr}`, {
+      credentials: "include",
+    })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.members && data.members.length > 0) {
+          setMembers(data.members);
+          try {
+            localStorage.setItem(storageKey, JSON.stringify(data.members));
+          } catch {}
+        }
+      })
+      .catch(() => {});
+  }, [selectedCrew, todayStr, storageKey]);
+
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newTrade, setNewTrade] = useState("Diver");
+
+  const addMember = () => {
+    if (!newName.trim()) return;
+    const member: CrewMemberHours = {
+      id: `m${Date.now()}`,
+      name: newName.trim(),
+      trade: newTrade,
+      startTime: "",
+      endTime: "",
+      totalHours: 0,
+      notes: "",
+    };
+    const updated = [...members, member];
+    saveMembers(updated);
+    setNewName("");
+    setShowAddForm(false);
+    toast({ title: "Added", description: `${member.name} added to roster` });
+  };
+
+  const updateMember = (id: string, field: keyof CrewMemberHours, value: string | number) => {
+    const updated = members.map(m => {
+      if (m.id !== id) return m;
+      const updatedMember = { ...m, [field]: value };
+      // Auto-calculate total hours when start/end times change
+      if ((field === "startTime" || field === "endTime") && updatedMember.startTime && updatedMember.endTime) {
+        const [sh, sm] = updatedMember.startTime.split(":").map(Number);
+        const [eh, em] = updatedMember.endTime.split(":").map(Number);
+        if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
+          let totalMin = (eh * 60 + em) - (sh * 60 + sm);
+          if (totalMin < 0) totalMin += 24 * 60; // overnight shift
+          updatedMember.totalHours = Math.round(totalMin / 60 * 100) / 100;
+        }
+      }
+      return updatedMember;
+    });
+    saveMembers(updated);
+  };
+
+  const removeMember = (id: string) => {
+    const updated = members.filter(m => m.id !== id);
+    saveMembers(updated);
+  };
+
+  const totalCrewHours = members.reduce((sum, m) => sum + (m.totalHours || 0), 0);
+
+  const handleCrewChange = (newCrew: string) => {
+    setSelectedCrew(newCrew);
+    try {
+      localStorage.setItem("diveops_selected_station", newCrew);
+    } catch {}
+  };
+
+  if (!selectedCrew) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-navy-500" data-testid="widget-station-overview">
-        <Activity className="h-8 w-8 mb-2 opacity-30" />
-        <p className="text-xs">No station activity yet</p>
-        <p className="text-[10px] mt-1">Stations will appear as dives are logged</p>
+      <div className="flex flex-col h-full overflow-hidden" data-testid="widget-station-overview">
+        <div className="flex items-center gap-2 mb-2 shrink-0">
+          <Users className="h-3.5 w-3.5 text-cyan-400" />
+          <select
+            value={selectedCrew}
+            onChange={(e) => handleCrewChange(e.target.value)}
+            className="bg-navy-900 border border-navy-600 text-white text-xs rounded px-2 py-1 focus:outline-none focus:border-amber-500 flex-1"
+          >
+            <option value="">Select a team/station</option>
+            {CREW_STATIONS.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col items-center justify-center flex-1 text-navy-500">
+          <Activity className="h-8 w-8 mb-2 opacity-30" />
+          <p className="text-xs">Select a team to view roster</p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col h-full overflow-hidden" data-testid="widget-station-overview">
+      {/* Header */}
       <div className="flex items-center gap-2 mb-2 shrink-0">
-        <Activity className="h-3.5 w-3.5 text-cyan-400" />
-        <span className="text-xs text-navy-300">{stations.length} station{stations.length !== 1 ? "s" : ""}</span>
-        <span className="text-xs text-navy-500">|</span>
-        <span className="text-xs text-green-400">{stations.filter(s => s.isActive).length} active</span>
+        <Users className="h-3.5 w-3.5 text-cyan-400" />
+        <select
+          value={selectedCrew}
+          onChange={(e) => handleCrewChange(e.target.value)}
+          className="bg-navy-900 border border-navy-600 text-white text-xs rounded px-2 py-1 focus:outline-none focus:border-amber-500 flex-1"
+        >
+          <option value="">Select a team/station</option>
+          {CREW_STATIONS.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+        <Badge className="text-[9px] bg-cyan-700 text-cyan-100 shrink-0">{members.length} crew</Badge>
       </div>
-      <div className="space-y-1.5 overflow-auto flex-1 min-h-0">
-        {stations.map(station => (
-          <div
-            key={station.name}
-            className={`rounded-lg px-3 py-2 border ${
-              station.isActive
-                ? "bg-navy-700/80 border-green-500/30"
-                : "bg-navy-800/60 border-navy-600/50"
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-2">
-                <span className={`inline-block w-2.5 h-2.5 rounded-full ${station.isActive ? "bg-green-500 animate-pulse" : "bg-navy-500"}`} />
-                <span className="text-sm font-semibold text-white">{station.name}</span>
+
+      {/* Summary bar */}
+      <div className="flex items-center justify-between mb-2 px-1 shrink-0">
+        <div className="flex items-center gap-2">
+          <Clock className="h-3 w-3 text-amber-400" />
+          <span className="text-[10px] text-navy-300">Total: <span className="text-amber-400 font-mono font-bold">{totalCrewHours.toFixed(1)}h</span></span>
+        </div>
+        <span className="text-[10px] text-navy-500">{todayStr}</span>
+      </div>
+
+      {/* Roster table */}
+      <div className="flex-1 min-h-0 overflow-auto">
+        {members.length > 0 ? (
+          <div className="space-y-1">
+            {members.map((member) => (
+              <div key={member.id} className="bg-navy-700/60 rounded px-2 py-1.5 border border-navy-600/50">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-white text-xs font-medium">{member.name}</span>
+                    <Badge className="text-[8px] bg-navy-600 text-navy-200 px-1 py-0">{member.trade}</Badge>
+                  </div>
+                  <button
+                    onClick={() => removeMember(member.id)}
+                    className="text-navy-500 hover:text-red-400 transition-colors"
+                    title="Remove"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-1">
+                  <div>
+                    <label className="text-[8px] text-navy-500 block">Start</label>
+                    <input
+                      type="time"
+                      value={member.startTime}
+                      onChange={(e) => updateMember(member.id, "startTime", e.target.value)}
+                      className="bg-navy-900 border border-navy-600 text-white text-[10px] rounded px-1 py-0.5 w-full focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[8px] text-navy-500 block">End</label>
+                    <input
+                      type="time"
+                      value={member.endTime}
+                      onChange={(e) => updateMember(member.id, "endTime", e.target.value)}
+                      className="bg-navy-900 border border-navy-600 text-white text-[10px] rounded px-1 py-0.5 w-full focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[8px] text-navy-500 block">Hours</label>
+                    <input
+                      type="number"
+                      step="0.25"
+                      min="0"
+                      max="24"
+                      value={member.totalHours || ""}
+                      onChange={(e) => updateMember(member.id, "totalHours", parseFloat(e.target.value) || 0)}
+                      className="bg-navy-900 border border-navy-600 text-amber-400 text-[10px] rounded px-1 py-0.5 w-full font-mono font-bold focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+                <div className="mt-1">
+                  <input
+                    type="text"
+                    placeholder="Notes..."
+                    value={member.notes}
+                    onChange={(e) => updateMember(member.id, "notes", e.target.value)}
+                    className="bg-navy-900/50 border border-navy-700 text-navy-200 text-[10px] rounded px-1 py-0.5 w-full focus:outline-none focus:border-amber-500 placeholder-navy-600"
+                  />
+                </div>
               </div>
-              {station.isActive && (
-                <Badge className="bg-green-600/80 text-[8px] px-1.5 py-0">ACTIVE</Badge>
-              )}
-            </div>
-            <div className="flex items-center gap-4 text-xs">
-              <div className="flex items-center gap-1">
-                <Waves className="h-3 w-3 text-amber-400" />
-                <span className="text-amber-400 font-mono font-bold">{station.activeDivers}</span>
-                <span className="text-navy-400">in water</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-navy-300 font-mono">{station.completedDives}</span>
-                <span className="text-navy-400">completed</span>
-              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full text-navy-500">
+            <p className="text-xs">No crew members added yet</p>
+            <p className="text-[10px] mt-1">Click + to add personnel</p>
+          </div>
+        )}
+      </div>
+
+      {/* Add member form */}
+      <div className="shrink-0 mt-2">
+        {showAddForm ? (
+          <div className="bg-navy-700/60 rounded p-2 border border-navy-600/50 space-y-1.5">
+            <input
+              type="text"
+              placeholder="Name"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              className="bg-navy-900 border border-navy-600 text-white text-xs rounded px-2 py-1 w-full focus:outline-none focus:border-amber-500"
+              onKeyDown={(e) => { if (e.key === "Enter") addMember(); }}
+              autoFocus
+            />
+            <select
+              value={newTrade}
+              onChange={(e) => setNewTrade(e.target.value)}
+              className="bg-navy-900 border border-navy-600 text-white text-xs rounded px-2 py-1 w-full focus:outline-none focus:border-amber-500"
+            >
+              {TRADE_OPTIONS.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+            <div className="flex gap-1">
+              <Button size="sm" onClick={addMember} disabled={!newName.trim()} className="h-6 px-2 text-[10px] btn-gold-metallic hover:btn-gold-metallic flex-1">
+                <Plus className="h-3 w-3 mr-1" /> Add
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => { setShowAddForm(false); setNewName(""); }} className="h-6 px-2 text-[10px] text-navy-400">
+                Cancel
+              </Button>
             </div>
           </div>
-        ))}
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowAddForm(true)}
+            className="w-full h-7 text-[10px] border-navy-600 text-navy-300 hover:text-amber-400 hover:border-amber-500"
+          >
+            <Plus className="h-3 w-3 mr-1" /> Add Crew Member
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -969,7 +1241,6 @@ function MyCrewQuickEntryWidget({ projectId }: { projectId?: string }) {
       } catch {}
     };
     window.addEventListener("storage", syncCrew);
-    // Also poll periodically in case same-tab changes
     const interval = setInterval(syncCrew, 2000);
     return () => {
       window.removeEventListener("storage", syncCrew);
@@ -983,6 +1254,58 @@ function MyCrewQuickEntryWidget({ projectId }: { projectId?: string }) {
       localStorage.setItem("diveops_selected_station", newCrew);
     } catch {}
   };
+
+  // Fetch all log entries for the current day, then filter by crew/station
+  const { data: allLogs = [] } = useQuery<any[]>({
+    queryKey: ["dashboard-recent-logs", projectId],
+    queryFn: async () => {
+      const url = projectId
+        ? `/api/dashboard/recent-logs?projectId=${projectId}`
+        : "/api/dashboard/recent-logs";
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    refetchInterval: 5000,
+  });
+
+  // Also fetch from the live board for a fuller feed
+  const { data: liveBoardData } = useLiveBoardData(projectId);
+  const liveLogEntries = liveBoardData?.logEntries || [];
+
+  // Merge and deduplicate: use live board entries (more complete) + recent logs
+  const crewLogs = (() => {
+    // Combine both sources
+    const combined = [
+      ...liveLogEntries.map((l: any) => ({
+        id: l.id,
+        rawText: l.rawText,
+        station: l.station,
+        category: l.category,
+        eventTime: l.eventTime,
+      })),
+      ...allLogs.map((l: any) => ({
+        id: l.id,
+        rawText: l.masterLogLine || l.rawText,
+        station: l.station,
+        category: l.category,
+        eventTime: l.eventTime,
+      })),
+    ];
+    // Deduplicate by id
+    const seen = new Set<string>();
+    const unique = combined.filter((l) => {
+      if (seen.has(l.id)) return false;
+      seen.add(l.id);
+      return true;
+    });
+    // Filter by selected crew/station
+    const filtered = myCrew
+      ? unique.filter((l) => l.station === myCrew)
+      : unique;
+    // Sort newest first
+    return filtered.sort((a, b) => new Date(b.eventTime).getTime() - new Date(a.eventTime).getTime());
+  })();
 
   const handleQuickSubmit = async () => {
     if (!quickInput.trim() || !activeDay || !activeProject) return;
@@ -1016,6 +1339,19 @@ function MyCrewQuickEntryWidget({ projectId }: { projectId?: string }) {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const categoryColor: Record<string, string> = {
+    directive: "text-cyan-400",
+    safety: "text-red-400",
+    dive_op: "text-amber-400",
+    ops: "text-green-400",
+    general: "text-navy-300",
+  };
+
+  const formatLogTime = (iso: string) => {
+    const d = new Date(iso);
+    return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
   };
 
   const dayIsClosed = activeDay?.status === "CLOSED";
@@ -1053,20 +1389,48 @@ function MyCrewQuickEntryWidget({ projectId }: { projectId?: string }) {
       </div>
 
       {dayIsClosed && (
-        <div className="flex items-center gap-1.5 text-xs text-red-400 mb-2">
+        <div className="flex items-center gap-1.5 text-xs text-red-400 mb-2 shrink-0">
           <span>Shift is closed — read only</span>
         </div>
       )}
 
       {!canWriteLogEvents && !dayIsClosed && (
-        <div className="flex items-center gap-1.5 text-xs text-navy-400 mb-2">
+        <div className="flex items-center gap-1.5 text-xs text-navy-400 mb-2 shrink-0">
           <span>Log entry requires Supervisor role</span>
         </div>
       )}
 
+      {/* Crew log feed */}
+      <div className="flex-1 min-h-0 overflow-auto mb-2">
+        {crewLogs.length > 0 ? (
+          <div className="space-y-1">
+            {crewLogs.map((log) => (
+              <div key={log.id} className="bg-navy-700/60 rounded px-2 py-1.5 text-[11px]">
+                <div className="flex items-center justify-between mb-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-amber-400 font-mono text-[10px]">{formatLogTime(log.eventTime)}</span>
+                    <span className={`uppercase text-[9px] font-semibold ${categoryColor[log.category] || "text-navy-300"}`}>
+                      {log.category?.replace("_", " ") || "general"}
+                    </span>
+                  </div>
+                  {log.station && (
+                    <span className="text-[9px] text-cyan-400/60">{log.station}</span>
+                  )}
+                </div>
+                <div className="text-white/80 text-[11px] line-clamp-2 leading-tight">{log.rawText}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full text-navy-500">
+            <p className="text-xs">{myCrew ? `No entries for ${myCrew} yet` : "Select a crew to see entries"}</p>
+          </div>
+        )}
+      </div>
+
       {/* Quick entry input */}
       {canSubmit && (
-        <div className="flex flex-col gap-2 mt-auto">
+        <div className="flex flex-col gap-2 shrink-0">
           <Textarea
             data-testid="my-crew-quick-input"
             placeholder={myCrew ? `Quick log for ${myCrew}...` : "Select a crew first, then type your log entry..."}

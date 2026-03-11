@@ -4948,6 +4948,55 @@ If you're not confident about specific facilities, say so in the notes field. Al
     }
   });
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // CREW HOURS TRACKING — Per-station per-day payroll hours
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // In-memory store for crew hours (persisted per station+date key)
+  // In production this would use a database table, but for MVP we use
+  // a simple in-memory map that survives within the process lifetime.
+  const crewHoursStore: Record<string, any> = {};
+
+  // GET /api/crew-hours?station=X&date=YYYY-MM-DD
+  app.get("/api/crew-hours", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const station = req.query.station as string;
+      const date = req.query.date as string;
+      if (!station || !date) {
+        return res.status(400).json({ message: "station and date query params required" });
+      }
+      const key = `${station}::${date}`;
+      const data = crewHoursStore[key];
+      if (!data) {
+        return res.json({ station, date, members: [] });
+      }
+      return res.json(data);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // POST /api/crew-hours — Save crew hours for a station+date
+  app.post("/api/crew-hours", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { station, date, members } = req.body;
+      if (!station || !date) {
+        return res.status(400).json({ message: "station and date are required" });
+      }
+      const key = `${station}::${date}`;
+      crewHoursStore[key] = {
+        station,
+        date,
+        members: members || [],
+        updatedAt: new Date().toISOString(),
+        updatedBy: getUser(req).id,
+      };
+      return res.json({ success: true, ...crewHoursStore[key] });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // CRIT-02 FIX: Await the async route registration so these routes are registered
   // BEFORE the SPA catch-all in serveStatic(). Previously the un-awaited IIFE caused
   // a race condition where the catch-all was registered first, making all knowledge-base,

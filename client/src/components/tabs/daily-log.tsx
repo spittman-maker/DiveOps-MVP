@@ -272,6 +272,7 @@ export function DailyLogTab() {
   const { activeProject, activeDay, allDays, setActiveDay, refreshDay } = useProject();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const logScrollRef = useRef<HTMLDivElement>(null);
   const [rawInput, setRawInput] = useState("");
   const [selectedStation, setSelectedStation] = useState<string>(() => {
     try {
@@ -408,6 +409,34 @@ export function DailyLogTab() {
     enabled: !!currentDay?.id,
     refetchInterval: 5000,
   });
+
+  // Auto-scroll to bottom of log entries when tab is activated (component mounts)
+  // and when events data first loads
+  const hasAutoScrolled = useRef(false);
+  useEffect(() => {
+    if (events.length > 0 && logScrollRef.current) {
+      // Always scroll to bottom on mount (tab switch), and on first data load
+      if (!hasAutoScrolled.current) {
+        setTimeout(() => {
+          if (logScrollRef.current) {
+            logScrollRef.current.scrollTop = logScrollRef.current.scrollHeight;
+          }
+        }, 100);
+        hasAutoScrolled.current = true;
+      }
+    }
+  }, [events]);
+
+  // Reset auto-scroll flag on mount so it scrolls every time the tab is switched to
+  useEffect(() => {
+    hasAutoScrolled.current = false;
+    // Scroll to bottom immediately on mount
+    setTimeout(() => {
+      if (logScrollRef.current) {
+        logScrollRef.current.scrollTop = logScrollRef.current.scrollHeight;
+      }
+    }, 200);
+  }, []);
 
   const { data: masterLogData } = useQuery<MasterLogData | null>({
     queryKey: ["master-log", currentDay?.id],
@@ -1343,7 +1372,7 @@ export function DailyLogTab() {
           </div>
         )}
 
-        <div className="flex-1 min-h-0 overflow-auto">
+        <div ref={logScrollRef} className="flex-1 min-h-0 overflow-auto">
           <div className="p-4 space-y-2">
             {events.map((event) => (
               <div
