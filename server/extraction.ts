@@ -570,7 +570,52 @@ export function fixTypos(text: string): string {
  * Returns Date if found, null otherwise.
  * The date portion comes from the current day context.
  */
-export function parseEventTime(rawText: string, dayDate: string): Date | null {
+/**
+ * Convert a local HHMM time to a UTC Date, respecting the given IANA timezone.
+ * e.g. hours=7, minutes=5, dayDate="2025-03-11", timezone="Pacific/Honolulu" (UTC-10)
+ * => returns Date representing 17:05 UTC
+ */
+export function localHHMMtoUTC(hours: number, minutes: number, dayDate: string, timezone?: string): Date {
+  if (!timezone) {
+    // No timezone: treat entered time as UTC (legacy behaviour)
+    const [year, month, day] = dayDate.split('-').map(Number);
+    return new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
+  }
+  try {
+    // Build midnight UTC for that date, then find what wall-clock time
+    // that corresponds to in the target timezone. The difference gives us
+    // the UTC offset, which we use to convert the entered local time to UTC.
+    const [year, month, day] = dayDate.split('-').map(Number);
+    const midnightUTC = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(midnightUTC);
+    const get = (type: string) => parseInt(parts.find(p => p.type === type)?.value || '0', 10);
+    // localH/localM = wall-clock time in target timezone when UTC is midnight
+    // e.g. Pacific/Honolulu (UTC-10): midnight UTC = 14:00 previous day in Honolulu
+    // but Intl gives us the Honolulu time for that UTC instant, so localH=14, localM=0
+    // UTC offset in minutes = (localH * 60 + localM) if localH < 12 (east of UTC)
+    //                       = (localH * 60 + localM) - 24*60 if localH >= 12 (west of UTC)
+    const rawH = get('hour') === 24 ? 0 : get('hour');
+    const rawM = get('minute');
+    // offsetMinutes = local - UTC; since UTC is midnight (0), offset = rawH*60+rawM
+    // but if rawH >= 12, the timezone is behind UTC (e.g. UTC-10 => rawH=14 on prev day)
+    // Actually Intl gives the local time for the UTC instant, so:
+    // localEpoch = midnightUTC.getTime() + (hours - rawH) * 3600000 + (minutes - rawM) * 60000
+    const localEpoch = midnightUTC.getTime() + (hours - rawH) * 3600000 + (minutes - rawM) * 60000;
+    return new Date(localEpoch);
+  } catch {
+    // Fallback to UTC if timezone is invalid
+    const [year, month, day] = dayDate.split('-').map(Number);
+    return new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
+  }
+}
+
+export function parseEventTime(rawText: string, dayDate: string, timezone?: string): Date | null {
   // Look for explicit HHMM at the start of the text or after common prefixes
   // Patterns: "0830", "08:30", "0830:", "@0830", "at 0830"
   const explicitTimePattern = /(?:^|@|at\s+)(\d{1,2}):?(\d{2})\b/i;
@@ -581,8 +626,7 @@ export function parseEventTime(rawText: string, dayDate: string): Date | null {
     const minutes = parseInt(match[2], 10);
     
     if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
-      const [year, month, day] = dayDate.split('-').map(Number);
-      return new Date(year, month - 1, day, hours, minutes, 0);
+      return localHHMMtoUTC(hours, minutes, dayDate, timezone);
     }
   }
   

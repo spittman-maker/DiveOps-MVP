@@ -122,6 +122,17 @@ export function LibraryTab() {
     toast({ title: "Archived", description: `${ids.length} document(s) archived` });
   };
 
+  const { data: projectDocs = [] } = useQuery<any[]>({
+    queryKey: ["library-project-docs", activeProject?.id],
+    queryFn: async () => {
+      if (!activeProject?.id) return [];
+      const res = await fetch(`/api/projects/${activeProject.id}/library`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!activeProject?.id,
+  });
+
   const { data: docs = SAMPLE_DOCS } = useQuery<LibraryDocument[]>({
     queryKey: ["library-docs"],
     queryFn: async () => {
@@ -226,6 +237,13 @@ export function LibraryTab() {
             className="data-[state=active]:bg-navy-600 text-white"
           >
             Shift Exports ({activeExports.length})
+          </TabsTrigger>
+          <TabsTrigger 
+            value="checklists" 
+            data-testid="tab-checklists"
+            className="data-[state=active]:bg-navy-600 text-white"
+          >
+            Completed Checklists ({projectDocs.filter((d: any) => d.docType === 'project_doc' || d.doc_type === 'project_doc').length})
           </TabsTrigger>
           <TabsTrigger 
             value="reference" 
@@ -392,6 +410,48 @@ export function LibraryTab() {
                         ))}
                       </div>
                     </div>
+                  ))}
+              </div>
+            )}
+          </ScrollArea>
+        </TabsContent>
+
+        <TabsContent value="checklists" className="mt-0">
+          <ScrollArea className="h-[calc(100vh-280px)]">
+            {projectDocs.filter((d: any) => d.docType === 'project_doc' || d.doc_type === 'project_doc').length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-navy-400">
+                <FileText className="w-12 h-12 mb-3 opacity-40" />
+                <p className="text-sm">No completed checklists yet.</p>
+                <p className="text-xs mt-1">Complete a safety checklist and it will appear here.</p>
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                {projectDocs
+                  .filter((d: any) => d.docType === 'project_doc' || d.doc_type === 'project_doc')
+                  .map((doc: any) => (
+                    <Card key={doc.id} className="bg-navy-800/50 border-navy-600 hover:bg-navy-800/70 transition-colors">
+                      <CardContent className="py-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <FileText className="w-5 h-5 text-emerald-400" />
+                            <div>
+                              <p className="text-white font-medium text-sm">{doc.title || doc.name}</p>
+                              <p className="text-navy-400 text-xs mt-0.5">
+                                {doc.createdAt ? new Date(doc.createdAt).toLocaleString() : doc.uploadedAt || ""}
+                              </p>
+                            </div>
+                          </div>
+                          <Badge className="bg-emerald-600/20 text-emerald-400 border-emerald-600/30 text-xs">
+                            Completed
+                          </Badge>
+                        </div>
+                        {doc.content && (
+                          <pre className="mt-3 text-xs text-navy-300 bg-navy-900/50 rounded p-3 whitespace-pre-wrap max-h-48 overflow-y-auto">
+                            {doc.content}
+                          </pre>
+                        )}
+                      </CardContent>
+                    </Card>
                   ))}
               </div>
             )}

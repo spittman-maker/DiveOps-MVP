@@ -4,7 +4,7 @@ import express from "express";
 import { storage } from "./storage";
 import { passport, hashPassword, requireAuth, requireRole, canWriteLogEvents, isGod, isAdminOrHigher } from "./auth";
 import { requireProjectAccess, requireDayAccess, requireCompanyAccess, requireGod } from "./authz";
-import { classifyEvent, extractData, parseEventTime, generateRiskId, getMasterLogSection, renderInternalCanvasLine, detectDirectiveTag, hasRiskKeywords, isStopWork, detectHazards } from "./extraction";
+import { classifyEvent, extractData, parseEventTime, localHHMMtoUTC, generateRiskId, getMasterLogSection, renderInternalCanvasLine, detectDirectiveTag, hasRiskKeywords, isStopWork, detectHazards } from "./extraction";
 import { processStructuredLog } from "./logging";
 import { generateAIRenders, type SOPContext } from "./ai-drafting";
 import { generateShiftExport, snapshotExportData, generateShiftExportFromSnapshot } from "./document-export";
@@ -1167,19 +1167,29 @@ export async function registerRoutes(
     try {
       const { pool } = await import("./storage");
       const result = await pool.query(
-        `SELECT * FROM "checklist_completions" WHERE "project_id" = $1 ORDER BY "completed_at" DESC`,
+        `SELECT cc.*, sc.title as checklist_title, sc.checklist_type
+         FROM "checklist_completions" cc
+         LEFT JOIN "safety_checklists" sc ON sc.id = cc.checklist_id
+         WHERE cc."project_id" = $1 ORDER BY cc."created_at" DESC`,
         [req.params.projectId]
       );
       const completions = result.rows.map((row: any) => ({
         id: row.id,
         checklistId: row.checklist_id,
+        checklistTitle: row.checklist_title,
+        checklistType: row.checklist_type,
         projectId: row.project_id,
+        dayId: row.day_id,
         completedBy: row.completed_by,
-        completedAt: row.completed_at,
+        completedByName: row.completed_by_name,
+        completedAt: row.created_at,
         responses: row.responses,
-        signature: row.signature,
+        signature: row.signature || row.digital_signature,
+        signedAt: row.signed_at,
         notes: row.notes,
         status: row.status,
+        overallStatus: row.overall_status,
+        createdAt: row.created_at,
       }));
       res.json(completions);
     } catch (err: any) {
@@ -1822,18 +1832,20 @@ export async function registerRoutes(
       const projectId = data.projectId || day.projectId;
       if (!projectId) return res.status(400).json({ message: "Could not determine projectId" });
 
+      // Fetch project for company isolation check AND timezone
+      const project = await storage.getProject(projectId);
       // BUG-ISO-03 FIX: Enforce company boundary on log-event writes
       if (isEnabled("multiTenantOrg") && !isGod(user.role)) {
-        const project = await storage.getProject(projectId);
         if (project?.companyId && user.companyId && project.companyId !== user.companyId) {
           return res.status(403).json({ message: "Forbidden: project belongs to a different company" });
         }
       }
-
       // Check if day is closed
       if (day.status === "CLOSED" && !isGod(user.role)) {
         return res.status(403).json({ message: "Day is closed" });
       }
+      // Project timezone for local-time → UTC conversion (BUG-TZ-01 FIX)
+      const projectTimezone = project?.timezone || undefined;
       
       // Determine event time
       const captureTime = new Date();
@@ -1843,7 +1855,8 @@ export async function registerRoutes(
         eventTime = new Date(data.eventTimeOverride);
       } else {
         // Try to parse HHMM from raw text — supervisor's entered time is law
-        const parsedTime = parseEventTime(data.rawText, day.date);
+        // Pass project timezone so "0705" in Pacific/Honolulu => 17:05 UTC
+        const parsedTime = parseEventTime(data.rawText, day.date, projectTimezone);
         if (parsedTime) {
           eventTime = parsedTime;
         } else if (data.clientTimezone) {
@@ -2653,10 +2666,13 @@ export async function registerRoutes(
         "lsTime", "rbTime", "lbTime", "rsTime",
       ];
       
-      const timeFields = ["lsTime", "rbTime", "lbTime", "rsTime"];
+       const timeFields = ["lsTime", "rbTime", "lbTime", "rsTime"];
       const numericFields = ["maxDepthFsw", "fo2Percent", "eadFsw"];
-
       const updates: Record<string, any> = {};
+      // BUG-TZ-01 FIX: Fetch day + project timezone once for all time field conversions
+      const diveDay = await storage.getDay(dive.dayId);
+      const diveProject = diveDay?.projectId ? await storage.getProject(diveDay.projectId) : null;
+      const diveTz = diveProject?.timezone || undefined;
       for (const field of allowedFields) {
         if (req.body[field] !== undefined) {
           let val = req.body[field];
@@ -2668,10 +2684,9 @@ export async function registerRoutes(
               if (timeMatch) {
                 const hours = parseInt(timeMatch[1], 10);
                 const minutes = parseInt(timeMatch[2], 10);
-                const day = await storage.getDay(dive.dayId);
-                const base = day?.date ? new Date(day.date + "T00:00:00Z") : new Date();
-                base.setUTCHours(hours, minutes, 0, 0);
-                updates[field] = base;
+                // Convert from project local time to UTC using project timezone
+                const dayDate = diveDay?.date || new Date().toISOString().slice(0, 10);
+                updates[field] = localHHMMtoUTC(hours, minutes, dayDate, diveTz);
               } else {
                 const parsed = new Date(val);
                 if (!isNaN(parsed.getTime())) {
