@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import express from "express";
 import { storage } from "./storage";
 import { passport, hashPassword, requireAuth, requireRole, canWriteLogEvents, isGod, isAdminOrHigher } from "./auth";
-import { requireProjectAccess, requireDayAccess } from "./authz";
+import { requireProjectAccess, requireDayAccess, requireCompanyAccess, requireGod } from "./authz";
 import { classifyEvent, extractData, parseEventTime, generateRiskId, getMasterLogSection, renderInternalCanvasLine, detectDirectiveTag, hasRiskKeywords, isStopWork, detectHazards } from "./extraction";
 import { processStructuredLog } from "./logging";
 import { generateAIRenders, type SOPContext } from "./ai-drafting";
@@ -247,6 +247,20 @@ export async function registerRoutes(
   app.get("/api/auth/me", requireAuth, async (req: Request, res: Response) => {
     const user = getUser(req);
     const prefs = await storage.getUserPreferences(user.id);
+    // Multi-tenant: include companyId and companyName in session
+    let companyId = user.companyId || null;
+    let companyName: string | null = null;
+    let activeCompanyId: string | null = null;
+    if (isEnabled("multiTenantOrg")) {
+      if (user.role === "GOD" && prefs?.activeCompanyId) {
+        activeCompanyId = prefs.activeCompanyId;
+        const company = await storage.getCompany(prefs.activeCompanyId);
+        if (company) companyName = company.companyName;
+      } else if (companyId) {
+        const company = await storage.getCompany(companyId);
+        if (company) companyName = company.companyName;
+      }
+    }
     res.json({
       id: user.id,
       username: user.username,
@@ -255,6 +269,9 @@ export async function registerRoutes(
       initials: user.initials,
       activeProjectId: prefs?.activeProjectId,
       mustChangePassword: user.mustChangePassword,
+      companyId,
+      companyName,
+      activeCompanyId,
     });
   });
 
@@ -892,7 +909,35 @@ export async function registerRoutes(
   app.get("/api/projects", requireAuth, async (req: Request, res: Response) => {
     const user = getUser(req);
     
-    // GOD sees all projects, others see only their assigned projects
+    if (isEnabled("multiTenantOrg")) {
+      // Multi-tenant mode
+      if (isGod(user.role)) {
+        // GOD can filter by company or see all
+        const companyFilter = req.query.companyId as string;
+        if (companyFilter) {
+          const projects = await storage.getProjectsByCompany(companyFilter);
+          return res.json(projects);
+        }
+        // If GOD has an active company context, scope to that
+        const prefs = await storage.getUserPreferences(user.id);
+        if (prefs?.activeCompanyId) {
+          const projects = await storage.getProjectsByCompany(prefs.activeCompanyId);
+          return res.json(projects);
+        }
+        const projects = await storage.getAllProjects();
+        return res.json(projects);
+      }
+      // ADMIN: scoped to their company
+      if (user.companyId) {
+        const projects = await storage.getProjectsByCompany(user.companyId);
+        return res.json(projects);
+      }
+      // SUPERVISOR/DIVER: only their assigned projects
+      const projects = await storage.getUserProjects(user.id);
+      return res.json(projects);
+    }
+    
+    // Legacy mode: GOD sees all, others see assigned
     if (isGod(user.role)) {
       const projects = await storage.getAllProjects();
       return res.json(projects);
@@ -910,9 +955,31 @@ export async function registerRoutes(
 
   app.post("/api/projects", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
-      const { name, clientName, jobsiteName, jobsiteAddress, jobsiteLat, jobsiteLng, timezone } = req.body;
+      const { name, clientName, jobsiteName, jobsiteAddress, jobsiteLat, jobsiteLng, timezone, companyId: bodyCompanyId } = req.body;
       if (!name || !name.trim()) {
         return res.status(400).json({ message: "Project name is required" });
+      }
+      // Multi-tenant: resolve companyId
+      let resolvedCompanyId: string | null = null;
+      if (isEnabled("multiTenantOrg")) {
+        const user = getUser(req);
+        if (isGod(user.role)) {
+          // GOD must specify companyId or use active company context
+          resolvedCompanyId = bodyCompanyId || null;
+          if (!resolvedCompanyId) {
+            const prefs = await storage.getUserPreferences(user.id);
+            resolvedCompanyId = prefs?.activeCompanyId || null;
+          }
+          if (!resolvedCompanyId) {
+            return res.status(400).json({ message: "companyId is required when creating a project as GOD" });
+          }
+        } else {
+          // ADMIN: auto-assign to their company
+          resolvedCompanyId = user.companyId || null;
+          if (!resolvedCompanyId) {
+            return res.status(400).json({ message: "You must be assigned to a company to create projects" });
+          }
+        }
       }
       const project = await storage.createProject({
         name: name.trim(),
@@ -922,6 +989,7 @@ export async function registerRoutes(
         jobsiteLat: jobsiteLat || null,
         jobsiteLng: jobsiteLng || null,
         timezone: timezone || "America/New_York",
+        ...(resolvedCompanyId ? { companyId: resolvedCompanyId } : {}),
       });
 
       // Auto-seed default safety checklists for the new project (non-blocking)
@@ -3658,6 +3726,19 @@ If you're not confident about specific facilities, say so in the notes field. Al
   // ──────────────────────────────────────────────────────────────────────────
 
   app.get("/api/admin/users", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+    // Multi-tenant scoping for admin user list
+    if (isEnabled("multiTenantOrg")) {
+      const user = getUser(req);
+      if (!isGod(user.role) && user.companyId) {
+        try {
+          const users = await storage.getUsersByCompany(user.companyId);
+          const sanitized = users.map(({ password, ...rest }: any) => rest);
+          return res.json(sanitized);
+        } catch (error) {
+          return res.status(500).json({ message: "Failed to list users" });
+        }
+      }
+    }
     try {
       const allUsers = await storage.listUsers();
 
@@ -3731,7 +3812,20 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.get("/api/users", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
-      const users = await storage.listUsers();
+      const user = getUser(req);
+      let users;
+      if (isEnabled("multiTenantOrg") && !isGod(user.role)) {
+        // ADMIN: only see users in their company
+        if (!user.companyId) {
+          return res.json([]);
+        }
+        users = await storage.getUsersByCompany(user.companyId);
+      } else if (isEnabled("multiTenantOrg") && isGod(user.role) && req.query.companyId) {
+        // GOD filtering by company
+        users = await storage.getUsersByCompany(req.query.companyId as string);
+      } else {
+        users = await storage.listUsers();
+      }
       const sanitized = users.map(({ password, ...rest }) => rest);
       res.json(sanitized);
     } catch (error) {
@@ -3739,21 +3833,32 @@ If you're not confident about specific facilities, say so in the notes field. Al
     }
   });
 
-  app.post("/api/users", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+    app.post("/api/users", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
       const data = adminCreateUserSchema.parse(req.body);
-
       const existing = await storage.getUserByUsername(data.username);
       if (existing) {
         return res.status(400).json({ message: "Username already exists" });
       }
-
       // Generate a secure random temporary password if none provided or if "changeme123"
       const crypto = await import("crypto");
       const tempPassword = data.password && data.password !== "changeme123"
         ? data.password
         : crypto.randomBytes(12).toString("base64url");
-
+      // Multi-tenant: resolve companyId for new user
+      let newUserCompanyId: string | null = null;
+      if (isEnabled("multiTenantOrg")) {
+        const creator = getUser(req);
+        if (isGod(creator.role)) {
+          newUserCompanyId = (req.body as any).companyId || null;
+        } else {
+          newUserCompanyId = creator.companyId || null;
+        }
+        // ADMIN cannot create GOD users
+        if (!isGod(creator.role) && data.role === "GOD") {
+          return res.status(403).json({ message: "Only GOD can create GOD users" });
+        }
+      }
       const user = await storage.createUser({
         username: data.username,
         password: hashPassword(tempPassword),
@@ -3762,6 +3867,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
         initials: data.initials || null,
         email: data.email || null,
         mustChangePassword: true,
+        ...(newUserCompanyId ? { companyId: newUserCompanyId } : {}),
       });
 
       const { password, ...sanitized } = user;
@@ -3810,7 +3916,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
   // AUDIT TRAIL API
   // ────────────────────────────────────────────────────────────────────────────
 
-  app.get("/api/audit-events", requireRole("GOD"), async (req: Request, res: Response) => {
+  app.get("/api/audit-events", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
       // SEC-07 FIX: Add pagination with offset and cap limit to prevent unbounded queries
       const rawLimit = req.query.limit ? parseInt(req.query.limit as string) : 200;
@@ -4593,7 +4699,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.post("/api/admin/feature-flags", requireRole("GOD"), async (req: Request, res: Response) => {
     const { flag, enabled } = req.body;
-    const validFlags = ["closeDay", "riskCreation", "exportGeneration", "aiProcessing", "safetyTab"];
+    const validFlags = ["closeDay", "riskCreation", "exportGeneration", "aiProcessing", "safetyTab", "multiTenantOrg"];
     if (!validFlags.includes(flag)) {
       return res.status(400).json({ message: `Invalid flag. Valid flags: ${validFlags.join(", ")}` });
     }
@@ -4994,6 +5100,209 @@ If you're not confident about specific facilities, say so in the notes field. Al
       return res.json({ success: true, ...crewHoursStore[key] });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ════════════════════════════════════════════════════════════════════
+  // COMPANY MANAGEMENT (GOD-only CRUD)
+  // ════════════════════════════════════════════════════════════════════
+
+  app.get("/api/companies", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      if (isGod(user.role)) {
+        const companies = await storage.getAllCompanies();
+        return res.json(companies);
+      }
+      // Non-GOD: return only their company
+      if (user.companyId) {
+        const company = await storage.getCompany(user.companyId);
+        return res.json(company ? [company] : []);
+      }
+      res.json([]);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to list companies" });
+    }
+  });
+
+  app.get("/api/companies/:companyId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const company = await storage.getCompany(req.params.companyId);
+      if (!company) return res.status(404).json({ message: "Company not found" });
+      // Non-GOD can only see their own company
+      const user = getUser(req);
+      if (!isGod(user.role) && user.companyId !== company.companyId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      res.json(company);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get company" });
+    }
+  });
+
+  app.post("/api/companies", requireRole("GOD"), async (req: Request, res: Response) => {
+    try {
+      const { companyName } = req.body;
+      if (!companyName || !companyName.trim()) {
+        return res.status(400).json({ message: "Company name is required" });
+      }
+      const company = await storage.createCompany({ companyName: companyName.trim() });
+      const ctx: AuditContext = { ...req.auditCtx! };
+      emitAuditEvent(ctx, "company.create", {
+        targetId: company.companyId, targetType: "company",
+        after: { companyId: company.companyId, companyName: company.companyName },
+      }).catch(() => {});
+      res.status(201).json(company);
+    } catch (error: any) {
+      if (error?.message?.includes("unique") || error?.message?.includes("duplicate")) {
+        return res.status(409).json({ message: "Company name already exists" });
+      }
+      res.status(500).json({ message: "Failed to create company" });
+    }
+  });
+
+  app.patch("/api/companies/:companyId", requireRole("GOD"), async (req: Request, res: Response) => {
+    try {
+      const company = await storage.updateCompany(req.params.companyId, req.body);
+      if (!company) return res.status(404).json({ message: "Company not found" });
+      res.json(company);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update company" });
+    }
+  });
+
+  app.delete("/api/companies/:companyId", requireRole("GOD"), async (req: Request, res: Response) => {
+    try {
+      const deleted = await storage.deleteCompany(req.params.companyId);
+      if (!deleted) return res.status(404).json({ message: "Company not found" });
+      const ctx: AuditContext = { ...req.auditCtx! };
+      emitAuditEvent(ctx, "company.delete", {
+        targetId: req.params.companyId, targetType: "company",
+      }).catch(() => {});
+      res.json({ message: "Company deleted" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete company" });
+    }
+  });
+
+  // ════════════════════════════════════════════════════════════════════
+  // COMPANY MEMBER MANAGEMENT
+  // ════════════════════════════════════════════════════════════════════
+
+  app.get("/api/companies/:companyId/members", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const { companyId } = req.params;
+      // Only GOD or members of the company can see members
+      if (!isGod(user.role) && user.companyId !== companyId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      const members = await storage.getCompanyMembers(companyId);
+      // Enrich with user details
+      const enriched = await Promise.all(members.map(async (m) => {
+        const u = await storage.getUser(m.userId);
+        return {
+          ...m,
+          user: u ? { id: u.id, username: u.username, fullName: u.fullName, initials: u.initials, role: u.role, email: u.email } : null,
+        };
+      }));
+      res.json(enriched);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to list company members" });
+    }
+  });
+
+  app.post("/api/companies/:companyId/members", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const { companyId } = req.params;
+      // ADMIN can only add to their own company
+      if (!isGod(user.role) && user.companyId !== companyId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      const { userId, companyRole } = req.body;
+      if (!userId || !companyRole) {
+        return res.status(400).json({ message: "userId and companyRole are required" });
+      }
+      const member = await storage.addCompanyMember({
+        companyId,
+        userId,
+        companyRole,
+        addedBy: user.id,
+      });
+      // Also update the user's companyId
+      await storage.updateUser(userId, { companyId } as any);
+      const ctx: AuditContext = { ...req.auditCtx! };
+      emitAuditEvent(ctx, "company_member.add", {
+        targetId: userId, targetType: "company_member",
+        metadata: { companyId, companyRole },
+      }).catch(() => {});
+      res.status(201).json(member);
+    } catch (error: any) {
+      if (error?.message?.includes("duplicate") || error?.message?.includes("unique")) {
+        return res.status(409).json({ message: "User is already a member of this company" });
+      }
+      res.status(500).json({ message: "Failed to add company member" });
+    }
+  });
+
+  app.patch("/api/companies/:companyId/members/:userId", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const { companyId, userId } = req.params;
+      if (!isGod(user.role) && user.companyId !== companyId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      const updated = await storage.updateCompanyMember(companyId, userId, req.body);
+      if (!updated) return res.status(404).json({ message: "Member not found" });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update company member" });
+    }
+  });
+
+  app.delete("/api/companies/:companyId/members/:userId", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const { companyId, userId } = req.params;
+      if (!isGod(user.role) && user.companyId !== companyId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      const removed = await storage.removeCompanyMember(companyId, userId);
+      if (!removed) return res.status(404).json({ message: "Member not found" });
+      const ctx: AuditContext = { ...req.auditCtx! };
+      emitAuditEvent(ctx, "company_member.remove", {
+        targetId: userId, targetType: "company_member",
+        metadata: { companyId },
+      }).catch(() => {});
+      res.json({ message: "Member removed" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to remove company member" });
+    }
+  });
+
+  // GOD: Set active company context
+  app.post("/api/companies/:companyId/activate", requireRole("GOD"), async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const { companyId } = req.params;
+      const company = await storage.getCompany(companyId);
+      if (!company) return res.status(404).json({ message: "Company not found" });
+      await storage.setActiveCompany(user.id, companyId);
+      res.json({ message: "Active company set", companyId, companyName: company.companyName });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to set active company" });
+    }
+  });
+
+  // GOD: Clear active company context (see all companies)
+  app.post("/api/companies/clear-active", requireRole("GOD"), async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      await storage.setActiveCompany(user.id, "");
+      res.json({ message: "Active company cleared" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to clear active company" });
     }
   });
 

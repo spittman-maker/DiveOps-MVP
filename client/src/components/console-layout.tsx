@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ChatAssistant } from "./chat-assistant";
 import { PwaInstallBanner } from "./pwa-install-banner";
+import { CompanySwitcher } from "./company-switcher";
 import { Sun, Moon, LogOut, MessageSquare } from "lucide-react";
 
 interface ConsoleLayoutProps {
@@ -67,6 +68,8 @@ export function ConsoleLayout({ children, activeTab, onTabChange }: ConsoleLayou
           <span className="text-sm font-mono text-white/70">
             {new Date().toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
           </span>
+          {/* Company context switcher — GOD gets dropdown, ADMIN gets static badge */}
+          <CompanySwitcher />
         </div>
 
         <div className="flex items-center gap-3">

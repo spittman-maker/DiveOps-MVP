@@ -26,6 +26,9 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useProject } from "@/hooks/use-project";
+import { useCompany } from "@/hooks/use-company";
+import { useFeatureFlags } from "@/hooks/use-feature-flags";
+import { Building2 } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -785,9 +788,333 @@ function AuditLogSection({ allUsers }: { allUsers: UserRecord[] }) {
   );
 }
 
+interface CompanyRecord {
+  companyId: string;
+  companyName: string;
+}
+
+interface CompanyMemberRecord {
+  companyId: string;
+  userId: string;
+  companyRole: string;
+  addedAt?: string;
+  user?: {
+    id: string;
+    username: string;
+    fullName?: string;
+    initials?: string;
+    role: string;
+    email?: string;
+  };
+}
+
+function CompanyManagementSection() {
+  const { isGod } = useAuth();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [createCompanyOpen, setCreateCompanyOpen] = useState(false);
+  const [companyName, setCompanyName] = useState("");
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
+  const [addMemberOpen, setAddMemberOpen] = useState(false);
+  const [newMemberUserId, setNewMemberUserId] = useState("");
+  const [newMemberRole, setNewMemberRole] = useState("DIVER");
+
+  const { data: companiesList = [] } = useQuery<CompanyRecord[]>({
+    queryKey: ["companies"],
+    queryFn: async () => {
+      const res = await fetch("/api/companies", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const { data: companyMembers = [], refetch: refetchMembers } = useQuery<CompanyMemberRecord[]>({
+    queryKey: ["company-members", selectedCompanyId],
+    queryFn: async () => {
+      if (!selectedCompanyId) return [];
+      const res = await fetch(`/api/companies/${selectedCompanyId}/members`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: allUsersForCompany = [] } = useQuery<UserRecord[]>({
+    queryKey: ["users"],
+    queryFn: async () => {
+      const res = await fetch("/api/users", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const createCompanyMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const res = await fetch("/api/companies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ companyName: name }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Failed" }));
+        throw new Error(err.message);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["companies"] });
+      setCreateCompanyOpen(false);
+      setCompanyName("");
+      toast({ title: "Company created" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
+    },
+  });
+
+  const addMemberMutation = useMutation({
+    mutationFn: async ({ companyId, userId, companyRole }: { companyId: string; userId: string; companyRole: string }) => {
+      const res = await fetch(`/api/companies/${companyId}/members`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ userId, companyRole }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Failed" }));
+        throw new Error(err.message);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchMembers();
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      setAddMemberOpen(false);
+      setNewMemberUserId("");
+      setNewMemberRole("DIVER");
+      toast({ title: "Member added" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
+    },
+  });
+
+  const removeMemberMutation = useMutation({
+    mutationFn: async ({ companyId, userId }: { companyId: string; userId: string }) => {
+      const res = await fetch(`/api/companies/${companyId}/members/${userId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to remove member");
+    },
+    onSuccess: () => {
+      refetchMembers();
+      toast({ title: "Member removed" });
+    },
+  });
+
+  const memberUserIds = new Set(companyMembers.map(m => m.userId));
+  const availableUsersForCompany = allUsersForCompany.filter(u => !memberUserIds.has(u.id));
+
+  return (
+    <ScrollArea className="h-[calc(100vh-240px)]">
+      <div className="grid gap-4">
+        <Button
+          data-testid="button-create-company"
+          className="btn-gold-metallic hover:btn-gold-metallic w-full"
+          onClick={() => setCreateCompanyOpen(true)}
+        >
+          <Building2 className="h-4 w-4 mr-2" />
+          Create Company
+        </Button>
+
+        {companiesList.map((company) => (
+          <Card
+            key={company.companyId}
+            data-testid={`company-card-${company.companyId}`}
+            className={`bg-navy-800/50 border-navy-600 cursor-pointer transition-colors ${
+              selectedCompanyId === company.companyId ? "border-amber-500" : ""
+            }`}
+            onClick={() => setSelectedCompanyId(
+              selectedCompanyId === company.companyId ? null : company.companyId
+            )}
+          >
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-white text-base flex items-center gap-2">
+                  <Building2 className="h-4 w-4" />
+                  {company.companyName}
+                </CardTitle>
+                <Badge className="bg-green-600">Active</Badge>
+              </div>
+            </CardHeader>
+            {selectedCompanyId === company.companyId && (
+              <CardContent>
+                <div className="mt-2">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-medium text-navy-300">Members</h4>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-navy-500 text-xs"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setAddMemberOpen(true);
+                      }}
+                    >
+                      <Plus className="h-3 w-3 mr-1" /> Add Member
+                    </Button>
+                  </div>
+                  {companyMembers.length === 0 ? (
+                    <p className="text-navy-400 text-sm">No members assigned</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {companyMembers.map((member) => (
+                        <div
+                          key={member.userId}
+                          className="flex items-center justify-between bg-navy-700/50 rounded px-3 py-2"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-white text-sm">
+                              {member.user?.fullName || member.user?.username || member.userId}
+                            </span>
+                            <Badge className="bg-blue-600 text-xs">
+                              {member.companyRole}
+                            </Badge>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-red-400 hover:text-red-300 h-6 w-6 p-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeMemberMutation.mutate({
+                                companyId: company.companyId,
+                                userId: member.userId,
+                              });
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            )}
+          </Card>
+        ))}
+
+        {companiesList.length === 0 && (
+          <div className="text-center py-12">
+            <p className="text-navy-400">No companies found</p>
+          </div>
+        )}
+      </div>
+
+      {/* Create Company Dialog */}
+      <Dialog open={createCompanyOpen} onOpenChange={setCreateCompanyOpen}>
+        <DialogContent className="bg-navy-900 border-navy-600 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">Create Company</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-navy-300">Company Name</Label>
+              <Input
+                data-testid="input-company-name"
+                className="bg-navy-800 border-navy-600 text-white"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                placeholder="e.g., SEA Engineering"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" className="border-navy-500" onClick={() => setCreateCompanyOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              data-testid="button-submit-create-company"
+              className="btn-gold-metallic"
+              onClick={() => createCompanyMutation.mutate(companyName)}
+              disabled={createCompanyMutation.isPending || !companyName.trim()}
+            >
+              {createCompanyMutation.isPending ? "Creating..." : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Member Dialog */}
+      <Dialog open={addMemberOpen} onOpenChange={setAddMemberOpen}>
+        <DialogContent className="bg-navy-900 border-navy-600 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">Add Company Member</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-navy-300">User</Label>
+              <Select value={newMemberUserId} onValueChange={setNewMemberUserId}>
+                <SelectTrigger className="bg-navy-800 border-navy-600 text-white">
+                  <SelectValue placeholder="Select user" />
+                </SelectTrigger>
+                <SelectContent className="bg-navy-800 border-navy-600">
+                  {availableUsersForCompany.map((u) => (
+                    <SelectItem key={u.id} value={u.id} className="text-white">
+                      {u.fullName || u.username} (@{u.username})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-navy-300">Company Role</Label>
+              <Select value={newMemberRole} onValueChange={setNewMemberRole}>
+                <SelectTrigger className="bg-navy-800 border-navy-600 text-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-navy-800 border-navy-600">
+                  <SelectItem value="ADMIN" className="text-white">Administrator</SelectItem>
+                  <SelectItem value="SUPERVISOR" className="text-white">Supervisor</SelectItem>
+                  <SelectItem value="DIVER" className="text-white">Diver</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" className="border-navy-500" onClick={() => setAddMemberOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              className="btn-gold-metallic"
+              onClick={() => {
+                if (selectedCompanyId && newMemberUserId) {
+                  addMemberMutation.mutate({
+                    companyId: selectedCompanyId,
+                    userId: newMemberUserId,
+                    companyRole: newMemberRole,
+                  });
+                }
+              }}
+              disabled={addMemberMutation.isPending || !newMemberUserId}
+            >
+              {addMemberMutation.isPending ? "Adding..." : "Add Member"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </ScrollArea>
+  );
+}
+
 export function AdminTab() {
-  const { isAdmin, isGod } = useAuth();
+  const { isAdmin, isGod, user } = useAuth();
   const { activeProject } = useProject();
+  const { companies, activeCompany, isMultiTenant } = useCompany();
+  const featureFlags = useFeatureFlags();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [activeSection, setActiveSection] = useState("projects");
@@ -1360,6 +1687,15 @@ export function AdminTab() {
             Audit Log
           </TabsTrigger>
           )}
+          {isGod && isMultiTenant && (
+            <TabsTrigger
+              data-testid="admin-tab-companies"
+              value="companies"
+              className="data-[state=active]:bg-navy-700"
+            >
+              Companies
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* ───── PROJECTS TAB ───── */}
@@ -1724,6 +2060,12 @@ export function AdminTab() {
         <TabsContent value="audit" className="h-full mt-0">
           <AuditLogSection allUsers={allUsers} />
         </TabsContent>
+        )}
+        {/* ───── COMPANIES TAB (GOD + multiTenantOrg) ───── */}
+        {isGod && isMultiTenant && (
+          <TabsContent value="companies" className="h-full mt-0">
+            <CompanyManagementSection />
+          </TabsContent>
         )}
       </Tabs>
 

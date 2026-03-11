@@ -9,6 +9,9 @@ interface User {
   initials?: string;
   activeProjectId?: string;
   mustChangePassword?: boolean;
+  companyId?: string;
+  companyName?: string;
+  activeCompanyId?: string;
 }
 
 interface AuthContextType {

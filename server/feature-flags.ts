@@ -7,6 +7,7 @@ export interface FeatureFlags {
   exportGeneration: boolean;
   aiProcessing: boolean;
   safetyTab: boolean;
+  multiTenantOrg: boolean;
 }
 
 const defaults: FeatureFlags = {
@@ -15,6 +16,7 @@ const defaults: FeatureFlags = {
   exportGeneration: true,
   aiProcessing: true,
   safetyTab: true,
+  multiTenantOrg: false, // OFF by default; enabled explicitly after migration
 };
 
 let overrides: Partial<FeatureFlags> = {};

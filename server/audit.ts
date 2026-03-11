@@ -11,6 +11,7 @@ export interface AuditContext {
   correlationId: string;
   userId?: string;
   userRole?: UserRole;
+  companyId?: string;
   projectId?: string;
   dayId?: string;
   ipAddress?: string;
@@ -33,6 +34,7 @@ export async function emitAuditEvent(
       action,
       userId: ctx.userId || null,
       userRole: ctx.userRole || null,
+      companyId: ctx.companyId || null,
       projectId: ctx.projectId || null,
       dayId: ctx.dayId || null,
       targetId: opts.targetId || null,

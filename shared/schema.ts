@@ -58,6 +58,25 @@ export type InsertCompanyRole = z.infer<typeof insertCompanyRoleSchema>;
 export type CompanyRole = typeof companyRoles.$inferSelect;
 
 // ────────────────────────────────────────────────────────────────────────────
+// COMPANY MEMBERS (multi-tenant role management)
+// ────────────────────────────────────────────────────────────────────────────
+
+export const companyMembers = pgTable("company_members", {
+  companyId: uuid("company_id").notNull().references(() => companies.companyId, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyRole: text("company_role").notNull().$type<"ADMIN" | "SUPERVISOR" | "DIVER">(),
+  addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
+  addedBy: varchar("added_by").references(() => users.id, { onDelete: "set null" }),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.companyId, t.userId] }),
+  userIdx: index("idx_company_members_user_id").on(t.userId),
+}));
+
+export const insertCompanyMemberSchema = createInsertSchema(companyMembers).omit({ addedAt: true });
+export type InsertCompanyMember = z.infer<typeof insertCompanyMemberSchema>;
+export type CompanyMember = typeof companyMembers.$inferSelect;
+
+// ────────────────────────────────────────────────────────────────────────────
 // COMPANY CONTACTS DEFAULTS (fallback contacts per role)
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -155,10 +174,13 @@ export const users = pgTable("users", {
   fullName: text("full_name"),
   initials: text("initials"),
   email: text("email"),
+  companyId: uuid("company_id").references(() => companies.companyId, { onDelete: "set null" }),
   mustChangePassword: boolean("must_change_password").default(false).notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (t) => ({
+  companyIdx: index("idx_users_company_id").on(t.companyId),
+}));
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -172,6 +194,7 @@ export const diverCertifications = pgTable("diver_certifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  companyId: uuid("company_id").references(() => companies.companyId, { onDelete: "set null" }),
   certName: text("cert_name"),
   certType: text("cert_type").notNull(),
   certNumber: text("cert_number"),
@@ -189,6 +212,7 @@ export const diverCertifications = pgTable("diver_certifications", {
 }, (t) => ({
   userIdx: index("diver_certs_user_idx").on(t.userId),
   projectIdx: index("diver_certs_project_idx").on(t.projectId),
+  companyIdx: index("idx_diver_certs_company_id").on(t.companyId),
   expirationIdx: index("diver_certs_expiration_idx").on(t.expirationDate),
 }));
 
@@ -243,10 +267,13 @@ export const projects = pgTable("projects", {
   jobsiteLat: text("jobsite_lat"),
   jobsiteLng: text("jobsite_lng"),
   timezone: text("timezone").default("America/New_York"),
+  companyId: uuid("company_id").references(() => companies.companyId, { onDelete: "restrict" }),
   emergencyContacts: jsonb("emergency_contacts").$type<{ name: string; role: string; phone: string }[]>(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (t) => ({
+  companyIdx: index("idx_projects_company_id").on(t.companyId),
+}));
 
 export const insertProjectSchema = createInsertSchema(projects).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProject = z.infer<typeof insertProjectSchema>;
@@ -268,6 +295,7 @@ export type ProjectMember = typeof projectMembers.$inferSelect;
 export const userPreferences = pgTable("user_preferences", {
   userId: varchar("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
   activeProjectId: varchar("active_project_id").references(() => projects.id, { onDelete: "set null" }),
+  activeCompanyId: uuid("active_company_id").references(() => companies.companyId, { onDelete: "set null" }),
 });
 
 export const insertUserPreferencesSchema = createInsertSchema(userPreferences);
@@ -931,7 +959,9 @@ export type AuditAction =
   | "day.create" | "day.activate" | "day.close" | "day.close_override" | "day.reopen"
   | "export.generate"
   | "user.create" | "user.update"
-  | "auth.login" | "auth.login_failed" | "auth.logout" | "auth.password_change";
+  | "auth.login" | "auth.login_failed" | "auth.logout" | "auth.password_change"
+  | "company.create" | "company.update" | "company.delete"
+  | "company_member.add" | "company_member.remove";
 
 export const auditEvents = pgTable("audit_events", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -939,6 +969,7 @@ export const auditEvents = pgTable("audit_events", {
   action: text("action").notNull().$type<AuditAction>(),
   userId: varchar("user_id").references(() => users.id),
   userRole: text("user_role").$type<UserRole>(),
+  companyId: uuid("company_id").references(() => companies.companyId, { onDelete: "set null" }),
   projectId: varchar("project_id").references(() => projects.id),
   dayId: varchar("day_id").references(() => days.id),
   targetId: text("target_id"),
@@ -952,6 +983,7 @@ export const auditEvents = pgTable("audit_events", {
   correlationIdx: index("audit_events_correlation_idx").on(t.correlationId),
   actionIdx: index("audit_events_action_idx").on(t.action),
   userIdx: index("audit_events_user_idx").on(t.userId),
+  companyIdx: index("idx_audit_events_company_id").on(t.companyId),
   timestampIdx: index("audit_events_timestamp_idx").on(t.timestamp),
   targetIdx: index("audit_events_target_idx").on(t.targetType, t.targetId),
 }));

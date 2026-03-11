@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { ProjectProvider } from "@/hooks/use-project";
+import { CompanyProvider } from "@/hooks/use-company";
 import { ThemeProvider } from "@/hooks/use-theme";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
@@ -31,7 +32,11 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <ChangePasswordPage />;
   }
 
-  return <ProjectProvider>{children}</ProjectProvider>;
+  return (
+    <CompanyProvider>
+      <ProjectProvider>{children}</ProjectProvider>
+    </CompanyProvider>
+  );
 }
 
 function Router() {

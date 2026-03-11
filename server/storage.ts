@@ -39,6 +39,7 @@ import type {
   MlPrediction, InsertMlPrediction,
   DiverCertification, InsertDiverCertification,
   EquipmentCertification, InsertEquipmentCertification,
+  CompanyMember, InsertCompanyMember,
 } from "@shared/schema";
 
 const pool = new Pool({
@@ -184,6 +185,20 @@ export interface IStorage {
   // Companies
   getCompany(id: string): Promise<Company | undefined>;
   getAllCompanies(): Promise<Company[]>;
+  createCompany(company: InsertCompany): Promise<Company>;
+  updateCompany(id: string, updates: Partial<InsertCompany>): Promise<Company | undefined>;
+  deleteCompany(id: string): Promise<boolean>;
+  // Company Members
+  getCompanyMembers(companyId: string): Promise<CompanyMember[]>;
+  getCompanyMemberByUser(companyId: string, userId: string): Promise<CompanyMember | undefined>;
+  addCompanyMember(member: InsertCompanyMember): Promise<CompanyMember>;
+  updateCompanyMember(companyId: string, userId: string, updates: Partial<InsertCompanyMember>): Promise<CompanyMember | undefined>;
+  removeCompanyMember(companyId: string, userId: string): Promise<boolean>;
+  getUserCompanyMemberships(userId: string): Promise<CompanyMember[]>;
+  // Multi-tenant queries
+  getProjectsByCompany(companyId: string): Promise<Project[]>;
+  getUsersByCompany(companyId: string): Promise<User[]>;
+  setActiveCompany(userId: string, companyId: string): Promise<void>;
 
   // Work Library
   getAllWorkLibraryItems(): Promise<WorkLibraryItem[]>;
@@ -1142,6 +1157,80 @@ export class DbStorage implements IStorage {
 
   async getAllCompanies(): Promise<Company[]> {
     return await db.select().from(schema.companies);
+  }
+  async createCompany(company: InsertCompany): Promise<Company> {
+    const [created] = await db.insert(schema.companies).values(company as any).returning();
+    return created!;
+  }
+  async updateCompany(id: string, updates: Partial<InsertCompany>): Promise<Company | undefined> {
+    const [updated] = await db.update(schema.companies)
+      .set(updates as any)
+      .where(eq(schema.companies.companyId, id))
+      .returning();
+    return updated;
+  }
+  async deleteCompany(id: string): Promise<boolean> {
+    const result = await db.delete(schema.companies)
+      .where(eq(schema.companies.companyId, id));
+    return (result as any).rowCount > 0;
+  }
+  // Company Members
+  async getCompanyMembers(companyId: string): Promise<CompanyMember[]> {
+    return await db.select().from(schema.companyMembers)
+      .where(eq(schema.companyMembers.companyId, companyId));
+  }
+  async getCompanyMemberByUser(companyId: string, userId: string): Promise<CompanyMember | undefined> {
+    const [member] = await db.select().from(schema.companyMembers)
+      .where(and(
+        eq(schema.companyMembers.companyId, companyId),
+        eq(schema.companyMembers.userId, userId)
+      ));
+    return member;
+  }
+  async addCompanyMember(member: InsertCompanyMember): Promise<CompanyMember> {
+    const [created] = await db.insert(schema.companyMembers).values(member as any).returning();
+    return created!;
+  }
+  async updateCompanyMember(companyId: string, userId: string, updates: Partial<InsertCompanyMember>): Promise<CompanyMember | undefined> {
+    const [updated] = await db.update(schema.companyMembers)
+      .set(updates as any)
+      .where(and(
+        eq(schema.companyMembers.companyId, companyId),
+        eq(schema.companyMembers.userId, userId)
+      ))
+      .returning();
+    return updated;
+  }
+  async removeCompanyMember(companyId: string, userId: string): Promise<boolean> {
+    const result = await db.delete(schema.companyMembers)
+      .where(and(
+        eq(schema.companyMembers.companyId, companyId),
+        eq(schema.companyMembers.userId, userId)
+      ));
+    return (result as any).rowCount > 0;
+  }
+  async getUserCompanyMemberships(userId: string): Promise<CompanyMember[]> {
+    return await db.select().from(schema.companyMembers)
+      .where(eq(schema.companyMembers.userId, userId));
+  }
+  // Multi-tenant queries
+  async getProjectsByCompany(companyId: string): Promise<Project[]> {
+    return await db.select().from(schema.projects)
+      .where(eq(schema.projects.companyId, companyId))
+      .orderBy(schema.projects.name);
+  }
+  async getUsersByCompany(companyId: string): Promise<User[]> {
+    return await db.select().from(schema.users)
+      .where(eq(schema.users.companyId, companyId))
+      .orderBy(schema.users.username);
+  }
+  async setActiveCompany(userId: string, companyId: string): Promise<void> {
+    await db.insert(schema.userPreferences)
+      .values({ userId, activeCompanyId: companyId } as any)
+      .onConflictDoUpdate({
+        target: schema.userPreferences.userId,
+        set: { activeCompanyId: companyId } as any,
+      });
   }
 
   // Work Library

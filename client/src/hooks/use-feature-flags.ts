@@ -6,6 +6,7 @@ interface FeatureFlags {
   exportGeneration: boolean;
   aiProcessing: boolean;
   safetyTab: boolean;
+  multiTenantOrg: boolean;
 }
 
 const DEFAULT_FLAGS: FeatureFlags = {
@@ -14,6 +15,7 @@ const DEFAULT_FLAGS: FeatureFlags = {
   exportGeneration: false,
   aiProcessing: false,
   safetyTab: false,
+  multiTenantOrg: false,
 };
 
 export function useFeatureFlags() {
