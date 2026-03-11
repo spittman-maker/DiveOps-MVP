@@ -1410,8 +1410,9 @@ export async function registerRoutes(
       const day = await storage.getDay(dayId);
       if (!day) return res.status(404).json({ message: "Day not found" });
 
-      // Cascade: delete log events, then dives, then the day itself
+      // Cascade: nullify audit events, then delete log events, dives, and the day itself
       const { pool } = await import("./storage");
+      await pool.query(`UPDATE "audit_events" SET "day_id" = NULL WHERE "day_id" = $1`, [dayId]);
       await pool.query(`DELETE FROM "log_events" WHERE "day_id" = $1`, [dayId]);
       await pool.query(`DELETE FROM "dives" WHERE "day_id" = $1`, [dayId]);
       await pool.query(`DELETE FROM "days" WHERE "id" = $1`, [dayId]);
