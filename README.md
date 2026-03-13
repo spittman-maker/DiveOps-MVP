@@ -555,3 +555,5 @@ Commercial diving technology platform.
 # License
 
 MIT
+Patent Pending 
+Trademark
