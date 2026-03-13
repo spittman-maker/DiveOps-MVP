@@ -1455,7 +1455,7 @@ export class DbStorage implements IStorage {
     const conditions: any[] = [];
     if (filters.targetId) conditions.push(eq(schema.auditEvents.targetId, filters.targetId));
     if (filters.targetType) conditions.push(eq(schema.auditEvents.targetType, filters.targetType));
-    if (filters.action) conditions.push(eq(schema.auditEvents.action, filters.action));
+    if (filters.action) conditions.push(eq(schema.auditEvents.action, filters.action as any));
     if (filters.dayId) conditions.push(eq(schema.auditEvents.dayId, filters.dayId));
     if (filters.userId) conditions.push(eq(schema.auditEvents.userId, filters.userId));
     if (filters.dateFrom) conditions.push(gte(schema.auditEvents.timestamp, new Date(filters.dateFrom)));
@@ -1515,7 +1515,7 @@ export class DbStorage implements IStorage {
 
   // Anomaly Flags
   async createAnomalyFlag(flag: InsertAnomalyFlag): Promise<AnomalyFlag> {
-    const [created] = await db.insert(schema.anomalyFlags).values(flag).returning();
+    const [created] = await db.insert(schema.anomalyFlags).values(flag as any).returning();
     return created!;
   }
 
@@ -1530,7 +1530,7 @@ export class DbStorage implements IStorage {
   async updateAnomalyFlag(id: number, updates: Partial<InsertAnomalyFlag>): Promise<AnomalyFlag | undefined> {
     const [updated] = await db
       .update(schema.anomalyFlags)
-      .set(updates)
+      .set(updates as any)
       .where(eq(schema.anomalyFlags.id, id))
       .returning();
     return updated;
@@ -1538,7 +1538,7 @@ export class DbStorage implements IStorage {
 
   // ML Predictions
   async createMlPrediction(prediction: InsertMlPrediction): Promise<MlPrediction> {
-    const [created] = await db.insert(schema.mlPredictions).values(prediction).returning();
+    const [created] = await db.insert(schema.mlPredictions).values(prediction as any).returning();
     return created!;
   }
 
@@ -1550,7 +1550,7 @@ export class DbStorage implements IStorage {
         .where(
           and(
             eq(schema.mlPredictions.projectId, projectId),
-            eq(schema.mlPredictions.predictionType, predictionType)
+            eq(schema.mlPredictions.predictionType, predictionType as any)
           )
         )
         .orderBy(desc(schema.mlPredictions.createdAt))

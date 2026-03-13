@@ -67,14 +67,13 @@ async function sweepDay(dayId: string, projectId: string, errors: string[]): Pro
         if (btMin && btMin > 0) {
           try {
             const fo2 = d.fo2Percent ?? (d.breathingGas === "Air" ? 21 : null);
-            const result = lookupDiveTable(d.maxDepthFsw, btMin, d.breathingGas, fo2 ?? undefined);
+            const result = lookupDiveTable(d.maxDepthFsw, btMin, d.breathingGas.toLowerCase() as "air" | "nitrox", fo2 ?? undefined);
             await storage.updateDive(d.id, {
-              eadFsw: result.eadFsw ?? null,
               tableUsed: result.tableUsed,
               scheduleUsed: result.scheduleUsed,
               repetitiveGroup: result.repetitiveGroup,
-              decompRequired: result.decompRequired,
-              decompStops: result.decompStops,
+              decompRequired: result.decompRequired === "YES" ? "Y" : "N",
+              decompStops: result.decompStops?.length ? JSON.stringify(result.decompStops) : null,
             });
             tablesComputed++;
           } catch (err) {

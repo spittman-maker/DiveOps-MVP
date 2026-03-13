@@ -40,7 +40,8 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction) 
     return next();
   }
 
-  const headerToken = req.headers[CSRF_HEADER] as string | undefined;
+  const rawToken = req.headers[CSRF_HEADER];
+  const headerToken: string | undefined = Array.isArray(rawToken) ? rawToken[0] : rawToken;
   if (!headerToken || headerToken !== token) {
     return res.status(403).json({ message: "Invalid CSRF token" });
   }

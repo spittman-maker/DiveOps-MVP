@@ -35,6 +35,17 @@ declare global {
 // Type Helpers
 // ────────────────────────────────────────────────────────────────────────────
 
+/** Safely extract a single string from Express 5 headers (string | string[] | undefined). */
+function getHeader(req: Request, name: string): string | undefined {
+  const val = req.headers[name];
+  return Array.isArray(val) ? val[0] : val;
+}
+
+/** Safely extract a single string from Express 5 req.params (string | string[]). */
+function p(v: string | string[]): string {
+  return Array.isArray(v) ? v[0] : v;
+}
+
 async function getNextRiskId(_projectId: string, date: string): Promise<string> {
   const dateStr = date.replace(/-/g, '');
   const prefix = `RISK-${dateStr}-`;
@@ -163,7 +174,7 @@ async function autoComputeDiveTable(diveId: string) {
     if (!bottomTimeMinutes || bottomTimeMinutes <= 0) return;
     
     const fo2 = d.fo2Percent ?? (breathingGas === "Air" ? 21 : null);
-    const result = lookupDiveTable(d.maxDepthFsw, bottomTimeMinutes, breathingGas, fo2 ?? undefined);
+    const result = lookupDiveTable(d.maxDepthFsw, bottomTimeMinutes, breathingGas.toLowerCase() as "air" | "nitrox", fo2 ?? undefined);
     await storage.updateDive(diveId, {
       tableUsed: result.tableUsed,
       scheduleUsed: result.scheduleUsed,
@@ -184,9 +195,9 @@ export async function registerRoutes(
   let bootstrapUsed = false;
 
   app.use((req: Request, _res: Response, next: NextFunction) => {
-    const cid = (req.headers["x-correlation-id"] as string) || generateCorrelationId();
+    const cid = getHeader(req, "x-correlation-id") || generateCorrelationId();
     req.correlationId = cid;
-    req.idempotencyKey = req.headers["x-idempotency-key"] as string | undefined;
+    req.idempotencyKey = getHeader(req, "x-idempotency-key");
     const user = req.user as User | undefined;
     req.auditCtx = {
       correlationId: cid,
@@ -795,6 +806,7 @@ export async function registerRoutes(
             decompRequired: d.decompRequired || null,
             diveNumber: d.diveNumber,
             dayId: d.dayId,
+            stale: elapsedMin > 720,
           };
         })
         .sort((a, b) => new Date(a.lsTime).getTime() - new Date(b.lsTime).getTime());
@@ -1067,7 +1079,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/projects/:id", requireAuth, async (req: Request, res: Response) => {
-    const project = await storage.getProject(req.params.id);
+    const project = await storage.getProject(p(req.params.id));
     if (!project) return res.status(404).json({ message: "Project not found" });
     // BUG-ISO-01 FIX: Enforce company boundary on direct project access
     if (isEnabled("multiTenantOrg")) {
@@ -1163,7 +1175,7 @@ export async function registerRoutes(
   });
 
   app.patch("/api/projects/:id", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
-    const project = await storage.updateProject(req.params.id, req.body);
+    const project = await storage.updateProject(p(req.params.id), req.body);
     if (!project) return res.status(404).json({ message: "Project not found" });
     res.json(project);
   });
@@ -1171,7 +1183,7 @@ export async function registerRoutes(
   // Set active project for user
   app.post("/api/projects/:id/activate", requireAuth, async (req: Request, res: Response) => {
     const user = getUser(req);
-    await storage.setActiveProject(user.id, req.params.id);
+    await storage.setActiveProject(user.id, p(req.params.id));
     res.json({ message: "Active project set" });
   });
 
@@ -1182,7 +1194,7 @@ export async function registerRoutes(
 
   app.get("/api/safety/:projectId/checklists", requireAuth, async (req: Request, res: Response) => {
     try {
-      const projectId = req.params.projectId;
+      const projectId = p(req.params.projectId);
       const type = typeof req.query.type === "string" ? req.query.type : undefined;
       // Direct DB query — no dependency on safety-storage module
       const { pool } = await import("./storage");
@@ -1262,7 +1274,7 @@ export async function registerRoutes(
 
   app.get("/api/safety/checklists/:id", requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = req.params.id;
+      const id = p(req.params.id);
       const { pool } = await import("./storage");
       const clResult = await pool.query(
         `SELECT * FROM "safety_checklists" WHERE "id" = $1`,
@@ -1313,7 +1325,7 @@ export async function registerRoutes(
       const { pool } = await import("./storage");
       const result = await pool.query(
         `SELECT COUNT(*) as cnt FROM "safety_checklists" WHERE "project_id" = $1 AND "is_active" = true`,
-        [req.params.projectId]
+        [p(req.params.projectId)]
       );
       const count = parseInt(result.rows[0].cnt, 10);
       if (count > 0) {
@@ -1334,7 +1346,7 @@ export async function registerRoutes(
          FROM "checklist_completions" cc
          LEFT JOIN "safety_checklists" sc ON sc.id = cc.checklist_id
          WHERE cc."project_id" = $1 ORDER BY cc."created_at" DESC`,
-        [req.params.projectId]
+        [p(req.params.projectId)]
       );
       const completions = result.rows.map((row: any) => ({
         id: row.id,
@@ -1454,11 +1466,11 @@ export async function registerRoutes(
       const { pool } = await import("./storage");
       const checklistResult = await pool.query(
         `SELECT COUNT(*) as cnt FROM "safety_checklists" WHERE "project_id" = $1 AND "is_active" = true`,
-        [req.params.projectId]
+        [p(req.params.projectId)]
       );
       const completionResult = await pool.query(
         `SELECT COUNT(*) as cnt FROM "checklist_completions" WHERE "project_id" = $1`,
-        [req.params.projectId]
+        [p(req.params.projectId)]
       ).catch(() => ({ rows: [{ cnt: '0' }] }));
       res.json({
         totalChecklists: parseInt(checklistResult.rows[0].cnt, 10),
@@ -1477,13 +1489,13 @@ export async function registerRoutes(
   app.get("/api/projects/:projectId/days", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
     try {
       // HIGH-08 FIX: Validate project exists before querying days
-      const project = await storage.getProject(req.params.projectId);
+      const project = await storage.getProject(p(req.params.projectId));
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
       }
 
       // Get ALL days/shifts for the project, ordered by most recent first
-      const days = await storage.getDaysByProject(req.params.projectId);
+      const days = await storage.getDaysByProject(p(req.params.projectId));
       
       // If no days exist and user can write, create one for today
       if (days.length === 0) {
@@ -1491,7 +1503,7 @@ export async function registerRoutes(
         if (canWriteLogEvents(user.role)) {
           const today = getTodayDate();
           const day = await storage.createDay({
-            projectId: req.params.projectId,
+            projectId: p(req.params.projectId),
             date: today,
             shift: "1",
             status: "DRAFT",
@@ -1509,7 +1521,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/days/:id", requireAuth, async (req: Request, res: Response) => {
-    const day = await storage.getDay(req.params.id);
+    const day = await storage.getDay(p(req.params.id));
     if (!day) return res.status(404).json({ message: "Day not found" });
     // BUG-ISO-02 FIX: Enforce company boundary on direct day access
     if (isEnabled("multiTenantOrg")) {
@@ -1531,7 +1543,7 @@ export async function registerRoutes(
 
       // BUG-1 FIX: Prevent duplicate open shifts.
       // Only allow creating a new shift if ALL existing shifts for this date are CLOSED.
-      const existingDays = await storage.getDaysByProject(req.params.projectId);
+      const existingDays = await storage.getDaysByProject(p(req.params.projectId));
       const openShiftsForDate = existingDays.filter(
         (d) => d.date === date && (d.status === "DRAFT" || d.status === "ACTIVE")
       );
@@ -1543,11 +1555,11 @@ export async function registerRoutes(
       }
 
       // Auto-generate shift number for this date
-      const shiftCount = await storage.getShiftCountForDate(req.params.projectId, date);
+      const shiftCount = await storage.getShiftCountForDate(p(req.params.projectId), date);
       const shiftNumber = String(shiftCount + 1);
 
       const day = await storage.createDay({
-        projectId: req.params.projectId,
+        projectId: p(req.params.projectId),
         date,
         shift: shiftNumber,
         status: "DRAFT",
@@ -1561,7 +1573,7 @@ export async function registerRoutes(
   });
 
   app.patch("/api/days/:id", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
-    const day = await storage.getDay(req.params.id);
+    const day = await storage.getDay(p(req.params.id));
     if (!day) return res.status(404).json({ message: "Day not found" });
     
     // Check if day is closed
@@ -1572,14 +1584,14 @@ export async function registerRoutes(
       }
     }
     
-    const updated = await storage.updateDay(req.params.id, req.body);
+    const updated = await storage.updateDay(p(req.params.id), req.body);
     res.json(updated);
   });
 
    // DELETE /api/days/:id — GOD only, cascade-deletes dives and log events
   app.delete("/api/days/:id", requireRole("GOD"), async (req: Request, res: Response) => {
     try {
-      const dayId = req.params.id;
+      const dayId = p(req.params.id);
       const day = await storage.getDay(dayId);
       if (!day) return res.status(404).json({ message: "Day not found" });
 
@@ -1594,7 +1606,7 @@ export async function registerRoutes(
       emitAuditEvent(req.auditCtx!, "day.delete", {
         targetId: dayId, targetType: "day",
         before: sanitizeForAudit(day),
-        after: null,
+        after: undefined,
       });
 
       res.json({ message: "Day and all associated dives and log events deleted", dayId });
@@ -1605,7 +1617,7 @@ export async function registerRoutes(
   });
 
   app.patch("/api/days/:id/breathing-gas", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
-    const day = await storage.getDay(req.params.id);
+    const day = await storage.getDay(p(req.params.id));
     if (!day) return res.status(404).json({ message: "Day not found" });
     if (day.status === "CLOSED") {
       const user = getUser(req);
@@ -1615,12 +1627,12 @@ export async function registerRoutes(
     }
 
     const { breathingGas, fo2Percent } = req.body;
-    const updated = await storage.updateDay(req.params.id, {
+    const updated = await storage.updateDay(p(req.params.id), {
       defaultBreathingGas: breathingGas || null,
       defaultFo2Percent: fo2Percent != null ? fo2Percent : null,
     } as any);
 
-    const dives = await storage.getDivesByDay(req.params.id);
+    const dives = await storage.getDivesByDay(p(req.params.id));
     const propagated: string[] = [];
     for (const dive of dives) {
       if (!dive.breathingGasOverride) {
@@ -1636,7 +1648,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/days/:id/compliance", requireAuth, async (req: Request, res: Response) => {
-    const day = await storage.getDay(req.params.id);
+    const day = await storage.getDay(p(req.params.id));
     if (!day) return res.status(404).json({ message: "Day not found" });
     // BUG-03 FIX: Enforce company boundary on compliance endpoint
     if (isEnabled("multiTenantOrg")) {
@@ -1649,8 +1661,8 @@ export async function registerRoutes(
       }
     }
     
-    const dives = await storage.getDivesByDay(req.params.id);
-    const events = await storage.getLogEventsByDay(req.params.id);
+    const dives = await storage.getDivesByDay(p(req.params.id));
+    const events = await storage.getLogEventsByDay(p(req.params.id));
     
     const gaps: Array<{ scope: string; field: string; message: string }> = [];
     
@@ -1743,7 +1755,7 @@ export async function registerRoutes(
     const forceClose = req.body?.forceClose === true;
     
     if (!forceClose) {
-      const gaps = await evaluateComplianceGaps(req.params.id);
+      const gaps = await evaluateComplianceGaps(p(req.params.id));
       if (gaps.length > 0) {
         return res.status(422).json({ 
           message: "Compliance gaps detected — review before closing",
@@ -1753,8 +1765,8 @@ export async function registerRoutes(
       }
     }
     
-    const beforeDay = await storage.getDay(req.params.id);
-    const day = await storage.closeDay(req.params.id, user.id, closeoutData);
+    const beforeDay = await storage.getDay(p(req.params.id));
+    const day = await storage.closeDay(p(req.params.id), user.id, closeoutData);
     if (!day) return res.status(404).json({ message: "Day not found" });
 
     const ctx: AuditContext = { ...req.auditCtx!, projectId: day.projectId, dayId: day.id };
@@ -1775,7 +1787,7 @@ export async function registerRoutes(
     }
 
     const user = getUser(req);
-    const dayId = req.params.id;
+    const dayId = p(req.params.id);
     const closeoutData = req.body?.closeoutData || undefined;
     const beforeDay = await storage.getDay(dayId);
 
@@ -1844,11 +1856,11 @@ export async function registerRoutes(
   app.post("/api/days/:id/reopen", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
     const user = getUser(req);
-    const day = await storage.getDay(req.params.id);
+    const day = await storage.getDay(p(req.params.id));
     if (!day) return res.status(404).json({ message: "Day not found" });
     if (day.status !== "CLOSED") return res.status(400).json({ message: "Day is not closed" });
     
-    const reopened = await storage.reopenDay(req.params.id);
+    const reopened = await storage.reopenDay(p(req.params.id));
     if (!reopened) return res.status(500).json({ message: "Failed to reopen day" });
 
     const ctx: AuditContext = { ...req.auditCtx!, projectId: reopened.projectId, dayId: reopened.id };
@@ -1902,7 +1914,7 @@ export async function registerRoutes(
 
   // Check midnight status
   app.get("/api/days/:id/status", requireAuth, async (req: Request, res: Response) => {
-    const day = await storage.getDay(req.params.id);
+    const day = await storage.getDay(p(req.params.id));
     if (!day) return res.status(404).json({ message: "Day not found" });
     
     const today = getTodayDate();
@@ -2424,7 +2436,7 @@ export async function registerRoutes(
   // Re-extract dives from existing log events for a day (admin only)
   app.post("/api/days/:dayId/re-extract-dives", requireRole("ADMIN", "GOD"), requireDayAccess(), async (req: Request, res: Response) => {
     try {
-      const dayId = req.params.dayId;
+      const dayId = p(req.params.dayId);
       const day = await storage.getDay(dayId);
       if (!day) return res.status(404).json({ message: "Day not found" });
 
@@ -2552,7 +2564,7 @@ export async function registerRoutes(
           if (btMin && btMin > 0) {
             try {
               const fo2 = d.fo2Percent ?? (d.breathingGas === "Air" ? 21 : null);
-              const result = lookupDiveTable(d.maxDepthFsw, btMin, d.breathingGas, fo2 ?? undefined);
+              const result = lookupDiveTable(d.maxDepthFsw, btMin, d.breathingGas.toLowerCase() as "air" | "nitrox", fo2 ?? undefined);
               await storage.updateDive(d.id, {
                 tableUsed: result.tableUsed,
                 scheduleUsed: result.scheduleUsed,
@@ -2576,7 +2588,7 @@ export async function registerRoutes(
 
   // Get all log events for a day (ordered by eventTime then captureTime)
   app.get("/api/days/:dayId/log-events", requireAuth, requireDayAccess(), async (req: Request, res: Response) => {
-    const events = await storage.getLogEventsByDay(req.params.dayId);
+    const events = await storage.getLogEventsByDay(p(req.params.dayId));
     
     // Fetch renders for each event
     const eventsWithRenders = await Promise.all(
@@ -2597,7 +2609,7 @@ export async function registerRoutes(
     try {
       const data = editEventTimeSchema.parse(req.body);
       
-      const event = await storage.getLogEvent(req.params.id);
+      const event = await storage.getLogEvent(p(req.params.id));
       if (!event) return res.status(404).json({ message: "Log event not found" });
       
       // Check if day is closed
@@ -2609,7 +2621,7 @@ export async function registerRoutes(
         }
       }
       
-      const updated = await storage.updateLogEvent(req.params.id, {
+      const updated = await storage.updateLogEvent(p(req.params.id), {
         eventTime: new Date(data.eventTime),
         editReason: data.editReason,
       });
@@ -2632,7 +2644,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Valid depth (FSW) is required" });
       }
 
-      const event = await storage.getLogEvent(req.params.id);
+      const event = await storage.getLogEvent(p(req.params.id));
       if (!event) return res.status(404).json({ message: "Log event not found" });
 
       const extracted = (event.extractedJson || {}) as Record<string, any>;
@@ -2643,7 +2655,7 @@ export async function registerRoutes(
         a => !a.message.includes("no depth (FSW) specified")
       );
 
-      await storage.updateLogEvent(req.params.id, {
+      await storage.updateLogEvent(p(req.params.id), {
         extractedJson: extracted,
         aiAnnotations: filteredAnnotations,
       });
@@ -2661,7 +2673,7 @@ export async function registerRoutes(
         }
       }
 
-      const updated = await storage.getLogEvent(req.params.id);
+      const updated = await storage.getLogEvent(p(req.params.id));
       res.json(updated);
     } catch (error) {
       console.error("Depth update error:", error);
@@ -2676,7 +2688,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "rawText is required" });
       }
 
-      const event = await storage.getLogEvent(req.params.id);
+      const event = await storage.getLogEvent(p(req.params.id));
       if (!event) return res.status(404).json({ message: "Log event not found" });
 
       const day = await storage.getDay(event.dayId);
@@ -2687,7 +2699,7 @@ export async function registerRoutes(
         }
       }
 
-      const updated = await storage.updateLogEvent(req.params.id, {
+      const updated = await storage.updateLogEvent(p(req.params.id), {
         rawText: rawText.trim(),
         editReason: editReason || "Manual edit",
       }, typeof expectedVersion === "number" ? expectedVersion : undefined);
@@ -2712,7 +2724,7 @@ export async function registerRoutes(
 
   // Retry AI render
   app.post("/api/log-events/:id/retry-render", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
-    const event = await storage.getLogEvent(req.params.id);
+    const event = await storage.getLogEvent(p(req.params.id));
     if (!event) return res.status(404).json({ message: "Log event not found" });
     
     try {
@@ -2757,8 +2769,8 @@ export async function registerRoutes(
   // ──────────────────────────────────────────────────────────────────────────
 
   app.get("/api/days/:dayId/dives", requireAuth, requireDayAccess(), async (req: Request, res: Response) => {
-    const dives = await storage.getDivesByDay(req.params.dayId);
-    const logEvents = await storage.getLogEventsByDay(req.params.dayId);
+    const dives = await storage.getDivesByDay(p(req.params.dayId));
+    const logEvents = await storage.getLogEventsByDay(p(req.params.dayId));
     
     const allEventIds = logEvents.map(e => e.id);
     const allRenders = allEventIds.length > 0
@@ -2805,7 +2817,7 @@ export async function registerRoutes(
   // BUG-09 FIX: POST /api/days/:dayId/dives — Create a new dive
   app.post("/api/days/:dayId/dives", requireRole("SUPERVISOR", "ADMIN", "GOD"), requireDayAccess(), async (req: Request, res: Response) => {
     try {
-      const day = await storage.getDay(req.params.dayId);
+      const day = await storage.getDay(p(req.params.dayId));
       if (!day) return res.status(404).json({ message: "Day not found" });
       const existingDives = await storage.getDivesByDay(day.id);
       const nextDiveNumber = existingDives.length + 1;
@@ -2814,7 +2826,6 @@ export async function registerRoutes(
         projectId: day.projectId,
         diveNumber: nextDiveNumber,
         diverDisplayName: req.body.diverDisplayName || null,
-        diverUserId: req.body.diverUserId || null,
         maxDepthFsw: req.body.maxDepthFsw || null,
         breathingGas: req.body.breathingGas || day.defaultBreathingGas || "Air",
         fo2Percent: req.body.fo2Percent || null,
@@ -2822,11 +2833,8 @@ export async function registerRoutes(
         rbTime: req.body.rbTime || null,
         lbTime: req.body.lbTime || null,
         rsTime: req.body.rsTime || null,
-        bottomTimeMinutes: req.body.bottomTimeMinutes || null,
         tableUsed: req.body.tableUsed || null,
-        decoRequired: req.body.decoRequired ?? false,
-        repetitiveDive: req.body.repetitiveDive ?? false,
-        status: "in_progress",
+        decompRequired: req.body.decoRequired ? "Y" : "N",
       });
       res.status(201).json(dive);
     } catch (error: any) {
@@ -2839,7 +2847,7 @@ export async function registerRoutes(
   app.get("/api/dives/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
-      const dive = await storage.getDive(req.params.id);
+      const dive = await storage.getDive(p(req.params.id));
       if (!dive) return res.status(404).json({ message: "Dive not found" });
       // Company isolation
       if (isEnabled("multiTenantOrg") && !isGod(user.role)) {
@@ -2855,14 +2863,14 @@ export async function registerRoutes(
   });
 
   app.get("/api/users/:userId/dives", requireAuth, async (req: Request, res: Response) => {
-    const dives = await storage.getDivesByDiver(req.params.userId, req.query.dayId as string);
+    const dives = await storage.getDivesByDiver(p(req.params.userId), req.query.dayId as string);
     res.json(dives);
   });
 
   // Update dive PSG-LOG-01 fields (supervisor edit)
   app.patch("/api/dives/:id", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
-      const dive = await storage.getDive(req.params.id);
+      const dive = await storage.getDive(p(req.params.id));
       if (!dive) return res.status(404).json({ message: "Dive not found" });
       
       const allowedFields = [
@@ -2926,7 +2934,7 @@ export async function registerRoutes(
       }
       
       const expectedVersion = typeof req.body.version === "number" ? req.body.version : undefined;
-      const updated = await storage.updateDive(req.params.id, updates, expectedVersion);
+      const updated = await storage.updateDive(p(req.params.id), updates, expectedVersion);
 
       const ctx: AuditContext = { ...req.auditCtx!, dayId: dive.dayId };
       emitAuditEvent(ctx, "dive.update", {
@@ -2967,7 +2975,7 @@ export async function registerRoutes(
       }
       
       // Re-fetch after potential table recomputation
-      const finalDive = await storage.getDive(req.params.id);
+      const finalDive = await storage.getDive(p(req.params.id));
       res.json(finalDive || updated);
     } catch (error: any) {
       if (error?.message?.startsWith("VERSION_CONFLICT")) {
@@ -2981,7 +2989,7 @@ export async function registerRoutes(
   // DELETE /api/dives/:id — GOD only
   app.delete("/api/dives/:id", requireRole("GOD"), async (req: Request, res: Response) => {
     try {
-      const diveId = req.params.id;
+      const diveId = p(req.params.id);
       const dive = await storage.getDive(diveId);
       if (!dive) return res.status(404).json({ message: "Dive not found" });
 
@@ -2991,7 +2999,7 @@ export async function registerRoutes(
       emitAuditEvent(req.auditCtx!, "dive.delete", {
         targetId: diveId, targetType: "dive",
         before: sanitizeForAudit(dive),
-        after: null,
+        after: undefined,
       });
 
       res.json({ message: "Dive deleted", diveId });
@@ -3004,7 +3012,7 @@ export async function registerRoutes(
   // Compute dive table/schedule for a dive based on depth & bottom time
   app.post("/api/dives/:id/compute-table", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
-      const dive = await storage.getDive(req.params.id);
+      const dive = await storage.getDive(p(req.params.id));
       if (!dive) return res.status(404).json({ message: "Dive not found" });
 
       const depthFsw = req.body.maxDepthFsw ?? dive.maxDepthFsw;
@@ -3042,7 +3050,7 @@ export async function registerRoutes(
         tableCitation: JSON.stringify(result.citation),
       };
 
-      const updated = await storage.updateDive(req.params.id, updates);
+      const updated = await storage.updateDive(p(req.params.id), updates);
       res.json({ ...updated, _tableResult: result });
     } catch (error) {
       console.error("Compute table error:", error);
@@ -3068,7 +3076,7 @@ export async function registerRoutes(
   // Generate AI task summary for a dive from its related log events
   app.post("/api/dives/:id/generate-summary", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
-      const dive = await storage.getDive(req.params.id);
+      const dive = await storage.getDive(p(req.params.id));
       if (!dive) return res.status(404).json({ message: "Dive not found" });
       
       const events = await storage.getLogEventsByDay(dive.dayId);
@@ -3117,7 +3125,7 @@ export async function registerRoutes(
           ],
         });
         
-        const textBlock = response.content.find((b: any) => b.type === "text");
+        const textBlock = response.content.find((b: any) => b.type === "text") as { type: "text"; text: string } | undefined;
         const summary = textBlock?.text?.trim() || dive.taskSummary || "UNKNOWN";
         await storage.updateDive(dive.id, { taskSummary: summary });
         res.json({ taskSummary: summary });
@@ -3139,7 +3147,7 @@ export async function registerRoutes(
       const data = diveConfirmSchema.parse(req.body);
       const user = getUser(req);
       
-      const dive = await storage.getDive(req.params.id);
+      const dive = await storage.getDive(p(req.params.id));
       if (!dive) return res.status(404).json({ message: "Dive not found" });
       
       // Diver can only confirm their own dives
@@ -3148,7 +3156,7 @@ export async function registerRoutes(
       }
       
       const confirmation = await storage.createDiveConfirmation({
-        diveId: req.params.id,
+        diveId: p(req.params.id),
         diverId: user.id,
         status: data.status,
         note: data.note || null,
@@ -3168,12 +3176,12 @@ export async function registerRoutes(
   // ──────────────────────────────────────────────────────────────────────────
 
   app.get("/api/days/:dayId/risks", requireAuth, requireDayAccess(), async (req: Request, res: Response) => {
-    const risks = await storage.getRiskItemsByDay(req.params.dayId);
+    const risks = await storage.getRiskItemsByDay(p(req.params.dayId));
     res.json(risks);
   });
 
   app.get("/api/projects/:projectId/risks", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
-    const risks = await storage.getRiskItemsByProject(req.params.projectId);
+    const risks = await storage.getRiskItemsByProject(p(req.params.projectId));
     const enriched = await Promise.all(risks.map(async (risk) => {
       if (risk.triggerEventId) {
         const triggerEvent = await storage.getLogEvent(risk.triggerEventId);
@@ -3194,7 +3202,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/risks/:id", requireAuth, async (req: Request, res: Response) => {
-    const risk = await storage.getRiskItem(req.params.id);
+    const risk = await storage.getRiskItem(p(req.params.id));
     if (!risk) return res.status(404).json({ message: "Risk not found" });
     
     // Include trigger event
@@ -3284,10 +3292,10 @@ export async function registerRoutes(
       const data = riskUpdateSchema.parse(req.body);
       const expectedVersion = req.body.version as number | undefined;
       
-      const risk = await storage.getRiskItem(req.params.id);
+      const risk = await storage.getRiskItem(p(req.params.id));
       if (!risk) return res.status(404).json({ message: "Risk not found" });
       
-      const updated = await storage.updateRiskItem(req.params.id, data, expectedVersion);
+      const updated = await storage.updateRiskItem(p(req.params.id), data, expectedVersion);
       
       const ctx: AuditContext = { ...req.auditCtx!, projectId: risk.projectId, dayId: risk.dayId };
       emitAuditEvent(ctx, "risk.update", {
@@ -3346,10 +3354,10 @@ export async function registerRoutes(
   // ──────────────────────────────────────────────────────────────────────────
 
   app.get("/api/days/:dayId/master-log", requireAuth, requireDayAccess(), async (req: Request, res: Response) => {
-    const day = await storage.getDay(req.params.dayId);
+    const day = await storage.getDay(p(req.params.dayId));
     if (!day) return res.status(404).json({ message: "Day not found" });
     
-    const events = await storage.getLogEventsByDay(req.params.dayId);
+    const events = await storage.getLogEventsByDay(p(req.params.dayId));
     
     // Group by legacy sections AND new station-based structure
     const sections: Record<string, any[]> = {
@@ -3405,7 +3413,7 @@ export async function registerRoutes(
     }));
     
     // Get dives for this day with diver info
-    const dives = await storage.getDivesByDay(req.params.dayId);
+    const dives = await storage.getDivesByDay(p(req.params.dayId));
     const divesWithNames = await Promise.all(dives.map(async (dive) => {
       let diverName = dive.diverDisplayName || "Unknown";
       if (dive.diverId) {
@@ -3469,7 +3477,7 @@ export async function registerRoutes(
     const totalDivers = totalDives === 0 ? 0 : (dives.length > 0 ? uniqueDivers.size : allDiverNames.size);
 
     // Get risk items for this day
-    const risks = await storage.getRiskItemsByDay(req.params.dayId);
+    const risks = await storage.getRiskItemsByDay(p(req.params.dayId));
     
     res.json({
       day,
@@ -3499,12 +3507,12 @@ export async function registerRoutes(
   // ──────────────────────────────────────────────────────────────────────────
 
   app.get("/api/projects/:projectId/dive-plans", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
-    const plans = await storage.getDivePlansByProject(req.params.projectId);
+    const plans = await storage.getDivePlansByProject(p(req.params.projectId));
     res.json(plans);
   });
 
   app.get("/api/dive-plans/:id", requireAuth, async (req: Request, res: Response) => {
-    const plan = await storage.getDivePlan(req.params.id);
+    const plan = await storage.getDivePlan(p(req.params.id));
     if (!plan) return res.status(404).json({ message: "Dive plan not found" });
     res.json(plan);
   });
@@ -3513,7 +3521,7 @@ export async function registerRoutes(
     const user = getUser(req);
     
     const plan = await storage.createDivePlan({
-      projectId: req.params.projectId,
+      projectId: p(req.params.projectId),
       dayId: req.body.dayId || null,
       status: "Draft",
       planVersion: 1,
@@ -3525,7 +3533,7 @@ export async function registerRoutes(
   });
 
   app.patch("/api/dive-plans/:id", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
-    const plan = await storage.getDivePlan(req.params.id);
+    const plan = await storage.getDivePlan(p(req.params.id));
     if (!plan) return res.status(404).json({ message: "Dive plan not found" });
     
     // Check if closed - only ADMIN/GOD can reopen
@@ -3541,18 +3549,18 @@ export async function registerRoutes(
       }
     }
     
-    const updated = await storage.updateDivePlan(req.params.id, req.body);
+    const updated = await storage.updateDivePlan(p(req.params.id), req.body);
     res.json(updated);
   });
 
   app.post("/api/dive-plans/:id/close", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
     const user = getUser(req);
-    const plan = await storage.getDivePlan(req.params.id);
+    const plan = await storage.getDivePlan(p(req.params.id));
     if (!plan) return res.status(404).json({ message: "Dive plan not found" });
     
     // TODO: Add validation for required sections and verified directory
     
-    const updated = await storage.updateDivePlan(req.params.id, {
+    const updated = await storage.updateDivePlan(p(req.params.id), {
       status: "Closed",
       closedBy: user.id,
       closedAt: new Date(),
@@ -3566,41 +3574,41 @@ export async function registerRoutes(
   // ──────────────────────────────────────────────────────────────────────────
 
   app.get("/api/dive-plans/:divePlanId/stations", requireAuth, async (req: Request, res: Response) => {
-    const stations = await storage.getStationsByDivePlan(req.params.divePlanId);
+    const stations = await storage.getStationsByDivePlan(p(req.params.divePlanId));
     res.json(stations);
   });
 
   app.post("/api/dive-plans/:divePlanId/stations", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
-    const plan = await storage.getDivePlan(req.params.divePlanId);
+    const plan = await storage.getDivePlan(p(req.params.divePlanId));
     if (!plan) return res.status(404).json({ message: "Dive plan not found" });
     
     const station = await storage.createStation({
       ...req.body,
-      divePlanId: req.params.divePlanId,
+      divePlanId: p(req.params.divePlanId),
     });
     
     res.status(201).json(station);
   });
 
   app.get("/api/stations/:id", requireAuth, async (req: Request, res: Response) => {
-    const station = await storage.getStation(req.params.id);
+    const station = await storage.getStation(p(req.params.id));
     if (!station) return res.status(404).json({ message: "Station not found" });
     res.json(station);
   });
 
   app.patch("/api/stations/:id", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
-    const station = await storage.getStation(req.params.id);
+    const station = await storage.getStation(p(req.params.id));
     if (!station) return res.status(404).json({ message: "Station not found" });
     
-    const updated = await storage.updateStation(req.params.id, req.body);
+    const updated = await storage.updateStation(p(req.params.id), req.body);
     res.json(updated);
   });
 
   app.delete("/api/stations/:id", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
-    const station = await storage.getStation(req.params.id);
+    const station = await storage.getStation(p(req.params.id));
     if (!station) return res.status(404).json({ message: "Station not found" });
     
-    await storage.deleteStation(req.params.id);
+    await storage.deleteStation(p(req.params.id));
     res.status(204).send();
   });
 
@@ -3609,16 +3617,16 @@ export async function registerRoutes(
   // ──────────────────────────────────────────────────────────────────────────
 
   app.get("/api/dives/:diveId/details", requireAuth, async (req: Request, res: Response) => {
-    const details = await storage.getDiveLogDetails(req.params.diveId);
+    const details = await storage.getDiveLogDetails(p(req.params.diveId));
     if (!details) return res.status(404).json({ message: "Dive log details not found" });
     res.json(details);
   });
 
   app.post("/api/dives/:diveId/details", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
-    const dive = await storage.getDive(req.params.diveId);
+    const dive = await storage.getDive(p(req.params.diveId));
     if (!dive) return res.status(404).json({ message: "Dive not found" });
     
-    const existing = await storage.getDiveLogDetails(req.params.diveId);
+    const existing = await storage.getDiveLogDetails(p(req.params.diveId));
     if (existing) {
       const updated = await storage.updateDiveLogDetails(existing.id, req.body);
       return res.json(updated);
@@ -3626,14 +3634,14 @@ export async function registerRoutes(
     
     const details = await storage.createDiveLogDetails({
       ...req.body,
-      diveId: req.params.diveId,
+      diveId: p(req.params.diveId),
     });
     
     res.status(201).json(details);
   });
 
   app.patch("/api/dive-details/:id", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
-    const updated = await storage.updateDiveLogDetails(req.params.id, req.body);
+    const updated = await storage.updateDiveLogDetails(p(req.params.id), req.body);
     if (!updated) return res.status(404).json({ message: "Dive log details not found" });
     res.json(updated);
   });
@@ -3643,18 +3651,18 @@ export async function registerRoutes(
   // ──────────────────────────────────────────────────────────────────────────
 
   app.get("/api/days/:dayId/summary", requireAuth, requireDayAccess(), async (req: Request, res: Response) => {
-    const summary = await storage.getDailySummary(req.params.dayId);
+    const summary = await storage.getDailySummary(p(req.params.dayId));
     if (!summary) return res.status(404).json({ message: "Daily summary not found" });
     res.json(summary);
   });
 
   app.post("/api/days/:dayId/summary", requireRole("SUPERVISOR", "ADMIN", "GOD"), requireDayAccess(), async (req: Request, res: Response) => {
-    const day = await storage.getDay(req.params.dayId);
+    const day = await storage.getDay(p(req.params.dayId));
     if (!day) return res.status(404).json({ message: "Day not found" });
     
     const summary = await storage.createOrUpdateDailySummary({
       ...req.body,
-      dayId: req.params.dayId,
+      dayId: p(req.params.dayId),
       projectId: day.projectId,
     });
     
@@ -3673,37 +3681,37 @@ export async function registerRoutes(
   // BUG-ROLE-01 FIX: First duplicate removed — the canonical handler is in the Company Management section below.
 
   app.get("/api/companies/:companyId/roles", requireAuth, async (req: Request, res: Response) => {
-    const roles = await storage.getCompanyRoles(req.params.companyId as string);
+    const roles = await storage.getCompanyRoles(p(req.params.companyId) as string);
     res.json(roles);
   });
 
   app.get("/api/companies/:companyId/contact-defaults", requireAuth, async (req: Request, res: Response) => {
-    const defaults = await storage.getCompanyContactsDefaults(req.params.companyId as string);
+    const defaults = await storage.getCompanyContactsDefaults(p(req.params.companyId) as string);
     res.json(defaults);
   });
 
   app.get("/api/projects/:projectId/work-selections", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
-    const selections = await storage.getProjectWorkSelections(req.params.projectId as string);
+    const selections = await storage.getProjectWorkSelections(p(req.params.projectId) as string);
     res.json(selections);
   });
 
   app.put("/api/projects/:projectId/work-selections", requireRole("SUPERVISOR", "ADMIN", "GOD"), requireProjectAccess(), async (req: Request, res: Response) => {
     const { workItemIds } = req.body;
-    await storage.setProjectWorkSelections(req.params.projectId as string, workItemIds || []);
-    const selections = await storage.getProjectWorkSelections(req.params.projectId as string);
+    await storage.setProjectWorkSelections(p(req.params.projectId) as string, workItemIds || []);
+    const selections = await storage.getProjectWorkSelections(p(req.params.projectId) as string);
     res.json(selections);
   });
 
   app.get("/api/projects/:projectId/contacts", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
-    const contacts = await storage.getProjectContacts(req.params.projectId as string);
+    const contacts = await storage.getProjectContacts(p(req.params.projectId) as string);
     res.json(contacts);
   });
 
   app.put("/api/projects/:projectId/contacts/:roleId", requireRole("SUPERVISOR", "ADMIN", "GOD"), requireProjectAccess(), async (req: Request, res: Response) => {
     const { name, phone, email } = req.body;
     const contact = await storage.setProjectContact(
-      req.params.projectId as string,
-      req.params.roleId as string,
+      p(req.params.projectId) as string,
+      p(req.params.roleId),
       name,
       phone,
       email
@@ -3734,33 +3742,33 @@ export async function registerRoutes(
   // ──────────────────────────────────────────────────────────────────────────
 
   app.get("/api/projects/:projectId/project-dive-plans", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
-    const plans = await storage.getProjectDivePlansByProject(req.params.projectId);
+    const plans = await storage.getProjectDivePlansByProject(p(req.params.projectId));
     res.json(plans);
   });
 
   app.get("/api/projects/:projectId/project-dive-plans/active", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
-    const plan = await storage.getActiveProjectDivePlan(req.params.projectId);
+    const plan = await storage.getActiveProjectDivePlan(p(req.params.projectId));
     if (!plan) return res.status(404).json({ message: "No approved dive plan found" });
     res.json(plan);
   });
 
   app.get("/api/project-dive-plans/:id", requireAuth, async (req: Request, res: Response) => {
-    const plan = await storage.getProjectDivePlan(req.params.id);
+    const plan = await storage.getProjectDivePlan(p(req.params.id));
     if (!plan) return res.status(404).json({ message: "Project dive plan not found" });
     res.json(plan);
   });
 
   app.post("/api/projects/:projectId/project-dive-plans", requireRole("SUPERVISOR", "ADMIN", "GOD"), requireProjectAccess(), async (req: Request, res: Response) => {
     const user = getUser(req);
-    const project = await storage.getProject(req.params.projectId);
+    const project = await storage.getProject(p(req.params.projectId));
     if (!project) return res.status(404).json({ message: "Project not found" });
     
-    const latestRevision = await storage.getLatestProjectDivePlanRevision(req.params.projectId);
+    const latestRevision = await storage.getLatestProjectDivePlanRevision(p(req.params.projectId));
     const newRevision = latestRevision + 1;
     
     const plan = await storage.createProjectDivePlan({
       ...req.body,
-      projectId: req.params.projectId,
+      projectId: p(req.params.projectId),
       revision: newRevision,
       createdBy: user.id,
     });
@@ -3769,27 +3777,27 @@ export async function registerRoutes(
   });
 
   app.patch("/api/project-dive-plans/:id", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
-    const plan = await storage.getProjectDivePlan(req.params.id);
+    const plan = await storage.getProjectDivePlan(p(req.params.id));
     if (!plan) return res.status(404).json({ message: "Project dive plan not found" });
     
     if (plan.status === "Approved" || plan.status === "Superseded") {
       return res.status(400).json({ message: "Cannot modify approved or superseded plans" });
     }
     
-    const updated = await storage.updateProjectDivePlan(req.params.id, req.body);
+    const updated = await storage.updateProjectDivePlan(p(req.params.id), req.body);
     res.json(updated);
   });
 
   app.post("/api/project-dive-plans/:id/submit", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
     const user = getUser(req);
-    const plan = await storage.getProjectDivePlan(req.params.id);
+    const plan = await storage.getProjectDivePlan(p(req.params.id));
     if (!plan) return res.status(404).json({ message: "Project dive plan not found" });
     
     if (plan.status !== "Draft") {
       return res.status(400).json({ message: "Only draft plans can be submitted" });
     }
     
-    const updated = await storage.updateProjectDivePlan(req.params.id, {
+    const updated = await storage.updateProjectDivePlan(p(req.params.id), {
       status: "Submitted",
       submittedBy: user.id,
       submittedAt: new Date(),
@@ -3800,7 +3808,7 @@ export async function registerRoutes(
 
   app.post("/api/project-dive-plans/:id/approve", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     const user = getUser(req);
-    const plan = await storage.getProjectDivePlan(req.params.id);
+    const plan = await storage.getProjectDivePlan(p(req.params.id));
     if (!plan) return res.status(404).json({ message: "Project dive plan not found" });
     
     if (plan.status !== "Submitted") {
@@ -3815,7 +3823,7 @@ export async function registerRoutes(
       });
     }
     
-    const updated = await storage.updateProjectDivePlan(req.params.id, {
+    const updated = await storage.updateProjectDivePlan(p(req.params.id), {
       status: "Approved",
       approvedBy: user.id,
       approvedAt: new Date(),
@@ -3826,7 +3834,7 @@ export async function registerRoutes(
 
   app.post("/api/project-dive-plans/:id/new-revision", requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
     const user = getUser(req);
-    const existingPlan = await storage.getProjectDivePlan(req.params.id);
+    const existingPlan = await storage.getProjectDivePlan(p(req.params.id));
     if (!existingPlan) return res.status(404).json({ message: "Project dive plan not found" });
     
     const latestRevision = await storage.getLatestProjectDivePlanRevision(existingPlan.projectId);
@@ -3845,7 +3853,7 @@ export async function registerRoutes(
   });
 
   app.delete("/api/project-dive-plans/:id", requireRole("SUPERVISOR", "GOD"), async (req: Request, res: Response) => {
-    const plan = await storage.getProjectDivePlan(req.params.id);
+    const plan = await storage.getProjectDivePlan(p(req.params.id));
     if (!plan) return res.status(404).json({ message: "Project dive plan not found" });
 
     if (plan.status === "Approved") {
@@ -3855,7 +3863,7 @@ export async function registerRoutes(
       }
     }
 
-    const deleted = await storage.deleteProjectDivePlan(req.params.id);
+    const deleted = await storage.deleteProjectDivePlan(p(req.params.id));
     if (!deleted) return res.status(500).json({ message: "Failed to delete plan" });
     res.json({ message: "Plan deleted" });
   });
@@ -3865,7 +3873,7 @@ export async function registerRoutes(
   // Called silently after every AI response so plan survives tab switches.
   app.put("/api/projects/:projectId/project-dive-plans/autosave", requireRole("SUPERVISOR", "ADMIN", "GOD"), requireProjectAccess(), async (req: Request, res: Response) => {
     const user = getUser(req);
-    const { projectId } = req.params;
+    const projectId = p(req.params.projectId);
     const { planData } = req.body;
     if (!planData) return res.status(400).json({ message: "planData is required" });
 
@@ -4116,7 +4124,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
   app.get("/api/project-dive-plans/:id/download", requireAuth, async (req: Request, res: Response) => {
     const { generateDD5DivePlanDocx } = await import("./dive-plan-generator");
     
-    const plan = await storage.getProjectDivePlan(req.params.id as string);
+    const plan = await storage.getProjectDivePlan(p(req.params.id) as string);
     if (!plan) return res.status(404).json({ message: "Project dive plan not found" });
     
     const creator = await storage.getUser(plan.createdBy);
@@ -4190,7 +4198,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
   app.patch("/api/directory-facilities/:id", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     const user = getUser(req);
     
-    const updated = await storage.updateDirectoryFacility(req.params.id, {
+    const updated = await storage.updateDirectoryFacility(p(req.params.id), {
       ...req.body,
       verifiedBy: user.id,
       lastVerifiedAt: new Date(),
@@ -4205,14 +4213,14 @@ If you're not confident about specific facilities, say so in the notes field. Al
   // ──────────────────────────────────────────────────────────────────────────
 
   app.get("/api/projects/:projectId/directory", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
-    const directory = await storage.getProjectDirectory(req.params.projectId);
+    const directory = await storage.getProjectDirectory(p(req.params.projectId));
     res.json(directory || { status: "NEEDS_VERIFICATION" });
   });
 
   app.post("/api/projects/:projectId/directory/verify", requireRole("ADMIN", "GOD"), requireProjectAccess(), async (req: Request, res: Response) => {
     const user = getUser(req);
     
-    let directory = await storage.getProjectDirectory(req.params.projectId);
+    let directory = await storage.getProjectDirectory(p(req.params.projectId));
     
     if (directory) {
       directory = await storage.updateProjectDirectory(directory.id, {
@@ -4223,7 +4231,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
       });
     } else {
       directory = await storage.createProjectDirectory({
-        projectId: req.params.projectId,
+        projectId: p(req.params.projectId),
         ...req.body,
         status: "VERIFIED",
         verifiedBy: user.id,
@@ -4264,7 +4272,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
   });
 
   app.get("/api/projects/:projectId/library", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
-    const projectDocs = await storage.getLibraryDocuments(req.params.projectId);
+    const projectDocs = await storage.getLibraryDocuments(p(req.params.projectId));
     const globalDocs = await storage.getLibraryDocuments();
     res.json([...globalDocs, ...projectDocs]);
   });
@@ -4291,17 +4299,17 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   // Library Exports (generated shift documents)
   app.get("/api/projects/:projectId/library-exports", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
-    const exports = await storage.getLibraryExports(req.params.projectId);
+    const exports = await storage.getLibraryExports(p(req.params.projectId));
     res.json(exports);
   });
 
   app.get("/api/days/:dayId/library-exports", requireAuth, requireDayAccess(), async (req: Request, res: Response) => {
-    const exports = await storage.getLibraryExportsByDay(req.params.dayId);
+    const exports = await storage.getLibraryExportsByDay(p(req.params.dayId));
     res.json(exports);
   });
 
   app.get("/api/library-exports/:id/download", requireAuth, async (req: Request, res: Response) => {
-    const exportDoc = await storage.getLibraryExport(req.params.id);
+    const exportDoc = await storage.getLibraryExport(p(req.params.id));
     if (!exportDoc) return res.status(404).json({ message: "Export not found" });
 
     const buffer = Buffer.from(exportDoc.fileData, "base64");
@@ -4316,7 +4324,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.get("/api/library-exports/:id/preview", requireAuth, async (req: Request, res: Response) => {
     try {
-      const exportDoc = await storage.getLibraryExport(req.params.id);
+      const exportDoc = await storage.getLibraryExport(p(req.params.id));
       if (!exportDoc) return res.status(404).json({ message: "Export not found" });
 
       const buffer = Buffer.from(exportDoc.fileData, "base64");
@@ -4404,7 +4412,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
   });
 
   app.get("/api/projects/:projectId/members", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
-    const members = await storage.getProjectMembers(req.params.projectId);
+    const members = await storage.getProjectMembers(p(req.params.projectId));
     
     // Fetch user details for each member
     const membersWithDetails = await Promise.all(
@@ -4423,7 +4431,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
   app.post("/api/projects/:projectId/members", requireRole("ADMIN", "GOD"), requireProjectAccess(), async (req: Request, res: Response) => {
     try {
       const member = await storage.addProjectMember({
-        projectId: req.params.projectId,
+        projectId: p(req.params.projectId),
         userId: req.body.userId,
         role: req.body.role,
       });
@@ -4523,7 +4531,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
         updates.password = hashPassword(updates.password);
       }
 
-      const user = await storage.updateUser(req.params.id, updates);
+      const user = await storage.updateUser(p(req.params.id), updates);
       if (!user) return res.status(404).json({ message: "User not found" });
 
       const { password, ...sanitized } = user;
@@ -4535,7 +4543,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.delete("/api/projects/:projectId/members/:userId", requireRole("ADMIN", "GOD"), requireProjectAccess(), async (req: Request, res: Response) => {
     try {
-      const removed = await storage.removeProjectMember(req.params.projectId, req.params.userId);
+      const removed = await storage.removeProjectMember(p(req.params.projectId), p(req.params.userId));
       if (!removed) return res.status(404).json({ message: "Member not found" });
       res.json({ message: "Member removed" });
     } catch (error) {
@@ -4627,7 +4635,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
       const { db } = await import("./db");
       const { conversations, messages: messagesTable } = await import("@shared/schema");
       const { eq, asc } = await import("drizzle-orm");
-      const id = parseInt(req.params.id);
+      const id = parseInt(p(req.params.id));
       if (isNaN(id)) return res.status(400).json({ message: "Invalid conversation ID" });
 
       const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
@@ -4654,7 +4662,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
       const { db } = await import("./db");
       const { conversations, messages: messagesTable, logEvents, riskItems } = await import("@shared/schema");
       const { eq, desc, asc, count } = await import("drizzle-orm");
-      const id = parseInt(req.params.id);
+      const id = parseInt(p(req.params.id));
       if (isNaN(id)) return res.status(400).json({ message: "Invalid conversation ID" });
 
       const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
@@ -5014,7 +5022,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
         });
       }
 
-      const projectId = req.params.projectId;
+      const projectId = p(req.params.projectId);
       const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
@@ -5044,10 +5052,11 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
       const user = getUser(req);
       await db.insert(auditEvents).values({
-        action: "DATA_PURGE",
+        action: "DATA_PURGE" as any,
+        correlationId: `purge-${Date.now()}`,
         userId: user.id,
         projectId: null,
-        details: {
+        metadata: {
           purgeType: "project",
           projectName: project.name,
           projectId,
@@ -5057,7 +5066,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
           deletedDays: dayIds.length,
           mlExportRef: lastFullExport[0].id,
         },
-      });
+      } as any);
 
       res.json({
         message: `Project "${project.name}" and all associated data purged successfully`,
@@ -5077,7 +5086,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
       const schema = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
 
-      const projectId = req.params.projectId;
+      const projectId = p(req.params.projectId);
       const [project] = await db.select().from(schema.projects).where(eq(schema.projects.id, projectId));
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
@@ -5092,8 +5101,13 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
       if (dayIds.length > 0) {
         for (const dayId of dayIds) {
-          // logRenders reference logEvents
-          try { await db.delete(schema.logRenders).where(eq(schema.logRenders.dayId, dayId)); } catch(e) {}
+          // logRenders reference logEvents — logRenders has no dayId; delete via logEventId subquery
+          try {
+            const dayLogEvents = await db.select({ id: schema.logEvents.id }).from(schema.logEvents).where(eq(schema.logEvents.dayId, dayId));
+            for (const evt of dayLogEvents) {
+              await db.delete(schema.logRenders).where(eq(schema.logRenders.logEventId, evt.id));
+            }
+          } catch(e) {}
           // clientComms reference days
           try { await db.delete(schema.clientComms).where(eq(schema.clientComms.dayId, dayId)); } catch(e) {}
           // dailySummaries reference days
@@ -5154,16 +5168,17 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
       const user = getUser(_req);
       await db.insert(auditEvents).values({
-        action: "DATA_PURGE",
+        action: "DATA_PURGE" as any,
+        correlationId: `purge-${Date.now()}`,
         userId: user.id,
         projectId: null,
-        details: {
+        metadata: {
           purgeType: "conversations",
           deletedConversations: convCount?.value || 0,
           deletedMessages: msgCount?.value || 0,
           mlExportRef: lastFullExport[0].id,
         },
-      });
+      } as any);
 
       res.json({
         message: "All AI conversations purged successfully",
@@ -5182,7 +5197,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.get("/api/projects/:projectId/sops", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
     try {
-      const sops = await storage.getProjectSops(req.params.projectId);
+      const sops = await storage.getProjectSops(p(req.params.projectId));
       res.json(sops);
     } catch (error) {
       console.error("Get SOPs error:", error);
@@ -5194,7 +5209,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
     try {
       const user = req.user as any;
       const sop = await storage.createProjectSop({
-        projectId: req.params.projectId,
+        projectId: p(req.params.projectId),
         title: req.body.title,
         content: req.body.content,
         isActive: req.body.isActive ?? true,
@@ -5213,7 +5228,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
       if (req.body.title !== undefined) updates.title = req.body.title;
       if (req.body.content !== undefined) updates.content = req.body.content;
       if (req.body.isActive !== undefined) updates.isActive = req.body.isActive;
-      const sop = await storage.updateProjectSop(req.params.id, updates);
+      const sop = await storage.updateProjectSop(p(req.params.id), updates);
       if (!sop) return res.status(404).json({ message: "SOP not found" });
       res.json(sop);
     } catch (error) {
@@ -5224,7 +5239,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.delete("/api/sops/:id", requireRole("ADMIN", "GOD", "SUPERVISOR"), async (req: Request, res: Response) => {
     try {
-      const deleted = await storage.deleteProjectSop(req.params.id);
+      const deleted = await storage.deleteProjectSop(p(req.params.id));
       if (!deleted) return res.status(404).json({ message: "SOP not found" });
       res.json({ success: true });
     } catch (error) {
@@ -5263,7 +5278,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
       if (req.body.title !== undefined) updates.title = req.body.title;
       if (req.body.content !== undefined) updates.content = req.body.content;
       if (req.body.isActive !== undefined) updates.isActive = req.body.isActive;
-      const sop = await storage.updateProjectSop(req.params.id, updates);
+      const sop = await storage.updateProjectSop(p(req.params.id), updates);
       if (!sop) return res.status(404).json({ message: "SOP not found" });
       res.json(sop);
     } catch (error) {
@@ -5577,7 +5592,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.patch("/api/diver-certifications/:id", requireRole("ADMIN", "GOD", "SUPERVISOR"), async (req: Request, res: Response) => {
     try {
-      const cert = await storage.updateDiverCertification(req.params.id, req.body);
+      const cert = await storage.updateDiverCertification(p(req.params.id), req.body);
       if (!cert) return res.status(404).json({ message: "Certification not found" });
       res.json(cert);
     } catch (error: any) {
@@ -5587,7 +5602,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.delete("/api/diver-certifications/:id", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
-      const deleted = await storage.deleteDiverCertification(req.params.id);
+      const deleted = await storage.deleteDiverCertification(p(req.params.id));
       if (!deleted) return res.status(404).json({ message: "Certification not found" });
       res.json({ message: "Deleted" });
     } catch (error: any) {
@@ -5638,7 +5653,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.patch("/api/equipment-certifications/:id", requireRole("ADMIN", "GOD", "SUPERVISOR"), async (req: Request, res: Response) => {
     try {
-      const cert = await storage.updateEquipmentCertification(req.params.id, req.body);
+      const cert = await storage.updateEquipmentCertification(p(req.params.id), req.body);
       if (!cert) return res.status(404).json({ message: "Certification not found" });
       res.json(cert);
     } catch (error: any) {
@@ -5648,7 +5663,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.delete("/api/equipment-certifications/:id", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
-      const deleted = await storage.deleteEquipmentCertification(req.params.id);
+      const deleted = await storage.deleteEquipmentCertification(p(req.params.id));
       if (!deleted) return res.status(404).json({ message: "Certification not found" });
       res.json({ message: "Deleted" });
     } catch (error: any) {
@@ -5856,7 +5871,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.get("/api/companies/:companyId", requireAuth, async (req: Request, res: Response) => {
     try {
-      const company = await storage.getCompany(req.params.companyId);
+      const company = await storage.getCompany(p(req.params.companyId));
       if (!company) return res.status(404).json({ message: "Company not found" });
       // Non-GOD can only see their own company
       const user = getUser(req);
@@ -5892,7 +5907,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.patch("/api/companies/:companyId", requireRole("GOD"), async (req: Request, res: Response) => {
     try {
-      const company = await storage.updateCompany(req.params.companyId, req.body);
+      const company = await storage.updateCompany(p(req.params.companyId), req.body);
       if (!company) return res.status(404).json({ message: "Company not found" });
       res.json(company);
     } catch (error) {
@@ -5902,11 +5917,11 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.delete("/api/companies/:companyId", requireRole("GOD"), async (req: Request, res: Response) => {
     try {
-      const deleted = await storage.deleteCompany(req.params.companyId);
+      const deleted = await storage.deleteCompany(p(req.params.companyId));
       if (!deleted) return res.status(404).json({ message: "Company not found" });
       const ctx: AuditContext = { ...req.auditCtx! };
       emitAuditEvent(ctx, "company.delete", {
-        targetId: req.params.companyId, targetType: "company",
+        targetId: p(req.params.companyId), targetType: "company",
       }).catch(() => {});
       res.json({ message: "Company deleted" });
     } catch (error) {
@@ -5921,7 +5936,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
   app.get("/api/companies/:companyId/members", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
-      const { companyId } = req.params;
+      const companyId = p(req.params.companyId);
       // Only GOD or members of the company can see members
       if (!isGod(user.role) && user.companyId !== companyId) {
         return res.status(403).json({ message: "Forbidden" });
@@ -5944,7 +5959,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
   app.post("/api/companies/:companyId/members", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
-      const { companyId } = req.params;
+      const companyId = p(req.params.companyId);
       // ADMIN can only add to their own company
       if (!isGod(user.role) && user.companyId !== companyId) {
         return res.status(403).json({ message: "Forbidden" });
@@ -5978,7 +5993,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
   app.patch("/api/companies/:companyId/members/:userId", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
-      const { companyId, userId } = req.params;
+      const companyId = p(req.params.companyId); const userId = p(req.params.userId);
       if (!isGod(user.role) && user.companyId !== companyId) {
         return res.status(403).json({ message: "Forbidden" });
       }
@@ -5993,7 +6008,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
   app.delete("/api/companies/:companyId/members/:userId", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
-      const { companyId, userId } = req.params;
+      const companyId = p(req.params.companyId); const userId = p(req.params.userId);
       if (!isGod(user.role) && user.companyId !== companyId) {
         return res.status(403).json({ message: "Forbidden" });
       }
@@ -6014,7 +6029,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
   app.post("/api/companies/:companyId/activate", requireRole("GOD"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
-      const { companyId } = req.params;
+      const companyId = p(req.params.companyId);
       const company = await storage.getCompany(companyId);
       if (!company) return res.status(404).json({ message: "Company not found" });
       await storage.setActiveCompany(user.id, companyId);

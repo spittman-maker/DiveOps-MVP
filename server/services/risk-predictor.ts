@@ -133,7 +133,7 @@ Only output valid JSON, no other text.`,
     expiresAt: new Date(Date.now() + CACHE_TTL_MS),
   };
 
-  await db.insert(schema.mlPredictions).values(prediction);
+  await db.insert(schema.mlPredictions).values(prediction as any);
   logger.info({ projectId, riskLevel: result.riskLevel }, "Risk prediction generated");
 
   return result;
@@ -205,7 +205,7 @@ Only output valid JSON, no other text.`,
     result,
     modelVersion: AI_MODEL,
     expiresAt: new Date(Date.now() + CACHE_TTL_MS),
-  });
+  } as any);
 
   return result;
 }

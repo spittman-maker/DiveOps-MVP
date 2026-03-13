@@ -833,12 +833,12 @@ export function DivePlanTab() {
       // BUG-LOCATION FIX: Derive siteLocation from project settings so the AI
       // doesn't invent a location from container IP / geolocation.
       // Priority: jobsiteAddress > jobsiteName > project name
-      const projectJobsiteName = (activeProject as any).jobsiteName as string | undefined;
-      const projectJobsiteAddress = (activeProject as any).jobsiteAddress as string | undefined;
+      const projectJobsiteName = (activeProject as any)?.jobsiteName as string | undefined;
+      const projectJobsiteAddress = (activeProject as any)?.jobsiteAddress as string | undefined;
       const derivedSiteLocation =
         projectJobsiteAddress?.trim() ||
         projectJobsiteName?.trim() ||
-        activeProject.name?.trim() ||
+        activeProject?.name?.trim() ||
         "";
 
       const projectContext = activeProject ? {

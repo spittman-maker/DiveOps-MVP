@@ -189,7 +189,7 @@ export async function detectAnomalies(
 
     const [inserted] = await db
       .insert(schema.anomalyFlags)
-      .values(flag)
+      .values(flag as any)
       .returning();
     created.push(inserted!);
   }

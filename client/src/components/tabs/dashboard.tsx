@@ -102,6 +102,16 @@ interface LiveDive {
   decompRequired: string | null;
   diveNumber: number;
   dayId: string;
+  stale?: boolean;
+}
+
+/** Format a duration in minutes into a human-readable string */
+function formatDuration(minutes: number | null | undefined): string {
+  if (minutes == null) return "\u2014";
+  if (minutes < 60) return `${minutes}m`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
 interface LiveLogEntry {
@@ -215,19 +225,23 @@ function LiveDiveBoardWidget({ projectId }: { projectId?: string } = {}) {
               </thead>
               <tbody>
                 {activeDives.map(dive => (
-                  <tr key={dive.id} className="border-b border-navy-700/50 hover:bg-navy-700/30">
+                  <tr key={dive.id} className={`border-b border-navy-700/50 hover:bg-navy-700/30${dive.stale ? " opacity-50" : ""}`}>
                     <td className="py-1 px-1">
-                      <span className="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                      {dive.stale ? (
+                        <Badge variant="outline" className="text-[8px] px-1 py-0 border-yellow-600 text-yellow-500">STALE</Badge>
+                      ) : (
+                        <span className="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                      )}
                     </td>
                     <td className="py-1 px-1 text-white font-medium">{dive.diverName}</td>
                     <td className="py-1 px-1 text-cyan-400">{dive.station}</td>
-                    <td className="py-1 px-1 text-right text-white font-mono">{dive.maxDepthFsw ? `${dive.maxDepthFsw}'` : "—"}</td>
+                    <td className="py-1 px-1 text-right text-white font-mono">{dive.maxDepthFsw ? `${dive.maxDepthFsw}'` : "\u2014"}</td>
                     <td className="py-1 px-1 text-navy-200">{dive.breathingGas}</td>
-                    <td className="py-1 px-1 text-right text-navy-200 font-mono">{dive.fo2Percent || "—"}</td>
+                    <td className="py-1 px-1 text-right text-navy-200 font-mono">{dive.fo2Percent || "\u2014"}</td>
                     <td className="py-1 px-1 text-right text-amber-400 font-mono">{formatTime(dive.lsTime)}</td>
-                    <td className="py-1 px-1 text-right text-amber-300 font-mono font-bold">{dive.elapsedMin}m</td>
-                    <td className="py-1 px-1 text-right text-white font-mono">{dive.bottomTimeMin != null ? `${dive.bottomTimeMin}m` : "—"}</td>
-                    <td className="py-1 px-1 text-navy-300 truncate max-w-[100px]">{dive.scheduleUsed || "—"}</td>
+                    <td className="py-1 px-1 text-right text-amber-300 font-mono font-bold">{formatDuration(dive.elapsedMin)}</td>
+                    <td className="py-1 px-1 text-right text-white font-mono">{formatDuration(dive.bottomTimeMin)}</td>
+                    <td className="py-1 px-1 text-navy-300 truncate max-w-[100px]">{dive.scheduleUsed || "\u2014"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -261,8 +275,8 @@ function LiveDiveBoardWidget({ projectId }: { projectId?: string } = {}) {
                     <td className="py-0.5 px-1 text-cyan-400/60">{dive.station}</td>
                     <td className="py-0.5 px-1 text-right text-navy-200 font-mono">{dive.maxDepthFsw ? `${dive.maxDepthFsw}'` : "—"}</td>
                     <td className="py-0.5 px-1 text-navy-300">{dive.breathingGas}</td>
-                    <td className="py-0.5 px-1 text-right text-navy-200 font-mono">{dive.totalMin}m</td>
-                    <td className="py-0.5 px-1 text-right text-navy-200 font-mono">{dive.bottomTimeMin != null ? `${dive.bottomTimeMin}m` : "—"}</td>
+                    <td className="py-0.5 px-1 text-right text-navy-200 font-mono">{formatDuration(dive.totalMin)}</td>
+                    <td className="py-0.5 px-1 text-right text-navy-200 font-mono">{formatDuration(dive.bottomTimeMin)}</td>
                     <td className="py-0.5 px-1 text-navy-400 truncate max-w-[80px]">{dive.scheduleUsed || "—"}</td>
                     <td className="py-0.5 px-1 text-navy-300 font-mono">{dive.repetitiveGroup || "—"}</td>
                   </tr>
@@ -1858,16 +1872,18 @@ export function DashboardTab() {
 
       <div ref={containerRef} className="flex-1 overflow-auto p-4">
         <GridLayout
-          className="layout"
-          layout={gridLayout}
-          cols={4}
-          rowHeight={150}
-          width={containerWidth}
-          onLayoutChange={handleLayoutChange as any}
-          isDraggable={isEditing}
-          isResizable={isEditing}
-          draggableHandle=".widget-drag-handle"
-          resizeHandles={['se']}
+          {...{
+            className: "layout",
+            layout: gridLayout,
+            cols: 4,
+            rowHeight: 150,
+            width: containerWidth,
+            onLayoutChange: handleLayoutChange as any,
+            isDraggable: isEditing,
+            isResizable: isEditing,
+            draggableHandle: ".widget-drag-handle",
+            resizeHandles: ['se'],
+          } as any}
         >
           {localLayout.map(widget => (
             <div key={widget.id} className="bg-navy-800 border border-navy-600 rounded-lg overflow-hidden">
