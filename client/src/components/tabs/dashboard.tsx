@@ -105,14 +105,6 @@ interface LiveDive {
   stale?: boolean;
 }
 
-/** Format a duration in minutes into a human-readable string */
-function formatDuration(minutes: number | null | undefined): string {
-  if (minutes == null) return "\u2014";
-  if (minutes < 60) return `${minutes}m`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
-}
 
 interface LiveLogEntry {
   id: string;
@@ -239,8 +231,8 @@ function LiveDiveBoardWidget({ projectId }: { projectId?: string } = {}) {
                     <td className="py-1 px-1 text-navy-200">{dive.breathingGas}</td>
                     <td className="py-1 px-1 text-right text-navy-200 font-mono">{dive.fo2Percent || "\u2014"}</td>
                     <td className="py-1 px-1 text-right text-amber-400 font-mono">{formatTime(dive.lsTime)}</td>
-                    <td className="py-1 px-1 text-right text-amber-300 font-mono font-bold">{formatDuration(dive.elapsedMin)}</td>
-                    <td className="py-1 px-1 text-right text-white font-mono">{formatDuration(dive.bottomTimeMin)}</td>
+                    <td className="py-1 px-1 text-right text-amber-300 font-mono font-bold">{dive.elapsedMin}m</td>
+                    <td className="py-1 px-1 text-right text-white font-mono">{dive.bottomTimeMin != null ? `${dive.bottomTimeMin}m` : "\u2014"}</td>
                     <td className="py-1 px-1 text-navy-300 truncate max-w-[100px]">{dive.scheduleUsed || "\u2014"}</td>
                   </tr>
                 ))}
@@ -275,8 +267,8 @@ function LiveDiveBoardWidget({ projectId }: { projectId?: string } = {}) {
                     <td className="py-0.5 px-1 text-cyan-400/60">{dive.station}</td>
                     <td className="py-0.5 px-1 text-right text-navy-200 font-mono">{dive.maxDepthFsw ? `${dive.maxDepthFsw}'` : "—"}</td>
                     <td className="py-0.5 px-1 text-navy-300">{dive.breathingGas}</td>
-                    <td className="py-0.5 px-1 text-right text-navy-200 font-mono">{formatDuration(dive.totalMin)}</td>
-                    <td className="py-0.5 px-1 text-right text-navy-200 font-mono">{formatDuration(dive.bottomTimeMin)}</td>
+                    <td className="py-0.5 px-1 text-right text-navy-200 font-mono">{dive.totalMin}m</td>
+                    <td className="py-0.5 px-1 text-right text-navy-200 font-mono">{dive.bottomTimeMin != null ? `${dive.bottomTimeMin}m` : "\u2014"}</td>
                     <td className="py-0.5 px-1 text-navy-400 truncate max-w-[80px]">{dive.scheduleUsed || "—"}</td>
                     <td className="py-0.5 px-1 text-navy-300 font-mono">{dive.repetitiveGroup || "—"}</td>
                   </tr>

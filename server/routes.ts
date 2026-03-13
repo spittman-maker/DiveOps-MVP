@@ -2057,32 +2057,9 @@ export async function registerRoutes(
         if (parsedTime) {
           eventTime = parsedTime;
         } else if (data.clientTimezone) {
-          // No time entered — use client's local clock time
-          // We store times so getUTCHours() returns the operational clock time,
-          // so construct a UTC Date whose H:M matches the user's local wall clock
-          try {
-            const formatter = new Intl.DateTimeFormat("en-US", {
-              timeZone: data.clientTimezone,
-              year: "numeric", month: "2-digit", day: "2-digit",
-              hour: "2-digit", minute: "2-digit", second: "2-digit",
-              hour12: false,
-            });
-            const parts = formatter.formatToParts(captureTime);
-            const get = (type: string) => {
-              const val = parts.find(p => p.type === type)?.value;
-              return val !== undefined ? parseInt(val, 10) : NaN;
-            };
-            const yr = get("year"), mo = get("month"), dy = get("day"),
-                  hr = get("hour"), mn = get("minute"), sc = get("second");
-            if ([yr, mo, dy, hr, mn, sc].some(v => isNaN(v))) {
-              console.warn("[event-time] formatToParts missing fields, falling back to captureTime");
-              eventTime = captureTime;
-            } else {
-              eventTime = new Date(Date.UTC(yr, mo - 1, dy, hr, mn, sc));
-            }
-          } catch {
-            eventTime = captureTime;
-          }
+          // No explicit time entered — use server capture time (real UTC)
+          // The display layer uses browser-local getHours() for formatting
+          eventTime = captureTime;
         } else {
           eventTime = captureTime;
         }

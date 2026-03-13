@@ -602,11 +602,19 @@ export function localHHMMtoUTC(hours: number, minutes: number, dayDate: string, 
     //                       = (localH * 60 + localM) - 24*60 if localH >= 12 (west of UTC)
     const rawH = get('hour') === 24 ? 0 : get('hour');
     const rawM = get('minute');
-    // offsetMinutes = local - UTC; since UTC is midnight (0), offset = rawH*60+rawM
-    // but if rawH >= 12, the timezone is behind UTC (e.g. UTC-10 => rawH=14 on prev day)
-    // Actually Intl gives the local time for the UTC instant, so:
-    // localEpoch = midnightUTC.getTime() + (hours - rawH) * 3600000 + (minutes - rawM) * 60000
-    const localEpoch = midnightUTC.getTime() + (hours - rawH) * 3600000 + (minutes - rawM) * 60000;
+    const localDay = get('day');
+    
+    let localEpoch = midnightUTC.getTime() + (hours - rawH) * 3600000 + (minutes - rawM) * 60000;
+    
+    // Fix day-boundary crossing for timezones west of UTC:
+    // At midnight UTC, west-of-UTC timezones are still on the previous local day.
+    // The offset calc produces a time 24h too early, so add a day to compensate.
+    if (localDay !== day) {
+      if (localDay < day) {
+        localEpoch += 24 * 3600000;
+      }
+    }
+    
     return new Date(localEpoch);
   } catch {
     // Fallback to UTC if timezone is invalid
