@@ -299,7 +299,7 @@ export function DiveLogsTab() {
             onClick={() => setShowDecompTable(!showDecompTable)}
           >
             <BookOpen className="w-3 h-3 mr-1" />
-            Decomp (9-8)
+            Decomp (9-9)
             {showDecompTable ? <ChevronDown className="w-3 h-3 ml-1" /> : <ChevronRight className="w-3 h-3 ml-1" />}
           </Button>
           <Button
@@ -335,7 +335,7 @@ export function DiveLogsTab() {
               TABLE 9-7 — No-Decompression Limits & Repetitive Group Designators
             </h3>
             <p className="text-[10px] text-navy-400 mt-0.5">
-              U.S. Navy Diving Manual, Rev 7 — Verbatim. Depth in fsw. Bottom time in minutes. Group letters A–O.
+              U.S. Navy Diving Manual, Rev 7 — Verbatim. Depth in fsw. Bottom time in minutes. Group letters A–O, Z.
             </p>
           </div>
           <CardContent className="p-0 overflow-x-auto">
@@ -344,7 +344,7 @@ export function DiveLogsTab() {
                 <tr className="border-b border-navy-600">
                   <th className="text-left px-2 py-1.5 text-amber-400 font-semibold sticky left-0 bg-navy-900/95 z-10 min-w-[70px]">Depth</th>
                   <th className="text-center px-2 py-1.5 text-cyan-400 font-semibold min-w-[50px]">No-D Limit</th>
-                  {["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"].map(g => (
+                  {["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","Z"].map(g => (
                     <th key={g} className="text-center px-1.5 py-1.5 text-navy-300 font-mono font-bold min-w-[32px]">{g}</th>
                   ))}
                 </tr>
@@ -356,8 +356,8 @@ export function DiveLogsTab() {
                   return (
                     <tr key={row.depth} className="border-b border-navy-700/40 hover:bg-navy-700/20">
                       <td className="px-2 py-1.5 text-white font-mono font-bold sticky left-0 bg-navy-900/95 z-10">{row.depth} fsw</td>
-                      <td className="text-center px-2 py-1.5 text-cyan-300 font-mono font-bold">{row.noStopLimit}</td>
-                      {["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"].map(g => (
+                      <td className="text-center px-2 py-1.5 text-cyan-300 font-mono font-bold">{row.unlimited ? "Unlimited" : row.noStopLimit}</td>
+                      {["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","Z"].map(g => (
                         <td key={g} className={`text-center px-1.5 py-1.5 font-mono ${
                           groupMap[g] != null
                             ? groupMap[g] === row.noStopLimit ? "text-cyan-300 font-bold" : "text-navy-200"
@@ -380,10 +380,10 @@ export function DiveLogsTab() {
           <div className="p-3 border-b border-navy-600">
             <h3 className="text-red-400 text-sm font-semibold flex items-center gap-2">
               <BookOpen className="w-4 h-4" />
-              TABLE 9-8 — U.S. Navy Standard Air Decompression Table
+              TABLE 9-9 — U.S. Navy Standard Air Decompression Table
             </h3>
             <p className="text-[10px] text-navy-400 mt-0.5">
-              U.S. Navy Diving Manual, Rev 7 — Verbatim. Depth in fsw. Bottom time & stop times in minutes. Group letters A–O.
+              U.S. Navy Diving Manual, Rev 7 — Verbatim. Depth in fsw. Bottom time & stop times in minutes. Group letters A–Z.
             </p>
           </div>
           <CardContent className="p-0 overflow-x-auto">
@@ -407,7 +407,7 @@ export function DiveLogsTab() {
                       <td className="text-center px-2 py-1.5 text-white font-mono">{entry.bottomTime}</td>
                       <td className="text-center px-2 py-1.5 font-mono">
                         {entry.decompStops.length > 0 ? (
-                          <span className="text-red-300">{entry.decompStops.map(s => `${s.depth}ft/${s.time}min`).join(", ")}</span>
+                          <span className="text-red-300">{entry.decompStops.map(s => `${s.depth}fsw/${s.time}min`).join(", ")}</span>
                         ) : (
                           <span className="text-green-400">No stops</span>
                         )}
@@ -430,7 +430,7 @@ export function DiveLogsTab() {
           { label: "EAN28", fo2: 0.28 }, { label: "EAN30", fo2: 0.30 }, { label: "EAN32", fo2: 0.32 },
           { label: "EAN34", fo2: 0.34 }, { label: "EAN36", fo2: 0.36 }, { label: "EAN40", fo2: 0.40 },
         ];
-        const depths = [40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190];
+        const depths = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190];
         return (
           <Card className="bg-navy-900/80 border-cyan-500/30 mb-4" data-testid="ead-reference-table">
             <div className="p-3 border-b border-navy-600">
@@ -483,7 +483,7 @@ export function DiveLogsTab() {
           { label: "Air", fo2: 0.21 }, { label: "EAN28", fo2: 0.28 }, { label: "EAN32", fo2: 0.32 },
           { label: "EAN36", fo2: 0.36 }, { label: "EAN40", fo2: 0.40 },
         ];
-        const depths = [40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150];
+        const depths = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190];
         return (
           <Card className="bg-navy-900/80 border-green-500/30 mb-4" data-testid="nitrox-nod-reference-table">
             <div className="p-3 border-b border-navy-600">
@@ -514,12 +514,13 @@ export function DiveLogsTab() {
                         const tableDepth = TABLE_DEPTHS.find(d => d >= ead) || TABLE_DEPTHS[TABLE_DEPTHS.length - 1];
                         const noDecompRow = NO_DECOM_TABLE.find(r => r.depth === tableDepth);
                         const noStopLimit = noDecompRow ? noDecompRow.noStopLimit : 0;
+                        const isUnlimited = noDecompRow?.unlimited;
                         const airRow = NO_DECOM_TABLE.find(r => r.depth === (TABLE_DEPTHS.find(d => d >= depth) || TABLE_DEPTHS[TABLE_DEPTHS.length - 1]));
                         const airLimit = airRow ? airRow.noStopLimit : 0;
-                        const bonus = noStopLimit - airLimit;
+                        const bonus = isUnlimited || airRow?.unlimited ? 0 : noStopLimit - airLimit;
                         return (
                           <td key={mix.label} className="text-center px-3 py-1.5 font-mono">
-                            <span className={`font-bold ${mix.label === "Air" ? "text-navy-200" : "text-green-300"}`}>{noStopLimit}</span>
+                            <span className={`font-bold ${mix.label === "Air" ? "text-navy-200" : "text-green-300"}`}>{isUnlimited ? "Unlimited" : noStopLimit}</span>
                             {mix.label !== "Air" && bonus > 0 && <span className="text-green-500 text-[9px] ml-1">+{bonus}</span>}
                           </td>
                         );
