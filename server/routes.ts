@@ -740,9 +740,12 @@ export async function registerRoutes(
       if (!projectId) {
         return res.json({ activeDives: [], completedDives: [], logEntries: [], stations: [] });
       }
+
+      // Fetch project (needed for timezone and multi-tenant check)
+      const project = await storage.getProject(projectId);
+
       // BUG-04 FIX: Verify projectId belongs to user's company
       if (isEnabled("multiTenantOrg") && !isGod(user.role)) {
-        const project = await storage.getProject(projectId);
         if (project?.companyId && user.companyId && project.companyId !== user.companyId) {
           return res.status(403).json({ message: "Forbidden: project belongs to a different company" });
         }
@@ -896,6 +899,7 @@ export async function registerRoutes(
         stations,
         dayCount: todayDays.length,
         date: todayDays[0]?.date || today,
+        projectTimezone: project?.timezone || "America/New_York",
       });
     } catch (error: any) {
       console.error("Live board error:", error);

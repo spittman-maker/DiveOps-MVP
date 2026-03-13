@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useProject } from "@/hooks/use-project";
+import { formatTimeInTz } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -68,7 +69,8 @@ interface MasterLogData {
 }
 
 export function MasterLogTab() {
-  const { activeDay } = useProject();
+  const { activeDay, activeProject } = useProject();
+  const projectTz = activeProject?.timezone;
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     dayShift: true,
     email: true,
@@ -94,10 +96,7 @@ export function MasterLogTab() {
 
   const formatTime = (dateStr?: string) => {
     if (!dateStr) return "----";
-    const d = new Date(dateStr);
-    const h = String(d.getHours()).padStart(2, "0");
-    const m = String(d.getMinutes()).padStart(2, "0");
-    return `${h}${m}`;
+    return formatTimeInTz(dateStr, projectTz);
   };
 
   const formatDate = (dateStr?: string) => {
@@ -124,12 +123,17 @@ export function MasterLogTab() {
   const riskEntries = data?.riskEntries || sections.risk;
 
   // Split ops entries into day shift (before 18:00) and night shift (18:00+)
+  const getHourInTz = (iso: string): number => {
+    if (!projectTz) return new Date(iso).getHours();
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone: projectTz, hour: "2-digit", hour12: false }).formatToParts(new Date(iso));
+    return parseInt(parts.find(p => p.type === "hour")?.value || "0", 10);
+  };
   const dayShiftOps = sections.ops.filter(e => {
-    const h = e.eventTime ? new Date(e.eventTime).getHours() : 6;
+    const h = e.eventTime ? getHourInTz(e.eventTime) : 6;
     return h < 18;
   });
   const nightShiftOps = sections.ops.filter(e => {
-    const h = e.eventTime ? new Date(e.eventTime).getHours() : 6;
+    const h = e.eventTime ? getHourInTz(e.eventTime) : 6;
     return h >= 18;
   });
 

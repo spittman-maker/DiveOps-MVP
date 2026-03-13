@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useProject } from "@/hooks/use-project";
+import { formatTimeInTz } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -236,7 +237,7 @@ export function RiskRegisterTab() {
                   <span className="text-[10px] text-navy-500 uppercase">Trigger Event</span>
                   {risk.triggerEventTime && (
                     <span className="text-[10px] text-amber-400/60 font-mono">
-                      {(() => { const d = new Date(risk.triggerEventTime); return `${String(d.getHours()).padStart(2,"0")}${String(d.getMinutes()).padStart(2,"0")}`; })()}
+                      {formatTimeInTz(risk.triggerEventTime, activeProject?.timezone)}
                     </span>
                   )}
                 </div>

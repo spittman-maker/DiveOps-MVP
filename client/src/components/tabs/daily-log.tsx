@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useProject } from "@/hooks/use-project";
 import { apiRequest } from "@/lib/queryClient";
+import { formatTimeInTz } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -118,12 +119,9 @@ interface MasterLogData {
   };
 }
 
-function formatTime24(timeStr?: string): string {
+function formatTime24(timeStr?: string, tz?: string): string {
   if (!timeStr) return "—";
-  const d = new Date(timeStr);
-  const h = String(d.getHours()).padStart(2, "0");
-  const m = String(d.getMinutes()).padStart(2, "0");
-  return `${h}${m}`;
+  return formatTimeInTz(timeStr, tz);
 }
 
 function getEditableValue(fieldName: string, value: string | number | undefined | null): string {
@@ -1003,12 +1001,10 @@ export function DailyLogTab() {
     }
   };
 
+  const projectTz = activeProject?.timezone;
   const formatTime = (dateStr?: string) => {
     if (!dateStr) return "----";
-    const d = new Date(dateStr);
-    const h = String(d.getHours()).padStart(2, "0");
-    const m = String(d.getMinutes()).padStart(2, "0");
-    return `${h}${m}`;
+    return formatTimeInTz(dateStr, projectTz);
   };
 
   const formatDate = (dateStr?: string) => {
@@ -2006,7 +2002,7 @@ export function DailyLogTab() {
                                   diveId={dive.id}
                                   fieldName="lsTime"
                                   value={dive.lsTime}
-                                  displayValue={formatTime24(dive.lsTime)}
+                                  displayValue={formatTime24(dive.lsTime, projectTz)}
                                   onSave={(f, v) => handleDiveSave(dive.id, f, v)}
                                   placeholder="HHMM"
                                 />
@@ -2016,7 +2012,7 @@ export function DailyLogTab() {
                                   diveId={dive.id}
                                   fieldName="rbTime"
                                   value={dive.rbTime}
-                                  displayValue={formatTime24(dive.rbTime)}
+                                  displayValue={formatTime24(dive.rbTime, projectTz)}
                                   onSave={(f, v) => handleDiveSave(dive.id, f, v)}
                                   placeholder="HHMM"
                                 />
@@ -2026,7 +2022,7 @@ export function DailyLogTab() {
                                   diveId={dive.id}
                                   fieldName="lbTime"
                                   value={dive.lbTime}
-                                  displayValue={formatTime24(dive.lbTime)}
+                                  displayValue={formatTime24(dive.lbTime, projectTz)}
                                   onSave={(f, v) => handleDiveSave(dive.id, f, v)}
                                   placeholder="HHMM"
                                 />
@@ -2036,7 +2032,7 @@ export function DailyLogTab() {
                                   diveId={dive.id}
                                   fieldName="rsTime"
                                   value={dive.rsTime}
-                                  displayValue={formatTime24(dive.rsTime)}
+                                  displayValue={formatTime24(dive.rsTime, projectTz)}
                                   onSave={(f, v) => handleDiveSave(dive.id, f, v)}
                                   placeholder="HHMM"
                                 />

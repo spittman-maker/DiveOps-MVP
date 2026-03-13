@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { useAuth } from "@/hooks/use-auth";
 import { useProject } from "@/hooks/use-project";
+import { formatTimeInTz } from "@/lib/utils";
 
 interface WidgetConfig {
   id: string;
@@ -172,13 +173,12 @@ function useLiveBoardData(projectId?: string) {
 
 function LiveDiveBoardWidget({ projectId }: { projectId?: string } = {}) {
   const { data } = useLiveBoardData(projectId);
+  const { activeProject } = useProject();
+  const projectTz = activeProject?.timezone;
   const activeDives = data?.activeDives || [];
   const completedDives = data?.completedDives || [];
 
-  const formatTime = (iso: string) => {
-    const d = new Date(iso);
-    return `${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
-  };
+  const formatTime = (iso: string) => formatTimeInTz(iso, projectTz);
 
   return (
     <div className="flex flex-col h-full overflow-hidden" data-testid="widget-live-dive-board">
@@ -293,6 +293,8 @@ function LiveDiveBoardWidget({ projectId }: { projectId?: string } = {}) {
 
 function LiveLogFeedWidget({ projectId }: { projectId?: string } = {}) {
   const { data } = useLiveBoardData(projectId);
+  const { activeProject } = useProject();
+  const projectTz = activeProject?.timezone;
   const logEntries = data?.logEntries || [];
 
   const categoryColor: Record<string, string> = {
@@ -303,10 +305,7 @@ function LiveLogFeedWidget({ projectId }: { projectId?: string } = {}) {
     general: "bg-navy-600/50 text-navy-300 border-navy-500/30",
   };
 
-  const formatTime = (iso: string) => {
-    const d = new Date(iso);
-    return `${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
-  };
+  const formatTime = (iso: string) => formatTimeInTz(iso, projectTz);
 
   if (logEntries.length === 0) {
     return (
@@ -355,6 +354,7 @@ interface CrewMemberHours {
   startTime: string;
   endTime: string;
   totalHours: number;
+  maxDepthFsw: number;
   notes: string;
 }
 
@@ -459,20 +459,23 @@ function StationOverviewWidget({ projectId }: { projectId?: string } = {}) {
 
   const addMember = () => {
     if (!newName.trim()) return;
-    const member: CrewMemberHours = {
-      id: `m${Date.now()}`,
-      name: newName.trim(),
+    // Split comma-separated names into individual crew members
+    const names = newName.split(",").map(n => n.trim()).filter(n => n.length > 0);
+    const newMembers: CrewMemberHours[] = names.map((name, i) => ({
+      id: `m${Date.now()}_${i}`,
+      name,
       trade: newTrade,
       startTime: "",
       endTime: "",
       totalHours: 0,
+      maxDepthFsw: 0,
       notes: "",
-    };
-    const updated = [...members, member];
+    }));
+    const updated = [...members, ...newMembers];
     saveMembers(updated);
     setNewName("");
     setShowAddForm(false);
-    toast({ title: "Added", description: `${member.name} added to roster` });
+    toast({ title: "Added", description: `${names.length} crew member${names.length > 1 ? "s" : ""} added to roster` });
   };
 
   const updateMember = (id: string, field: keyof CrewMemberHours, value: string | number) => {
@@ -578,7 +581,7 @@ function StationOverviewWidget({ projectId }: { projectId?: string } = {}) {
                     <X className="h-3 w-3" />
                   </button>
                 </div>
-                <div className="grid grid-cols-3 gap-1">
+                <div className={`grid ${(member.trade === "Diver" || member.trade === "Standby Diver") ? "grid-cols-4" : "grid-cols-3"} gap-1`}>
                   <div>
                     <label className="text-[8px] text-navy-500 block">Start</label>
                     <input
@@ -609,6 +612,20 @@ function StationOverviewWidget({ projectId }: { projectId?: string } = {}) {
                       className="bg-navy-900 border border-navy-600 text-amber-400 text-[10px] rounded px-1 py-0.5 w-full font-mono font-bold focus:outline-none focus:border-amber-500"
                     />
                   </div>
+                  {(member.trade === "Diver" || member.trade === "Standby Diver") && (
+                    <div>
+                      <label className="text-[8px] text-navy-500 block">Depth</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="300"
+                        value={member.maxDepthFsw || ""}
+                        onChange={(e) => updateMember(member.id, "maxDepthFsw", parseInt(e.target.value) || 0)}
+                        className="bg-navy-900 border border-navy-600 text-cyan-400 text-[10px] rounded px-1 py-0.5 w-full font-mono font-bold focus:outline-none focus:border-amber-500"
+                        placeholder="FSW"
+                      />
+                    </div>
+                  )}
                 </div>
                 <div className="mt-1">
                   <input
@@ -636,7 +653,7 @@ function StationOverviewWidget({ projectId }: { projectId?: string } = {}) {
           <div className="bg-navy-700/60 rounded p-2 border border-navy-600/50 space-y-1.5">
             <input
               type="text"
-              placeholder="Name"
+              placeholder="Name (or comma-separated names)"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               className="bg-navy-900 border border-navy-600 text-white text-xs rounded px-2 py-1 w-full focus:outline-none focus:border-amber-500"
@@ -836,6 +853,8 @@ interface RecentLog {
 }
 
 function RecentLogsWidget({ projectId }: { projectId?: string } = {}) {
+  const { activeProject } = useProject();
+  const projectTz = activeProject?.timezone;
   const { data: recentLogs } = useQuery<RecentLog[]>({
     queryKey: ["dashboard-recent-logs", projectId],
     queryFn: async () => {
@@ -873,7 +892,7 @@ function RecentLogsWidget({ projectId }: { projectId?: string } = {}) {
           <div className="flex justify-between items-center mb-0.5">
             <div className="flex items-center gap-1.5">
               <span className="text-amber-400 font-mono text-[10px]">
-                {(() => { const d = new Date(log.eventTime); return `${String(d.getHours()).padStart(2,"0")}${String(d.getMinutes()).padStart(2,"0")}`; })()}
+                {formatTimeInTz(log.eventTime, projectTz)}
               </span>
               <span className={`uppercase text-[9px] font-semibold ${categoryColor[log.category] || "text-navy-300"}`}>
                 {log.category?.replace("_", " ") || "general"}
@@ -1355,10 +1374,7 @@ function MyCrewQuickEntryWidget({ projectId }: { projectId?: string }) {
     general: "text-navy-300",
   };
 
-  const formatLogTime = (iso: string) => {
-    const d = new Date(iso);
-    return `${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
-  };
+  const formatLogTime = (iso: string) => formatTimeInTz(iso, activeProject?.timezone);
 
   const dayIsClosed = activeDay?.status === "CLOSED";
   const canSubmit = canWriteLogEvents && !!activeDay && !dayIsClosed;
