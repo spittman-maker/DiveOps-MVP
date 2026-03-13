@@ -138,6 +138,45 @@ const riskUpdateSchema = z.object({
   editReason: z.string().min(1),
 });
 
+// Auto-compute dive table when sufficient data is available (module-scoped for reuse)
+async function autoComputeDiveTable(diveId: string) {
+  try {
+    const d = await storage.getDive(diveId);
+    if (!d || !d.maxDepthFsw || !d.lsTime) return;
+    // Default to Air if no breathing gas set
+    const breathingGas = d.breathingGas || "Air";
+    
+    let bottomTimeMinutes: number | null = null;
+    if (d.lbTime) {
+      const ls = new Date(d.lsTime).getTime();
+      const lb = new Date(d.lbTime).getTime();
+      let diff = lb - ls;
+      if (diff < 0) diff += 24 * 60 * 60 * 1000;
+      bottomTimeMinutes = Math.ceil(diff / 60000);
+    } else if (d.rsTime) {
+      const ls = new Date(d.lsTime).getTime();
+      const rs = new Date(d.rsTime).getTime();
+      let diff = rs - ls;
+      if (diff < 0) diff += 24 * 60 * 60 * 1000;
+      bottomTimeMinutes = Math.ceil(diff / 60000);
+    }
+    if (!bottomTimeMinutes || bottomTimeMinutes <= 0) return;
+    
+    const fo2 = d.fo2Percent ?? (breathingGas === "Air" ? 21 : null);
+    const result = lookupDiveTable(d.maxDepthFsw, bottomTimeMinutes, breathingGas, fo2 ?? undefined);
+    await storage.updateDive(diveId, {
+      tableUsed: result.tableUsed,
+      scheduleUsed: result.scheduleUsed,
+      repetitiveGroup: result.repetitiveGroup,
+      decompRequired: result.decompRequired === "YES" ? "Y" : "N",
+      decompStops: result.decompStops?.length ? JSON.stringify(result.decompStops) : null,
+      tableCitation: JSON.stringify(result.citation),
+    });
+  } catch (err) {
+    console.error("Auto-compute table failed:", err);
+  }
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -2247,44 +2286,6 @@ export async function registerRoutes(
         }
       }
       
-      // Auto-compute dive table when sufficient data is available
-      async function autoComputeDiveTable(diveId: string) {
-        try {
-          const d = await storage.getDive(diveId);
-          if (!d || !d.maxDepthFsw || !d.lsTime) return;
-          // Default to Air if no breathing gas set
-          const breathingGas = d.breathingGas || "Air";
-          
-          let bottomTimeMinutes: number | null = null;
-          if (d.lbTime) {
-            const ls = new Date(d.lsTime).getTime();
-            const lb = new Date(d.lbTime).getTime();
-            let diff = lb - ls;
-            if (diff < 0) diff += 24 * 60 * 60 * 1000;
-            bottomTimeMinutes = Math.ceil(diff / 60000);
-          } else if (d.rsTime) {
-            const ls = new Date(d.lsTime).getTime();
-            const rs = new Date(d.rsTime).getTime();
-            let diff = rs - ls;
-            if (diff < 0) diff += 24 * 60 * 60 * 1000;
-            bottomTimeMinutes = Math.ceil(diff / 60000);
-          }
-          if (!bottomTimeMinutes || bottomTimeMinutes <= 0) return;
-          
-          const fo2 = d.fo2Percent ?? (breathingGas === "Air" ? 21 : null);
-          const result = lookupDiveTable(d.maxDepthFsw, bottomTimeMinutes, breathingGas, fo2 ?? undefined);
-          await storage.updateDive(diveId, {
-            tableUsed: result.tableUsed,
-            scheduleUsed: result.scheduleUsed,
-            repetitiveGroup: result.repetitiveGroup,
-            decompRequired: result.decompRequired === "YES" ? "Y" : "N",
-            decompStops: result.decompStops?.length ? JSON.stringify(result.decompStops) : null,
-            tableCitation: JSON.stringify(result.citation),
-          });
-        } catch (err) {
-          console.error("Auto-compute table failed:", err);
-        }
-      }
 
       // If dive operation, create/update dive record for the diver synchronously
       if (extracted.diveOperation) {
@@ -5096,7 +5097,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
       await db.delete(schema.days).where(eq(schema.days.projectId, projectId));
       await db.delete(schema.projectMembers).where(eq(schema.projectMembers.projectId, projectId));
       // SOPs reference projects
-      try { await db.delete(schema.sops).where(eq(schema.sops.projectId, projectId)); } catch(e) {}
+      try { await db.delete(schema.projectSops).where(eq(schema.projectSops.projectId, projectId)); } catch(e) {}
       await db.delete(schema.projects).where(eq(schema.projects.id, projectId));
 
       res.json({ message: `Project "${project.name}" deleted successfully` });
@@ -5296,7 +5297,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.get("/api/facilities", requireAuth, async (req: Request, res: Response) => {
     try {
-      const facilities = await storage.getDirectoryFacilities();
+      const facilities = await storage.getAllDirectoryFacilities();
       res.json(facilities);
     } catch (error: any) {
       // CRIT-04 FIX: If the table doesn't exist yet, return empty array instead of 500

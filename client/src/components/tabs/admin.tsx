@@ -55,6 +55,7 @@ interface UserRecord {
   fullName?: string;
   initials?: string;
   email?: string;
+  companyId?: string;
 }
 
 interface Project {
@@ -85,6 +86,8 @@ interface DirectoryFacility {
   name: string;
   facilityType: string;
   address: string;
+  lat?: string;
+  lng?: string;
   phone: string;
   travelTimeMinutes?: number;
   verifiedBy?: string;
@@ -1587,6 +1590,7 @@ export function AdminTab() {
       initials: user.initials || "",
       email: user.email || "",
       role: user.role || "DIVER",
+      companyId: user.companyId || "",
     });
     setEditUserOpen(true);
   }
@@ -1599,6 +1603,8 @@ export function AdminTab() {
       address: facility.address || "",
       phone: facility.phone || "",
       travelTimeMinutes: facility.travelTimeMinutes?.toString() || "",
+      lat: facility.lat || "",
+      lng: facility.lng || "",
     });
     setEditFacilityOpen(true);
   }
