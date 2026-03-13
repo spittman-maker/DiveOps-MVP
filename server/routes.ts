@@ -93,16 +93,16 @@ function getTodayDate(): string {
 // can only be assigned by admins via the admin user creation endpoint.
 const registerSchema = z.object({
   username: z.string().min(3).max(50),
-  password: z.string().min(6),
+  password: z.string().min(8),
   fullName: z.string().optional(),
   initials: z.string().max(3).optional(),
   email: z.string().email().optional().or(z.literal("")),
 });
 
-// More lenient schema for admin-created users
+// Admin-created users still require 8-char minimum password
 const adminCreateUserSchema = z.object({
   username: z.string().min(3).max(50),
-  password: z.string().min(1),
+  password: z.string().min(8),
   role: z.enum(["GOD", "ADMIN", "SUPERVISOR", "DIVER"]),
   fullName: z.string().optional(),
   initials: z.string().max(3).optional(),
