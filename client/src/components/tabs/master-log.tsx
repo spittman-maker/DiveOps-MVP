@@ -93,11 +93,11 @@ export function MasterLogTab() {
   });
 
   const formatTime = (dateStr?: string) => {
-    if (!dateStr) return "--:--";
+    if (!dateStr) return "----";
     const d = new Date(dateStr);
     const h = String(d.getHours()).padStart(2, "0");
     const m = String(d.getMinutes()).padStart(2, "0");
-    return `${h}:${m}`;
+    return `${h}${m}`;
   };
 
   const formatDate = (dateStr?: string) => {

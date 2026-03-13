@@ -163,7 +163,10 @@ function InlineEdit({
     setEditing(false);
     const editVal = getEditableValue(fieldName, value);
     if (draft !== editVal) {
-      if (isTimeField && draft && !/^\d{3,4}$/.test(draft.replace(":", ""))) {
+      if (isTimeField && draft) {
+        const cleaned = draft.replace(/[:\s]/g, "");
+        if (!/^\d{3,4}$/.test(cleaned)) return;
+        onSave(fieldName, cleaned);
         return;
       }
       onSave(fieldName, draft);
@@ -1001,11 +1004,11 @@ export function DailyLogTab() {
   };
 
   const formatTime = (dateStr?: string) => {
-    if (!dateStr) return "--:--";
+    if (!dateStr) return "----";
     const d = new Date(dateStr);
     const h = String(d.getHours()).padStart(2, "0");
     const m = String(d.getMinutes()).padStart(2, "0");
-    return `${h}:${m}`;
+    return `${h}${m}`;
   };
 
   const formatDate = (dateStr?: string) => {
@@ -1584,7 +1587,7 @@ export function DailyLogTab() {
                   data-testid="button-send"
                   size="sm"
                   onClick={handleSend}
-                  disabled={!rawInput.trim() || createEventMutation.isPending}
+                  disabled={!rawInput.trim() || createEventMutation.isPending || !currentDay || !activeProject}
                   className="h-9 w-9 p-0 btn-gold-metallic hover:btn-gold-metallic"
                   title="Send (Enter)"
                 >

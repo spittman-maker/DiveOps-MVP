@@ -1613,10 +1613,22 @@ export function AdminTab() {
 
   function handleSubmitUser(isCreate: boolean) {
     if (isCreate) {
+      if (!userForm.username.trim() || userForm.username.trim().length < 3) {
+        toast({ title: "Validation Error", description: "Username must be at least 3 characters", variant: "destructive" });
+        return;
+      }
+      if (!userForm.password || userForm.password.length < 8) {
+        toast({ title: "Validation Error", description: "Password must be at least 8 characters", variant: "destructive" });
+        return;
+      }
       createUserMutation.mutate(userForm);
     } else if (selectedUser) {
       const payload: Record<string, any> = { ...userForm };
       if (!payload.password) delete payload.password;
+      else if (payload.password.length < 8) {
+        toast({ title: "Validation Error", description: "Password must be at least 8 characters", variant: "destructive" });
+        return;
+      }
       updateUserMutation.mutate({ id: selectedUser.id, data: payload });
     }
   }
