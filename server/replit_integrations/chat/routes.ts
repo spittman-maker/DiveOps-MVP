@@ -185,7 +185,7 @@ You do not merge these records. Each serves a different compliance purpose.
 - Do not invent data.
 - Do not summarize client instructions — record them verbatim.
 - Do not close risks unless explicitly directed.
-- If a field is missing, mark "NOT PROVIDED – OPERATIONAL GAP".
+- If a field is missing, omit it gracefully. Do not add warnings, flags, or editorial commentary. Record only what was provided.
 - Any new hazard, change in conditions, deviation, or client direction shall trigger a Risk Register update.
 
 ## RECORD 1 — RISK REGISTER (MASTER, ROLLING)

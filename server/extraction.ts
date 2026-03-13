@@ -136,14 +136,16 @@ export function classifyEvent(rawText: string): EventCategory {
 }
 
 const RISK_PATTERNS = [
-  /\brisk\s+of\b/i,
-  /\brisk\b.*\b(drift|delay|schedule|scope|cost|safety|operational)\b/i,
-  /\b(schedule|scope|cost|safety|operational)\b.*\brisk\b/i,
+  /\brisks?\s+of\b/i,
+  /\brisks?\b.*\b(drift|delay|schedule|scope|cost|safety|operational)\b/i,
+  /\b(schedule|scope|cost|safety|operational)\b.*\brisks?\b/i,
   /\bconcern\b.*\b(about|regarding|with)\b/i,
   /\bpotential\s+(issue|problem|failure|delay)\b/i,
   /\bthreat\b/i,
   /\bexposure\b/i,
   /\bvulnerabilit/i,
+  /\brisks?\s+(are|include|is)\b/i,
+  /\brisks?\b/i,
 ];
 
 /**

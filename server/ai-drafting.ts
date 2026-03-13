@@ -61,8 +61,8 @@ const MASTER_LOG_SYSTEM_PROMPT = `You are a Commercial Diving Operations Documen
 ## GOVERNING RULES (NON-NEGOTIABLE)
 - Do not invent data.
 - Do not summarize client instructions — record them verbatim.
-- If a field is missing, mark "NOT PROVIDED – OPERATIONAL GAP".
-- Any new hazard, change in conditions, deviation, or client direction should be flagged.
+- If a field is missing, omit it gracefully. Do not add warnings, flags, or editorial commentary. Record only what was provided.
+- Note any new hazard, change in conditions, deviation, or client direction factually without editorial commentary.
 
 ## ABSOLUTE PROHIBITION - DIVE SAFETY
 NEVER generalize, calculate, or infer:
@@ -140,6 +140,21 @@ export interface SOPContext {
   content: string;
 }
 
+function formatTimeForTz(date: Date, tz?: string): string {
+  if (!tz) {
+    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  }
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const h = parts.find(p => p.type === 'hour')?.value || '00';
+  const m = parts.find(p => p.type === 'minute')?.value || '00';
+  return `${h}:${m}`;
+}
+
 function buildSOPBlock(sops: SOPContext[]): string {
   if (!sops || sops.length === 0) return "";
   const sopEntries = sops.map((s, i) => `### SOP ${i + 1}: ${s.title}\n${s.content}`).join("\n\n");
@@ -150,7 +165,8 @@ export async function generateAIRenders(
   rawText: string,
   eventTime: Date,
   category: EventCategory,
-  sops?: SOPContext[]
+  sops?: SOPContext[],
+  projectTimezone?: string
 ): Promise<AIRenderResult> {
   const correctedText = fixTypos(rawText);
   const extracted = extractData(correctedText);
@@ -172,7 +188,7 @@ export async function generateAIRenders(
           { role: "system", content: internalPrompt },
           { 
             role: "user", 
-            content: `Raw log entry (${eventTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}): ${correctedText}\n\nCategory: ${category}\n\nCreate a clean internal log line.`
+            content: `Raw log entry (${formatTimeForTz(eventTime, projectTimezone)}): ${correctedText}\n\nCategory: ${category}\n\nCreate a clean internal log line.`
           }
         ],
       }),
@@ -183,7 +199,7 @@ export async function generateAIRenders(
           { role: "system", content: masterPrompt },
           { 
             role: "user", 
-            content: `Raw log entry (${eventTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}): ${correctedText}\n\nCategory: ${category}\nSection: ${section}\n\nCreate a professional client-facing log line.`
+            content: `Raw log entry (${formatTimeForTz(eventTime, projectTimezone)}): ${correctedText}\n\nCategory: ${category}\nSection: ${section}\n\nCreate a professional client-facing log line.`
           }
         ],
       }),
@@ -240,7 +256,9 @@ export async function generateAIRenders(
 export async function regenerateRenders(
   rawText: string,
   eventTime: Date,
-  category: EventCategory
+  category: EventCategory,
+  sops?: SOPContext[],
+  projectTimezone?: string
 ): Promise<AIRenderResult> {
-  return generateAIRenders(rawText, eventTime, category);
+  return generateAIRenders(rawText, eventTime, category, sops, projectTimezone);
 }

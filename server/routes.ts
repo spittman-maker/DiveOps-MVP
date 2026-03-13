@@ -1888,7 +1888,14 @@ export async function registerRoutes(
     });
     
     const now = new Date();
-    const timeStr = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+    const tz = project?.timezone;
+    let timeStr: string;
+    if (tz) {
+      const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(now);
+      timeStr = `${parts.find(p => p.type === 'hour')?.value || '00'}:${parts.find(p => p.type === 'minute')?.value || '00'}`;
+    } else {
+      timeStr = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+    }
     const masterLine = `At ${timeStr}, ${systemRawText}.`;
     await storage.createLogRender({
       logEventId: systemEvent.id,
@@ -2186,7 +2193,7 @@ export async function registerRoutes(
       // Load active SOPs for the project to include in AI prompts
       storage.getActiveProjectSops(projectId).then(sops => {
         const sopCtx: SOPContext[] = sops.map(s => ({ title: s.title, content: s.content }));
-        return generateAIRenders(data.rawText, eventTime, category, sopCtx);
+        return generateAIRenders(data.rawText, eventTime, category, sopCtx, projectTimezone);
       })
         .then(async (renders) => {
           // Store internal canvas render
@@ -2284,18 +2291,36 @@ export async function registerRoutes(
         }
       }
       
-      // If text contains risk keywords (and wasn't already captured as safety/directive/stop-work), create risk item
+      // If text contains risk keywords (and wasn't already captured as safety/directive/stop-work), create risk item(s)
       if (category !== "safety" && category !== "directive" && !stopWork && hasRiskKeywords(data.rawText)) {
         try {
-          await createRiskWithRetry({
-            dayId: day.id,
-            projectId: projectId,
-            triggerEventId: logEvent.id,
-            category: "operational",
-            source: "supervisor_entry",
-            description: data.rawText,
-            status: "open",
-          }, projectId, day.date, 3, ctx);
+          // Check if this is a multi-risk entry (e.g., "risks are X, Y, Z" or "risks include A, B, C")
+          const multiRiskMatch = data.rawText.match(/^risks?\s+(?:are|include|is)\s+(.+)/i);
+          if (multiRiskMatch) {
+            const riskItems = multiRiskMatch[1].split(/,\s*(?:and\s+)?/).map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+            for (const riskDesc of riskItems) {
+              await createRiskWithRetry({
+                dayId: day.id,
+                projectId: projectId,
+                triggerEventId: logEvent.id,
+                category: "operational",
+                source: "supervisor_entry",
+                description: riskDesc,
+                status: "open",
+              }, projectId, day.date, 3, ctx);
+            }
+          } else {
+            // Single risk entry
+            await createRiskWithRetry({
+              dayId: day.id,
+              projectId: projectId,
+              triggerEventId: logEvent.id,
+              category: "operational",
+              source: "supervisor_entry",
+              description: data.rawText,
+              status: "open",
+            }, projectId, day.date, 3, ctx);
+          }
         } catch (e: any) {
           console.error("Failed to create keyword risk after retries:", e);
         }
@@ -2711,11 +2736,14 @@ export async function registerRoutes(
     try {
       const sops = event.projectId ? await storage.getActiveProjectSops(event.projectId) : [];
       const sopCtx: SOPContext[] = sops.map(s => ({ title: s.title, content: s.content }));
+      const project = event.projectId ? await storage.getProject(event.projectId) : null;
+      const projectTimezone = project?.timezone || undefined;
       const renders = await generateAIRenders(
         event.rawText,
         new Date(event.eventTime),
         event.category as any,
-        sopCtx
+        sopCtx,
+        projectTimezone
       );
       
       // Create new renders
