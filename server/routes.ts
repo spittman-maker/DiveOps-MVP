@@ -19,6 +19,7 @@ import { pool, db } from "./storage";
 import { sql } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import { authLimiter } from "./rate-limit";
+import { randomBytes } from "crypto";
 
 declare global {
   namespace Express {
@@ -141,6 +142,7 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  let bootstrapUsed = false;
 
   app.use((req: Request, _res: Response, next: NextFunction) => {
     const cid = (req.headers["x-correlation-id"] as string) || generateCorrelationId();
@@ -364,7 +366,20 @@ export async function registerRoutes(
     if (process.env.NODE_ENV === "production") {
       return res.status(403).json({ message: "Seed endpoint is disabled in production" });
     }
+    const seedToken = process.env.DEV_SEED_TOKEN;
+    if (!seedToken) {
+      return res.status(403).json({ message: "Seed endpoint disabled: DEV_SEED_TOKEN is not configured" });
+    }
+    if (req.body?.seedToken !== seedToken) {
+      return res.status(403).json({ message: "Invalid seed token" });
+    }
     try {
+      const generatedPasswords: Record<string, string> = {
+        god: randomBytes(12).toString("base64url"),
+        supervisor: randomBytes(12).toString("base64url"),
+        diver: randomBytes(12).toString("base64url"),
+      };
+
       let god = await storage.getUserByUsername("spittman@precisionsubsea.com");
       if (!god) {
         god = await storage.getUserByUsername("god");
@@ -372,7 +387,7 @@ export async function registerRoutes(
       if (!god) {
         god = await storage.createUser({
           username: "spittman@precisionsubsea.com",
-          password: hashPassword("Whisky9954!"),
+          password: hashPassword(generatedPasswords.god),
           role: "GOD",
           fullName: "S. Pittman",
           initials: "SP",
@@ -384,7 +399,7 @@ export async function registerRoutes(
       if (!supervisor) {
         supervisor = await storage.createUser({
           username: "supervisor",
-          password: hashPassword("supervisor123"),
+          password: hashPassword(generatedPasswords.supervisor),
           role: "SUPERVISOR",
           fullName: "John Smith",
           initials: "JS",
@@ -396,7 +411,7 @@ export async function registerRoutes(
       if (!diver) {
         diver = await storage.createUser({
           username: "diver",
-          password: hashPassword("diver123"),
+          password: hashPassword(generatedPasswords.diver),
           role: "DIVER",
           fullName: "Mike Johnson",
           initials: "MJ",
@@ -426,10 +441,21 @@ export async function registerRoutes(
         await storage.addProjectMember({ projectId: project.id, userId: diver.id, role: "DIVER" });
       }
 
+      const showPasswords = process.env.DEV_SEED_SHOW_PASSWORDS === "true" && process.env.NODE_ENV === "development";
+
+      if (showPasswords) {
+        console.info("[seed] Generated temporary credentials:", {
+          god: generatedPasswords.god,
+          supervisor: generatedPasswords.supervisor,
+          diver: generatedPasswords.diver,
+        });
+      }
+
       res.json({
         message: "Seed data created",
         users: { god: god.username, supervisor: supervisor.username, diver: diver.username },
         project: { id: project.id, name: project.name },
+        ...(showPasswords ? { temporaryPasswords: generatedPasswords } : {}),
       });
     } catch (error) {
       console.error("Seed error:", error);
@@ -4422,7 +4448,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
       const crypto = await import("crypto");
       const tempPassword = data.password && data.password !== "changeme123"
         ? data.password
-        : crypto.randomBytes(12).toString("base64url");
+        : randomBytes(12).toString("base64url");
       // Multi-tenant: resolve companyId for new user
       let newUserCompanyId: string | null = null;
       if (isEnabled("multiTenantOrg")) {
@@ -5365,9 +5391,24 @@ If you're not confident about specific facilities, say so in the notes field. Al
   // Bootstrap endpoint - create/promote GOD user using a secret token
   // Protected by BOOTSTRAP_SECRET env var. Remove after initial setup.
   app.post("/api/bootstrap", async (req: Request, res: Response) => {
+    if (process.env.BOOTSTRAP_ENABLED !== "true") {
+      return res.status(404).json({ message: "Not found" });
+    }
+    if (bootstrapUsed) {
+      return res.status(410).json({ message: "Bootstrap token already used" });
+    }
     const secret = process.env.BOOTSTRAP_SECRET;
     if (!secret) {
       return res.status(404).json({ message: "Not found" });
+    }
+    const expiresAt = process.env.BOOTSTRAP_EXPIRES_AT;
+    if (expiresAt && Number.isFinite(Date.parse(expiresAt)) && Date.now() > Date.parse(expiresAt)) {
+      return res.status(410).json({ message: "Bootstrap token expired" });
+    }
+    const remoteAddress = req.ip || req.socket.remoteAddress || "";
+    const isLocalhost = remoteAddress.includes("127.0.0.1") || remoteAddress === "::1" || remoteAddress.endsWith(":127.0.0.1");
+    if (!isLocalhost) {
+      return res.status(403).json({ message: "Bootstrap endpoint is restricted to localhost" });
     }
     if (req.body.secret !== secret) {
       return res.status(403).json({ message: "Invalid secret" });
@@ -5394,6 +5435,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
           ...(email ? { email } : {}),
         }).where(eq(users.id, user.id));
         user = await storage.getUser(user.id);
+        bootstrapUsed = true;
         return res.json({ message: `User ${username} updated to ${validRole}`, user: { id: user!.id, username: user!.username, role: user!.role } });
       }
       
@@ -5407,6 +5449,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
         email: email || "",
       });
       
+      bootstrapUsed = true;
       res.status(201).json({ message: `User ${username} created as ${validRole}`, user: { id: user.id, username: user.username, role: user.role } });
     } catch (error) {
       console.error("Bootstrap error:", error);

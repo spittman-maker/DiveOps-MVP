@@ -21,6 +21,25 @@ process.on("unhandledRejection", (reason) => {
 
 const app = express();
 
+function isExplicitLocalMode(): boolean {
+  return process.env.NODE_ENV === "development" || process.env.LOCAL_DEV_MODE === "true";
+}
+
+function validateEnvironment() {
+  const localMode = isExplicitLocalMode();
+  if (!process.env.SESSION_SECRET && !localMode) {
+    console.error("[FATAL] SESSION_SECRET environment variable is required outside explicit local development mode. Exiting.");
+    process.exit(1);
+  }
+
+  if (process.env.ENABLE_CORS === "true" && process.env.CSRF_MODE !== "token") {
+    console.error("[FATAL] ENABLE_CORS=true requires CSRF_MODE=token to protect state-changing routes. Exiting.");
+    process.exit(1);
+  }
+}
+
+validateEnvironment();
+
 // Trust first proxy (Azure Container Apps, AWS ALB, etc.)
 // Required for secure cookies to work behind a reverse proxy
 app.set("trust proxy", 1);
@@ -28,10 +47,6 @@ app.set("trust proxy", 1);
 const httpServer = createServer(app);
 
 if (!process.env.SESSION_SECRET) {
-  if (process.env.NODE_ENV === "production") {
-    console.error("[FATAL] SESSION_SECRET environment variable is required in production. Exiting.");
-    process.exit(1);
-  }
   console.warn("[WARN] SESSION_SECRET not set — using insecure default. Set SESSION_SECRET before deploying.");
 }
 
@@ -145,8 +160,9 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Run pending database migrations before starting the app
-  await runMigrations();
+  if (process.env.RUN_MIGRATIONS_ON_BOOT === "true") {
+    await runMigrations();
+  }
 
   registerChatRoutes(app);
   await registerRoutes(httpServer, app);

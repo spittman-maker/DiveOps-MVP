@@ -10,8 +10,14 @@ function verifyPassword(password: string, stored: string): boolean {
     return false;
   }
   const [salt, hash] = stored.split(".");
-  const derived = crypto.scryptSync(password, salt, 64).toString("hex");
-  return derived === hash;
+  const derived = crypto.scryptSync(password, salt, 64);
+  const storedHash = Buffer.from(hash, "hex");
+
+  if (derived.length !== storedHash.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(derived, storedHash);
 }
 
 function hashPassword(password: string): string {
@@ -25,20 +31,15 @@ passport.use(
     try {
       const trimmedUsername = username.trim();
       const trimmedPassword = password.trim();
-      console.log(`[auth] Login attempt for username: "${trimmedUsername}"`);
       const user = await storage.getUserByUsername(trimmedUsername);
       if (!user) {
-        console.log(`[auth] User not found: "${username}"`);
         return done(null, false, { message: "Invalid username or password" });
       }
 
-      console.log(`[auth] Found user ${trimmedUsername}, verifying credentials`);
       if (!verifyPassword(trimmedPassword, user.password)) {
-        console.log(`[auth] Password mismatch for ${trimmedUsername}`);
         return done(null, false, { message: "Invalid username or password" });
       }
 
-      console.log(`[auth] Login successful for ${trimmedUsername}`);
       return done(null, user);
     } catch (error) {
       console.error(`[auth] Error during login:`, error);
@@ -48,7 +49,7 @@ passport.use(
 );
 
 passport.serializeUser((user: Express.User, done) => {
-  done(null, (user as User).id);
+  done(null, (user as AppUser).id);
 });
 
 passport.deserializeUser(async (id: string, done) => {
@@ -85,7 +86,7 @@ export function requireRole(...allowedRoles: UserRole[]) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const user = req.user as User;
+    const user = req.user as AppUser;
     if (!allowedRoles.includes(user.role)) {
       return res.status(403).json({ message: "Forbidden: insufficient permissions" });
     }
