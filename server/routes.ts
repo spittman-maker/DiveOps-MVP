@@ -1737,6 +1737,11 @@ export async function registerRoutes(
       const snapshot = await snapshotExportData(dayId);
       const exportResult = await generateShiftExportFromSnapshot(snapshot);
 
+      // Surface validation results to the client so supervisors see warnings
+      if (exportResult.validation && !exportResult.validation.valid) {
+        console.warn(`[close-day] Closing day ${dayId} with ${exportResult.validation.criticalErrors.length} critical validation errors`);
+      }
+
       const result = await storage.closeDayAndExport(
         dayId,
         user.id,
@@ -1748,10 +1753,13 @@ export async function registerRoutes(
       emitAuditEvent(ctx, "day.close", {
         targetId: result.day.id, targetType: "day",
         before: { status: beforeDay?.status }, after: { status: "CLOSED", closedBy: user.id },
-        metadata: { withExport: true, fileCount: result.exportedFiles.length, transactional: true },
+        metadata: { withExport: true, fileCount: result.exportedFiles.length, transactional: true,
+          validationPassed: exportResult.validation?.valid ?? true,
+          criticalErrors: exportResult.validation?.criticalErrors?.length ?? 0,
+        },
       });
 
-      res.json(result);
+      res.json({ ...result, validation: exportResult.validation });
     } catch (error: any) {
       if (error?.message === "DAY_NOT_FOUND" || error?.message === "Day not found") {
         return res.status(404).json({ message: "Day not found" });
@@ -1972,7 +1980,11 @@ export async function registerRoutes(
       let eventTime: Date;
       
       if (data.eventTimeOverride) {
-        eventTime = new Date(data.eventTimeOverride);
+        const override = new Date(data.eventTimeOverride);
+        if (isNaN(override.getTime()) || override.getFullYear() < 2000 || override.getFullYear() > 2100) {
+          return res.status(400).json({ message: "Invalid eventTimeOverride — must be a valid ISO date" });
+        }
+        eventTime = override;
       } else {
         // Try to parse HHMM from raw text — supervisor's entered time is law
         // Pass project timezone so "0705" in Pacific/Honolulu => 17:05 UTC
@@ -1991,8 +2003,18 @@ export async function registerRoutes(
               hour12: false,
             });
             const parts = formatter.formatToParts(captureTime);
-            const get = (type: string) => parseInt(parts.find(p => p.type === type)?.value || "0", 10);
-            eventTime = new Date(Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second")));
+            const get = (type: string) => {
+              const val = parts.find(p => p.type === type)?.value;
+              return val !== undefined ? parseInt(val, 10) : NaN;
+            };
+            const yr = get("year"), mo = get("month"), dy = get("day"),
+                  hr = get("hour"), mn = get("minute"), sc = get("second");
+            if ([yr, mo, dy, hr, mn, sc].some(v => isNaN(v))) {
+              console.warn("[event-time] formatToParts missing fields, falling back to captureTime");
+              eventTime = captureTime;
+            } else {
+              eventTime = new Date(Date.UTC(yr, mo - 1, dy, hr, mn, sc));
+            }
           } catch {
             eventTime = captureTime;
           }
