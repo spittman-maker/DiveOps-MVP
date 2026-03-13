@@ -60,9 +60,9 @@ The `BOOTSTRAP_SECRET` env var has been removed after setup, disabling the endpo
 ## Users in Production
 | Username | Role | Login With |
 |----------|------|------------|
-| spittman | GOD | `spittman@precisionsubsea.com` / `Whisky9954!` |
-| supervisor | SUPERVISOR | `supervisor` / `supervisor123` |
-| diver2 | DIVER | `diver2` / `diver123` |
+| spittman | GOD | `spittman@precisionsubsea.com` / (set via SEED_GOD_PASSWORD env var) |
+| supervisor | SUPERVISOR | `supervisor` / (set via SEED_SUPERVISOR_PASSWORD env var) |
+| diver2 | DIVER | `diver2` / (set via SEED_DIVER_PASSWORD env var) |
 
 ## Remaining Items
 - [x] `OPENAI_API_KEY` is now the canonical env var for OpenAI (AI_INTEGRATIONS_OPENAI_API_KEY removed)

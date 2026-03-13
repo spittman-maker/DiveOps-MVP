@@ -6,7 +6,7 @@ import rateLimit from "express-rate-limit";
  */
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 1000, // TODO: Revert to 10 before production
+  limit: 10,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { message: "Too many attempts, please try again later" },
@@ -17,7 +17,7 @@ export const authLimiter = rateLimit({
  */
 export const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  limit: 10000, // TODO: Revert to 100 before production
+  limit: 100,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { message: "Too many requests, please try again later" },

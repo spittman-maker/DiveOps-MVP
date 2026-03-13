@@ -212,7 +212,7 @@ This creates all tables. The app automatically seeds a default admin account on 
 
 On first launch, the app creates:
 - Email: `spittman@precisionsubsea.com`
-- Password: `Whisky9954!`
+- Password: (set via SEED_GOD_PASSWORD environment variable)
 - Role: GOD
 
 Change this password immediately after first login.

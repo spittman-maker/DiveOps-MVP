@@ -121,8 +121,8 @@ interface MasterLogData {
 function formatTime24(timeStr?: string): string {
   if (!timeStr) return "—";
   const d = new Date(timeStr);
-  const h = String(d.getUTCHours()).padStart(2, "0");
-  const m = String(d.getUTCMinutes()).padStart(2, "0");
+  const h = String(d.getHours()).padStart(2, "0");
+  const m = String(d.getMinutes()).padStart(2, "0");
   return `${h}${m}`;
 }
 
@@ -1003,8 +1003,8 @@ export function DailyLogTab() {
   const formatTime = (dateStr?: string) => {
     if (!dateStr) return "--:--";
     const d = new Date(dateStr);
-    const h = String(d.getUTCHours()).padStart(2, "0");
-    const m = String(d.getUTCMinutes()).padStart(2, "0");
+    const h = String(d.getHours()).padStart(2, "0");
+    const m = String(d.getMinutes()).padStart(2, "0");
     return `${h}:${m}`;
   };
 

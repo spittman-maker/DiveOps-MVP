@@ -115,7 +115,7 @@ All 138 unit tests passing:
 
 ### Default Admin Account
 - **Email**: spittman@precisionsubsea.com
-- **Password**: Whisky9954!
+- **Password**: (set via SEED_GOD_PASSWORD environment variable)
 - **Role**: GOD (full admin access)
 
 ⚠️ **Security Note**: Change this password immediately after first login.

@@ -236,7 +236,7 @@ export function RiskRegisterTab() {
                   <span className="text-[10px] text-navy-500 uppercase">Trigger Event</span>
                   {risk.triggerEventTime && (
                     <span className="text-[10px] text-amber-400/60 font-mono">
-                      {(() => { const d = new Date(risk.triggerEventTime); return `${String(d.getUTCHours()).padStart(2,"0")}:${String(d.getUTCMinutes()).padStart(2,"0")}`; })()}
+                      {(() => { const d = new Date(risk.triggerEventTime); return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; })()}
                     </span>
                   )}
                 </div>

@@ -25,23 +25,30 @@ passport.use(
     try {
       const trimmedUsername = username.trim();
       const trimmedPassword = password.trim();
-      console.log(`[auth] Login attempt for username: "${trimmedUsername}"`);
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[auth] Login attempt");
+      }
       const user = await storage.getUserByUsername(trimmedUsername);
       if (!user) {
-        console.log(`[auth] User not found: "${username}"`);
+        if (process.env.NODE_ENV !== "production") {
+          console.log("[auth] User not found");
+        }
         return done(null, false, { message: "Invalid username or password" });
       }
 
-      console.log(`[auth] Found user ${trimmedUsername}, verifying credentials`);
       if (!verifyPassword(trimmedPassword, user.password)) {
-        console.log(`[auth] Password mismatch for ${trimmedUsername}`);
+        if (process.env.NODE_ENV !== "production") {
+          console.log("[auth] Password mismatch");
+        }
         return done(null, false, { message: "Invalid username or password" });
       }
 
-      console.log(`[auth] Login successful for ${trimmedUsername}`);
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[auth] Login successful");
+      }
       return done(null, user);
     } catch (error) {
-      console.error(`[auth] Error during login:`, error);
+      console.error("[auth] Error during login:", error);
       return done(error);
     }
   })

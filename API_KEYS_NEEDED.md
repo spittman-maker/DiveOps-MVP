@@ -41,9 +41,9 @@
 
 | Role | Username | Password |
 |------|----------|----------|
-| GOD | spittman@precisionsubsea.com | Whisky9954! |
-| SUPERVISOR | supervisor | supervisor123 |
-| DIVER | diver2 | diver123 |
+| GOD | spittman@precisionsubsea.com | (set via SEED_GOD_PASSWORD env var) |
+| SUPERVISOR | supervisor | (set via SEED_SUPERVISOR_PASSWORD env var) |
+| DIVER | diver2 | (set via SEED_DIVER_PASSWORD env var) |
 
 ---
 

@@ -31,8 +31,20 @@ declare global {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Type Helpers
+// Helpers
 // ────────────────────────────────────────────────────────────────────────────
+
+/** Log errors from fire-and-forget promises instead of silently swallowing them. */
+function fireAndForget(promise: Promise<unknown>, label: string): void {
+  promise.catch((err) => console.error(`[${label}] fire-and-forget failed:`, err));
+}
+
+/** Extract fulfilled values from Promise.allSettled results, discarding rejections. */
+function settledValues<T>(results: PromiseSettledResult<T>[]): T[] {
+  return results
+    .filter((r): r is PromiseFulfilledResult<T> => r.status === "fulfilled")
+    .map(r => r.value);
+}
 
 async function getNextRiskId(_projectId: string, date: string): Promise<string> {
   const dateStr = date.replace(/-/g, '');
@@ -199,18 +211,18 @@ export async function registerRoutes(
         // Log failed login attempt
         const correlationId = generateCorrelationId();
         const attemptedUsername = (req.body?.username || "").trim();
-        emitAuditEvent(
+        fireAndForget(emitAuditEvent(
           { correlationId, userId: undefined, ipAddress: req.ip || "unknown" },
           "auth.login_failed",
           { metadata: { username: attemptedUsername, reason: info?.message || "Invalid credentials" } }
-        ).catch(() => {});
+        ), "audit");
         return res.status(401).json({ message: info?.message || "Invalid username or password" });
       }
       req.login(user, (loginErr) => {
         if (loginErr) return next(loginErr);
         const correlationId = generateCorrelationId();
         const ctx = { correlationId, userId: user.id, ipAddress: req.ip || "unknown" };
-        emitAuditEvent(ctx, "auth.login", { metadata: { username: user.username, role: user.role } }).catch(() => {});
+        fireAndForget(emitAuditEvent(ctx, "auth.login", { metadata: { username: user.username, role: user.role } }), "audit");
         req.session.save((err) => {
           if (err) {
             console.error("[auth] Session save error:", err);
@@ -238,7 +250,7 @@ export async function registerRoutes(
       if (logoutUser?.id) {
         const correlationId = generateCorrelationId();
         const ctx = { correlationId, userId: logoutUser.id, ipAddress: req.ip || "unknown" };
-        emitAuditEvent(ctx, "auth.logout", { metadata: { username: logoutUser.username } }).catch(() => {});
+        fireAndForget(emitAuditEvent(ctx, "auth.logout", { metadata: { username: logoutUser.username } }), "audit");
       }
       res.json({ message: "Logged out" });
     });
@@ -372,7 +384,7 @@ export async function registerRoutes(
       if (!god) {
         god = await storage.createUser({
           username: "spittman@precisionsubsea.com",
-          password: hashPassword("Whisky9954!"),
+          password: hashPassword(process.env.SEED_GOD_PASSWORD || "dev-only-password"),
           role: "GOD",
           fullName: "S. Pittman",
           initials: "SP",
@@ -384,7 +396,7 @@ export async function registerRoutes(
       if (!supervisor) {
         supervisor = await storage.createUser({
           username: "supervisor",
-          password: hashPassword("supervisor123"),
+          password: hashPassword(process.env.SEED_SUPERVISOR_PASSWORD || "dev-only-password"),
           role: "SUPERVISOR",
           fullName: "John Smith",
           initials: "JS",
@@ -396,7 +408,7 @@ export async function registerRoutes(
       if (!diver) {
         diver = await storage.createUser({
           username: "diver",
-          password: hashPassword("diver123"),
+          password: hashPassword(process.env.SEED_DIVER_PASSWORD || "dev-only-password"),
           role: "DIVER",
           fullName: "Mike Johnson",
           initials: "MJ",
@@ -621,7 +633,7 @@ export async function registerRoutes(
         .sort((a, b) => new Date(b.captureTime).getTime() - new Date(a.captureTime).getTime())
         .slice(0, 8);
       
-      const recentLogs = await Promise.all(sortedLogs.map(async (log) => {
+      const recentLogs = settledValues(await Promise.allSettled(sortedLogs.map(async (log) => {
         const renders = await storage.getLogRendersByEvent(log.id);
         const masterRender = renders.find(r => r.renderType === "master_log_line");
         const internalRender = renders.find(r => r.renderType === "internal_canvas_line");
@@ -636,7 +648,7 @@ export async function registerRoutes(
           internalLine: internalRender?.renderText || null,
           aiStatus: masterRender?.status || null,
         };
-      }));
+      })));
       
       res.json(recentLogs);
     } catch (error: any) {
@@ -2359,7 +2371,7 @@ export async function registerRoutes(
 
       // Finalize idempotency result (key was already reserved atomically)
       if (req.idempotencyKey) {
-        storage.finalizeIdempotencyKey(req.idempotencyKey, 201, responseBody).catch(() => {});
+        fireAndForget(storage.finalizeIdempotencyKey(req.idempotencyKey, 201, responseBody), "idempotency");
       }
 
       res.status(201).json(responseBody);
@@ -2530,7 +2542,7 @@ export async function registerRoutes(
     const events = await storage.getLogEventsByDay(req.params.dayId);
     
     // Fetch renders for each event
-    const eventsWithRenders = await Promise.all(
+    const eventsWithRenders = settledValues(await Promise.allSettled(
       events.map(async (event) => {
         const renders = await storage.getLogRendersByEvent(event.id);
         return {
@@ -2538,7 +2550,7 @@ export async function registerRoutes(
           renders,
         };
       })
-    );
+    ));
     
     res.json(eventsWithRenders);
   });
@@ -2713,7 +2725,7 @@ export async function registerRoutes(
     
     const allEventIds = logEvents.map(e => e.id);
     const allRenders = allEventIds.length > 0
-      ? await Promise.all(allEventIds.map(id => storage.getLogRendersByEvent(id)))
+      ? settledValues(await Promise.allSettled(allEventIds.map(id => storage.getLogRendersByEvent(id))))
       : [];
     const rendersByEventId = new Map<string, typeof allRenders[0]>();
     allEventIds.forEach((id, i) => rendersByEventId.set(id, allRenders[i]));
@@ -3125,7 +3137,7 @@ export async function registerRoutes(
 
   app.get("/api/projects/:projectId/risks", requireAuth, requireProjectAccess(), async (req: Request, res: Response) => {
     const risks = await storage.getRiskItemsByProject(req.params.projectId);
-    const enriched = await Promise.all(risks.map(async (risk) => {
+    const enriched = settledValues(await Promise.allSettled(risks.map(async (risk) => {
       if (risk.triggerEventId) {
         const triggerEvent = await storage.getLogEvent(risk.triggerEventId);
         if (triggerEvent) {
@@ -3140,7 +3152,7 @@ export async function registerRoutes(
         }
       }
       return risk;
-    }));
+    })));
     res.json(enriched);
   });
 
@@ -3357,7 +3369,7 @@ export async function registerRoutes(
     
     // Get dives for this day with diver info
     const dives = await storage.getDivesByDay(req.params.dayId);
-    const divesWithNames = await Promise.all(dives.map(async (dive) => {
+    const divesWithNames = settledValues(await Promise.allSettled(dives.map(async (dive) => {
       let diverName = dive.diverDisplayName || "Unknown";
       if (dive.diverId) {
         const diver = await storage.getUser(dive.diverId);
@@ -3367,7 +3379,7 @@ export async function registerRoutes(
         ...dive,
         diverName,
       };
-    }));
+    })));
     
     // Calculate summary from log events
     const allDiverNames = new Set<string>();
@@ -4358,7 +4370,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
     const members = await storage.getProjectMembers(req.params.projectId);
     
     // Fetch user details for each member
-    const membersWithDetails = await Promise.all(
+    const membersWithDetails = settledValues(await Promise.allSettled(
       members.map(async (m) => {
         const user = await storage.getUser(m.userId);
         return {
@@ -4366,7 +4378,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
           user: user ? { id: user.id, username: user.username, fullName: user.fullName, initials: user.initials } : null,
         };
       })
-    );
+    ));
     
     res.json(membersWithDetails);
   });
@@ -4456,7 +4468,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
       const createUserCorrelationId = generateCorrelationId();
       const createUserActor = getUser(req);
       const createUserCtx = { correlationId: createUserCorrelationId, userId: createUserActor.id, ipAddress: req.ip || "unknown" };
-      emitAuditEvent(createUserCtx, "user.create", { targetId: user.id, targetType: "user", metadata: { createdUsername: user.username, role: user.role } }).catch(() => {});
+      fireAndForget(emitAuditEvent(createUserCtx, "user.create", { targetId: user.id, targetType: "user", metadata: { createdUsername: user.username, role: user.role } }), "audit");
       // Return the temp password so the admin can share it with the user
       res.status(201).json({ ...sanitized, temporaryPassword: tempPassword });
     } catch (error) {
@@ -5653,7 +5665,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
       });
       const pwCorrelationId = generateCorrelationId();
       const pwCtx = { correlationId: pwCorrelationId, userId: user.id, ipAddress: req.ip || "unknown" };
-      emitAuditEvent(pwCtx, "auth.password_change", { metadata: { username: user.username, forced: fullUser.mustChangePassword } }).catch(() => {});
+      fireAndForget(emitAuditEvent(pwCtx, "auth.password_change", { metadata: { username: user.username, forced: fullUser.mustChangePassword } }), "audit");
       res.json({ message: "Password changed successfully" });
     } catch (error: any) {
       res.status(500).json({ message: error?.message || "Failed to change password" });
@@ -5811,10 +5823,10 @@ If you're not confident about specific facilities, say so in the notes field. Al
       }
       const company = await storage.createCompany({ companyName: companyName.trim() });
       const ctx: AuditContext = { ...req.auditCtx! };
-      emitAuditEvent(ctx, "company.create", {
+      fireAndForget(emitAuditEvent(ctx, "company.create", {
         targetId: company.companyId, targetType: "company",
         after: { companyId: company.companyId, companyName: company.companyName },
-      }).catch(() => {});
+      }), "audit");
       res.status(201).json(company);
     } catch (error: any) {
       if (error?.message?.includes("unique") || error?.message?.includes("duplicate")) {
@@ -5839,9 +5851,9 @@ If you're not confident about specific facilities, say so in the notes field. Al
       const deleted = await storage.deleteCompany(req.params.companyId);
       if (!deleted) return res.status(404).json({ message: "Company not found" });
       const ctx: AuditContext = { ...req.auditCtx! };
-      emitAuditEvent(ctx, "company.delete", {
+      fireAndForget(emitAuditEvent(ctx, "company.delete", {
         targetId: req.params.companyId, targetType: "company",
-      }).catch(() => {});
+      }), "audit");
       res.json({ message: "Company deleted" });
     } catch (error) {
       res.status(500).json({ message: "Failed to delete company" });
@@ -5862,13 +5874,13 @@ If you're not confident about specific facilities, say so in the notes field. Al
       }
       const members = await storage.getCompanyMembers(companyId);
       // Enrich with user details
-      const enriched = await Promise.all(members.map(async (m) => {
+      const enriched = settledValues(await Promise.allSettled(members.map(async (m) => {
         const u = await storage.getUser(m.userId);
         return {
           ...m,
           user: u ? { id: u.id, username: u.username, fullName: u.fullName, initials: u.initials, role: u.role, email: u.email } : null,
         };
-      }));
+      })));
       res.json(enriched);
     } catch (error) {
       res.status(500).json({ message: "Failed to list company members" });
@@ -5896,10 +5908,10 @@ If you're not confident about specific facilities, say so in the notes field. Al
       // Also update the user's companyId
       await storage.updateUser(userId, { companyId } as any);
       const ctx: AuditContext = { ...req.auditCtx! };
-      emitAuditEvent(ctx, "company_member.add", {
+      fireAndForget(emitAuditEvent(ctx, "company_member.add", {
         targetId: userId, targetType: "company_member",
         metadata: { companyId, companyRole },
-      }).catch(() => {});
+      }), "audit");
       res.status(201).json(member);
     } catch (error: any) {
       if (error?.message?.includes("duplicate") || error?.message?.includes("unique")) {
@@ -5934,10 +5946,10 @@ If you're not confident about specific facilities, say so in the notes field. Al
       const removed = await storage.removeCompanyMember(companyId, userId);
       if (!removed) return res.status(404).json({ message: "Member not found" });
       const ctx: AuditContext = { ...req.auditCtx! };
-      emitAuditEvent(ctx, "company_member.remove", {
+      fireAndForget(emitAuditEvent(ctx, "company_member.remove", {
         targetId: userId, targetType: "company_member",
         metadata: { companyId },
-      }).catch(() => {});
+      }), "audit");
       res.json({ message: "Member removed" });
     } catch (error) {
       res.status(500).json({ message: "Failed to remove company member" });

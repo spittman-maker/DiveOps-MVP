@@ -12,6 +12,43 @@ import LoginPage from "@/pages/login";
 import ConsolePage from "@/pages/console";
 import ChangePasswordPage from "@/pages/change-password";
 import { Spinner } from "@/components/ui/spinner";
+import React from "react";
+
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("[ErrorBoundary] Uncaught render error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-navy-900 flex flex-col items-center justify-center text-white gap-4">
+          <h1 className="text-xl font-bold">Something went wrong</h1>
+          <p className="text-gray-400">An unexpected error occurred.</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-amber-500 text-black rounded hover:bg-amber-400 font-medium"
+          >
+            Reload Application
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -63,7 +100,9 @@ function App() {
         <TooltipProvider>
           <AuthProvider>
             <Toaster />
-            <Router />
+            <ErrorBoundary>
+              <Router />
+            </ErrorBoundary>
           </AuthProvider>
         </TooltipProvider>
       </ThemeProvider>

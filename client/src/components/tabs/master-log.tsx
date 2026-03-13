@@ -95,8 +95,8 @@ export function MasterLogTab() {
   const formatTime = (dateStr?: string) => {
     if (!dateStr) return "--:--";
     const d = new Date(dateStr);
-    const h = String(d.getUTCHours()).padStart(2, "0");
-    const m = String(d.getUTCMinutes()).padStart(2, "0");
+    const h = String(d.getHours()).padStart(2, "0");
+    const m = String(d.getMinutes()).padStart(2, "0");
     return `${h}:${m}`;
   };
 
@@ -125,11 +125,11 @@ export function MasterLogTab() {
 
   // Split ops entries into day shift (before 18:00) and night shift (18:00+)
   const dayShiftOps = sections.ops.filter(e => {
-    const h = e.eventTime ? new Date(e.eventTime).getUTCHours() : 6;
+    const h = e.eventTime ? new Date(e.eventTime).getHours() : 6;
     return h < 18;
   });
   const nightShiftOps = sections.ops.filter(e => {
-    const h = e.eventTime ? new Date(e.eventTime).getUTCHours() : 6;
+    const h = e.eventTime ? new Date(e.eventTime).getHours() : 6;
     return h >= 18;
   });
 

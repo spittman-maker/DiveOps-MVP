@@ -175,7 +175,7 @@ function LiveDiveBoardWidget({ projectId }: { projectId?: string } = {}) {
 
   const formatTime = (iso: string) => {
     const d = new Date(iso);
-    return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   };
 
   return (
@@ -299,7 +299,7 @@ function LiveLogFeedWidget({ projectId }: { projectId?: string } = {}) {
 
   const formatTime = (iso: string) => {
     const d = new Date(iso);
-    return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   };
 
   if (logEntries.length === 0) {
@@ -867,7 +867,7 @@ function RecentLogsWidget({ projectId }: { projectId?: string } = {}) {
           <div className="flex justify-between items-center mb-0.5">
             <div className="flex items-center gap-1.5">
               <span className="text-amber-400 font-mono text-[10px]">
-                {(() => { const d = new Date(log.eventTime); return `${String(d.getUTCHours()).padStart(2,"0")}:${String(d.getUTCMinutes()).padStart(2,"0")}`; })()}
+                {(() => { const d = new Date(log.eventTime); return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; })()}
               </span>
               <span className={`uppercase text-[9px] font-semibold ${categoryColor[log.category] || "text-navy-300"}`}>
                 {log.category?.replace("_", " ") || "general"}
@@ -1351,7 +1351,7 @@ function MyCrewQuickEntryWidget({ projectId }: { projectId?: string }) {
 
   const formatLogTime = (iso: string) => {
     const d = new Date(iso);
-    return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   };
 
   const dayIsClosed = activeDay?.status === "CLOSED";

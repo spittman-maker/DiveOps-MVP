@@ -46,6 +46,18 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+pool.on("error", (err) => {
+  console.error("[db] Unexpected pool error:", err);
+});
+
+// Graceful shutdown: drain connections on container stop signals
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.on(signal, () => {
+    console.log(`[db] Received ${signal}, draining pool...`);
+    pool.end().then(() => process.exit(0)).catch(() => process.exit(1));
+  });
+}
+
 export const db = drizzle({ client: pool, schema, casing: "snake_case" });
 export { pool };
 
