@@ -26,6 +26,9 @@ jobs:
       - name: Type check
         run: npm run check
 
+      - name: Architecture lint
+        run: npx tsx scripts/lint-architecture.ts
+
       - name: Unit tests
         run: npm run test:unit
 
@@ -34,6 +37,9 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high || true
 
       - name: Secret scan (gitleaks)
         uses: gitleaks/gitleaks-action@v2

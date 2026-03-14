@@ -1,8 +1,10 @@
-import { useState, lazy, Suspense } from "react";
+import { lazy, Suspense } from "react";
+import { useParams, useLocation } from "wouter";
 import { ConsoleLayout } from "@/components/console-layout";
 import { DashboardTab } from "@/components/tabs/dashboard";
 import { DailyLogTab } from "@/components/tabs/daily-log";
 import { DiveLogsTab } from "@/components/tabs/dive-logs";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 // Lazy-loaded tabs (less frequently used, heavier bundles)
 const DivePlanTab = lazy(() =>
@@ -24,6 +26,11 @@ const SafetyTab = lazy(() =>
   import("@/components/tabs/safety").then((m) => ({ default: m.SafetyTab }))
 );
 
+const VALID_TABS = [
+  "dashboard", "daily-log", "dive-logs", "dive-plan",
+  "library", "admin", "risk-register", "certifications", "safety",
+] as const;
+
 function TabFallback() {
   return (
     <div className="flex items-center justify-center h-64">
@@ -33,7 +40,18 @@ function TabFallback() {
 }
 
 export default function ConsolePage() {
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const params = useParams<{ tab?: string }>();
+  const [, setLocation] = useLocation();
+
+  // Read tab from URL, default to dashboard
+  const activeTab = params.tab && VALID_TABS.includes(params.tab as any)
+    ? params.tab
+    : "dashboard";
+
+  // Update URL when tab changes
+  const handleTabChange = (tab: string) => {
+    setLocation(`/console/${tab}`);
+  };
 
   const renderTab = () => {
     switch (activeTab) {
@@ -61,10 +79,12 @@ export default function ConsolePage() {
   };
 
   return (
-    <ConsoleLayout activeTab={activeTab} onTabChange={setActiveTab}>
-      <Suspense fallback={<TabFallback />}>
-        {renderTab()}
-      </Suspense>
+    <ConsoleLayout activeTab={activeTab} onTabChange={handleTabChange}>
+      <ErrorBoundary section={activeTab}>
+        <Suspense fallback={<TabFallback />}>
+          {renderTab()}
+        </Suspense>
+      </ErrorBoundary>
     </ConsoleLayout>
   );
 }

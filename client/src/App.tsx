@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -42,15 +42,23 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function Router() {
   return (
     <Switch>
+      {/* Redirect root to console dashboard */}
       <Route path="/">
+        <Redirect to="/console/dashboard" />
+      </Route>
+
+      {/* Console routes — each tab has its own URL */}
+      <Route path="/console/:tab?">
         <ProtectedRoute>
           <ConsolePage />
         </ProtectedRoute>
       </Route>
+
       {/* BUG-15 FIX: /login route shows login page */}
       <Route path="/login">
         <LoginPage />
       </Route>
+
       <Route component={NotFound} />
     </Switch>
   );

@@ -109,3 +109,6 @@ export function isGod(role: UserRole): boolean {
 export function isAdminOrHigher(role: UserRole): boolean {
   return ["ADMIN", "GOD"].includes(role);
 }
+
+/** Shorthand middleware: require ADMIN or GOD role. */
+export const requireAdmin = requireRole("ADMIN", "GOD");
