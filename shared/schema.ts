@@ -964,7 +964,9 @@ export type AuditAction =
   | "company.create" | "company.update" | "company.delete"
   | "company_member.add" | "company_member.remove"
   | "document.upload" | "document.parse_complete" | "document.parse_failed"
-  | "library.upload" | "sop.upload";
+  | "library.upload" | "sop.upload"
+  | "analytics.snapshot" | "anomaly.detect" | "anomaly.acknowledge" | "anomaly.dismiss"
+  | "prediction.generate";
 
 export const auditEvents = pgTable("audit_events", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

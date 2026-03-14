@@ -1,14 +1,9 @@
 import type { Express, Request, Response } from "express";
-import OpenAI from "openai";
+import { getAnthropicClient, AI_MODEL } from "../../ai-client";
 import { chatStorage } from "./storage";
 import { storage } from "../../storage";
 import { getRAGContext } from "../../services/azure-search";
 import { requireAuth } from "../../auth";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  baseURL: process.env.OPENAI_BASE_URL || undefined,
-});
 
 async function buildOperationalContext(activeProjectId?: string): Promise<string> {
   try {
@@ -142,7 +137,7 @@ export function registerChatRoutes(app: Express): void {
     }
   });
 
-  // Send message and get AI response (streaming)
+  // Send message and get AI response (streaming via Anthropic Claude)
   app.post("/api/conversations/:id/messages", requireAuth, async (req: Request, res: Response) => {
     try {
       // HIGH-04 FIX: Validate conversation ID is numeric
@@ -164,10 +159,24 @@ export function registerChatRoutes(app: Express): void {
 
       // Get conversation history for context
       const messages = await chatStorage.getMessagesByConversation(conversationId);
-      const chatMessages = messages.map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      }));
+
+      // Convert message history to Anthropic format (user/assistant alternating)
+      const anthropicMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
+      for (const m of messages) {
+        const role = m.role as "user" | "assistant";
+        // Anthropic requires alternating user/assistant messages
+        // If same role appears consecutively, merge them
+        if (anthropicMessages.length > 0 && anthropicMessages[anthropicMessages.length - 1].role === role) {
+          anthropicMessages[anthropicMessages.length - 1].content += "\n\n" + m.content;
+        } else {
+          anthropicMessages.push({ role, content: m.content });
+        }
+      }
+
+      // Ensure the first message is from the user (Anthropic requirement)
+      if (anthropicMessages.length > 0 && anthropicMessages[0].role !== "user") {
+        anthropicMessages.shift();
+      }
 
       // Create system prompt based on user role
       const isGod = userRole === "GOD";
@@ -258,8 +267,9 @@ At the end of each operational day (when user says "generate 24hr" or "close out
 5. Open risks requiring supervisor sign-off
 
 ## AUTHORITY BOUNDARY
-You are a documentation and compliance system. You do NOT:
-- Generate decompression schedules
+You are a documentation and compliance system. 
+You DO NOT:
+- Make operational decisions
 - Provide medical advice
 - Close risks without authorization
 You DO:
@@ -357,26 +367,29 @@ You cannot make changes to the app or discuss development features. If asked to 
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
 
-      // Stream response from OpenAI
-      const stream = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...chatMessages
-        ],
-        stream: true,
-        max_completion_tokens: 4096,
+      // Stream response from Anthropic Claude (standardized AI model)
+      const anthropic = getAnthropicClient();
+      const stream = anthropic.messages.stream({
+        model: AI_MODEL,
+        max_tokens: 4096,
+        system: systemPrompt,
+        messages: anthropicMessages,
       });
 
       let fullResponse = "";
 
-      for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content || "";
-        if (content) {
-          fullResponse += content;
-          res.write(`data: ${JSON.stringify({ content })}\n\n`);
-        }
-      }
+      stream.on("text", (text) => {
+        fullResponse += text;
+        res.write(`data: ${JSON.stringify({ content: text })}\n\n`);
+      });
+
+      stream.on("error", (error) => {
+        console.error("[Chat] Anthropic stream error:", error);
+        res.write(`data: ${JSON.stringify({ error: "AI response stream error" })}\n\n`);
+        res.end();
+      });
+
+      await stream.finalMessage();
 
       // Save assistant message
       await chatStorage.createMessage(conversationId, "assistant", fullResponse);
