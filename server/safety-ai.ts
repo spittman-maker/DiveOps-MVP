@@ -1,6 +1,7 @@
 import { getAnthropicClient, AI_MODEL } from "./ai-client";
 import type { JhaContent, SafetyMeetingAgenda } from "@shared/safety-schema";
 import logger from "./logger";
+import { buildPSGContextBlock } from "./psg-data-layer/psg-query-client";
 
 // ────────────────────────────────────────────────────────────────────────────
 // AI JHA Generation
@@ -66,10 +67,20 @@ Respond ONLY with valid JSON matching this exact structure (no markdown, no code
 }`;
 
   try {
+    // PSG LEARNING LOOP: Fetch cross-platform intelligence for JHA generation
+    let psgContext = "";
+    try {
+      psgContext = await buildPSGContextBlock();
+    } catch (psgErr) {
+      logger.warn({ err: psgErr }, "PSG learning loop context retrieval failed (non-fatal)");
+    }
+
+    const jhaSystemPrompt = "You are a commercial diving safety expert with deep knowledge of USACE EM 385-1-1, Navy Dive Manual, OSHA 29 CFR 1926 Subpart Y, and ADCI consensus standards. When reference documents are provided from the knowledge base, incorporate their guidance into your analysis and cite them where relevant. Respond only with valid JSON. No markdown formatting, no code fences, no explanatory text." + psgContext;
+
     const response = await client.messages.create({
       model: AI_MODEL,
       max_tokens: 4000,
-      system: "You are a commercial diving safety expert with deep knowledge of USACE EM 385-1-1, Navy Dive Manual, OSHA 29 CFR 1926 Subpart Y, and ADCI consensus standards. When reference documents are provided from the knowledge base, incorporate their guidance into your analysis and cite them where relevant. Respond only with valid JSON. No markdown formatting, no code fences, no explanatory text.",
+      system: jhaSystemPrompt,
       messages: [
         { role: "user", content: prompt }
       ],
@@ -164,10 +175,20 @@ Respond ONLY with valid JSON matching this exact structure (no markdown, no code
 }`;
 
   try {
+    // PSG LEARNING LOOP: Fetch cross-platform intelligence for safety meeting generation
+    let psgContext = "";
+    try {
+      psgContext = await buildPSGContextBlock();
+    } catch (psgErr) {
+      logger.warn({ err: psgErr }, "PSG learning loop context retrieval failed (non-fatal)");
+    }
+
+    const meetingSystemPrompt = "You are a commercial diving safety supervisor with extensive field experience. You understand the real hazards divers face and create practical, actionable safety meeting agendas — not generic corporate safety fluff. When reference documents are provided from the knowledge base, incorporate relevant near-miss reports, safety bulletins, and lessons learned into the meeting agenda. Respond only with valid JSON. No markdown formatting, no code fences, no explanatory text." + psgContext;
+
     const response = await client.messages.create({
       model: AI_MODEL,
       max_tokens: 3000,
-      system: "You are a commercial diving safety supervisor with extensive field experience. You understand the real hazards divers face and create practical, actionable safety meeting agendas — not generic corporate safety fluff. When reference documents are provided from the knowledge base, incorporate relevant near-miss reports, safety bulletins, and lessons learned into the meeting agenda. Respond only with valid JSON. No markdown formatting, no code fences, no explanatory text.",
+      system: meetingSystemPrompt,
       messages: [
         { role: "user", content: prompt }
       ],

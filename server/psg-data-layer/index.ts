@@ -13,6 +13,9 @@
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { psgDiveOps } = require('./psg-diveops-client');
 
+// Re-export the query client for the learning loop
+export { psgQuery, buildPSGContextBlock } from './psg-query-client';
+
 /**
  * Typed facade over the PSG DiveOps client.
  * Every method is fire-and-forget — errors are caught internally

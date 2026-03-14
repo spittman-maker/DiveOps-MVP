@@ -3305,11 +3305,20 @@ export async function registerRoutes(
       try {
         const { getAnthropicClient, AI_MODEL } = await import("./ai-client");
         const anthropic = getAnthropicClient();
+        const { buildPSGContextBlock } = await import("./psg-data-layer/psg-query-client");
+
+        // PSG LEARNING LOOP: Fetch cross-platform intelligence for task summary
+        let psgContext = "";
+        try {
+          psgContext = await buildPSGContextBlock();
+        } catch (psgErr) {
+          console.error("[TaskSummary] PSG learning loop context retrieval failed (non-fatal):", psgErr);
+        }
         
         const response = await anthropic.messages.create({
           model: AI_MODEL,
           max_tokens: 200,
-          system: `You summarize dive tasks for ADCI dive log forms. Create a concise "Task / Work Accomplished" summary from raw log entries for a single diver. Include specific tasks, equipment, and locations. Do NOT calculate dive times or decompression data. Keep it factual and brief (1-3 sentences).`,
+          system: `You summarize dive tasks for ADCI dive log forms. Create a concise "Task / Work Accomplished" summary from raw log entries for a single diver. Include specific tasks, equipment, and locations. Do NOT calculate dive times or decompression data. Keep it factual and brief (1-3 sentences).` + psgContext,
           messages: [
             {
               role: "user",
@@ -4128,6 +4137,15 @@ export async function registerRoutes(
 
       const { getAnthropicClient, AI_MODEL } = await import("./ai-client");
       const anthropic = getAnthropicClient();
+      const { buildPSGContextBlock } = await import("./psg-data-layer/psg-query-client");
+
+      // PSG LEARNING LOOP: Fetch cross-platform intelligence for DD5 plan generation
+      let psgContext = "";
+      try {
+        psgContext = await buildPSGContextBlock();
+      } catch (psgErr) {
+        console.error("[DD5] PSG learning loop context retrieval failed (non-fatal):", psgErr);
+      }
 
       const taskLibrary = (await import("@shared/schema")).DD5_CONTROLLED_TASK_LIBRARY;
 
@@ -4194,7 +4212,7 @@ ${seededCurrentPlan ? JSON.stringify(seededCurrentPlan) : "Empty - starting fres
 
 IMPORTANT: Always respond in English only. Never translate to any other language.
 
-Respond with ONLY the updated JSON object. No other text.`;
+Respond with ONLY the updated JSON object. No other text.` + psgContext;
 
       const chatMessages = [
         { role: "system" as const, content: systemPrompt },

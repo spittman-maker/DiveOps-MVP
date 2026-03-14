@@ -4,6 +4,7 @@ import * as schema from "../../shared/schema";
 import type { MlPredictionResult, InsertMlPrediction } from "../../shared/schema";
 import { getAnthropicClient, AI_MODEL } from "../ai-client";
 import logger from "../logger";
+import { buildPSGContextBlock } from "../psg-data-layer/psg-query-client";
 
 // Simple in-memory TTL cache (1 hour)
 const predictionCache = new Map<string, { result: MlPredictionResult; expiresAt: number }>();
@@ -76,13 +77,22 @@ export async function predictRisk(projectId: string): Promise<MlPredictionResult
   const context = await gatherProjectContext(projectId);
   const client = getAnthropicClient();
 
+  // PSG LEARNING LOOP: Fetch cross-platform intelligence for risk prediction
+  let psgContext = "";
+  try {
+    psgContext = await buildPSGContextBlock();
+  } catch (psgErr) {
+    logger.warn({ err: psgErr }, "PSG learning loop context retrieval failed (non-fatal)");
+  }
+
   const response = await client.messages.create({
     model: AI_MODEL,
     max_tokens: 1024,
+    system: "You are a commercial diving operations risk analyst for Precision Subsea Group. Analyze project data and cross-platform intelligence to provide accurate risk assessments. Respond only with valid JSON." + psgContext,
     messages: [
       {
         role: "user",
-        content: `You are a commercial diving operations risk analyst. Based on the following project data, provide a risk assessment.
+        content: `Based on the following project data, provide a risk assessment.
 
 ${context}
 
@@ -152,13 +162,22 @@ export async function predictDelay(projectId: string): Promise<MlPredictionResul
   const context = await gatherProjectContext(projectId);
   const client = getAnthropicClient();
 
+  // PSG LEARNING LOOP: Fetch cross-platform intelligence for delay prediction
+  let psgDelayContext = "";
+  try {
+    psgDelayContext = await buildPSGContextBlock();
+  } catch (psgErr) {
+    logger.warn({ err: psgErr }, "PSG learning loop context retrieval failed (non-fatal)");
+  }
+
   const response = await client.messages.create({
     model: AI_MODEL,
     max_tokens: 1024,
+    system: "You are a commercial diving project scheduling analyst for Precision Subsea Group. Analyze project data and cross-platform intelligence to predict potential delays. Respond only with valid JSON." + psgDelayContext,
     messages: [
       {
         role: "user",
-        content: `You are a commercial diving project scheduling analyst. Based on the following project data, predict potential delays.
+        content: `Based on the following project data, predict potential delays.
 
 ${context}
 

@@ -4,6 +4,7 @@ import { chatStorage } from "./storage";
 import { storage } from "../../storage";
 import { getRAGContext } from "../../services/azure-search";
 import { requireAuth } from "../../auth";
+import { buildPSGContextBlock } from "../../psg-data-layer/psg-query-client";
 
 async function buildOperationalContext(activeProjectId?: string): Promise<string> {
   try {
@@ -352,12 +353,20 @@ If dive table information is requested:
         console.error("[Chat] RAG context retrieval failed (non-fatal):", err);
       }
 
+      // PSG LEARNING LOOP: Query unified data layer for cross-platform intelligence
+      let psgContext = "";
+      try {
+        psgContext = await buildPSGContextBlock();
+      } catch (psgErr) {
+        console.error("[Chat] PSG learning loop context retrieval failed (non-fatal):", psgErr);
+      }
+
       const systemPrompt = isGod
-        ? basePrompt + operationalContext + ragContext + `
+        ? basePrompt + operationalContext + ragContext + psgContext + `
 
 ## GOD MODE
 As a GOD user, you may also discuss app changes and development requests.`
-        : basePrompt + operationalContext + ragContext + `
+        : basePrompt + operationalContext + ragContext + psgContext + `
 
 ## ACCESS RESTRICTION
 You cannot make changes to the app or discuss development features. If asked to change the app, politely explain that only administrators with GOD access can request app modifications.`;
