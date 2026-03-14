@@ -22,6 +22,7 @@ import { authLimiter } from "./rate-limit";
 import { registerAuthSystemRoutes } from "./routes/auth-system.routes";
 import { registerDashboardLayoutRoutes } from "./routes/dashboard-layout.routes";
 import { registerWeatherRoutes } from "./routes/weather.routes";
+import { registerProjectsCoreRoutes } from "./routes/projects-core.routes";
 
 declare global {
   namespace Express {
@@ -540,154 +541,15 @@ export async function registerRoutes(
   // PROJECTS
   // ──────────────────────────────────────────────────────────────────────────
 
-  app.get("/api/projects", requireAuth, async (req: Request, res: Response) => {
-    const user = getUser(req);
-    
-    if (isEnabled("multiTenantOrg")) {
-      // Multi-tenant mode
-      if (isGod(user.role)) {
-        // GOD can optionally filter by company via query param, but always
-        // defaults to ALL projects across ALL companies (never scoped by
-        // activeCompanyId — that context is for other features, not the
-        // project list).
-        const companyFilter = req.query.companyId as string;
-        if (companyFilter) {
-          const projects = await storage.getProjectsByCompany(companyFilter);
-          return res.json(projects);
-        }
-        const projects = await storage.getAllProjects();
-        return res.json(projects);
-      }
-      // ADMIN: scoped to their company
-      if (user.companyId) {
-        const projects = await storage.getProjectsByCompany(user.companyId);
-        return res.json(projects);
-      }
-      // SUPERVISOR/DIVER: only their assigned projects
-      const projects = await storage.getUserProjects(user.id);
-      return res.json(projects);
-    }
-    
-    // Legacy mode: GOD sees all, others see assigned
-    if (isGod(user.role)) {
-      const projects = await storage.getAllProjects();
-      return res.json(projects);
-    }
-    
-    const projects = await storage.getUserProjects(user.id);
-    res.json(projects);
+  registerProjectsCoreRoutes(app, {
+    requireAuth,
+    requireRole,
+    getUser,
+    storage,
+    isEnabled,
+    isGod,
   });
 
-  app.get("/api/projects/:id", requireAuth, async (req: Request, res: Response) => {
-    const project = await storage.getProject(req.params.id);
-    if (!project) return res.status(404).json({ message: "Project not found" });
-    // BUG-ISO-01 FIX: Enforce company boundary on direct project access
-    if (isEnabled("multiTenantOrg")) {
-      const user = getUser(req);
-      if (!isGod(user.role) && project.companyId && user.companyId && project.companyId !== user.companyId) {
-        return res.status(403).json({ message: "Forbidden: project belongs to a different company" });
-      }
-    }
-    res.json(project);
-  });
-
-  app.post("/api/projects", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
-    try {
-      const { name, clientName, jobsiteName, jobsiteAddress, jobsiteLat, jobsiteLng, timezone, companyId: bodyCompanyId } = req.body;
-      if (!name || !name.trim()) {
-        return res.status(400).json({ message: "Project name is required" });
-      }
-      // Multi-tenant: resolve companyId
-      let resolvedCompanyId: string | null = null;
-      if (isEnabled("multiTenantOrg")) {
-        const user = getUser(req);
-        if (isGod(user.role)) {
-          // GOD must specify companyId or use active company context
-          resolvedCompanyId = bodyCompanyId || null;
-          if (!resolvedCompanyId) {
-            const prefs = await storage.getUserPreferences(user.id);
-            resolvedCompanyId = prefs?.activeCompanyId || null;
-          }
-          if (!resolvedCompanyId) {
-            return res.status(400).json({ message: "companyId is required when creating a project as GOD" });
-          }
-        } else {
-          // ADMIN: auto-assign to their company
-          resolvedCompanyId = user.companyId || null;
-          if (!resolvedCompanyId) {
-            return res.status(400).json({ message: "You must be assigned to a company to create projects" });
-          }
-        }
-      }
-      const project = await storage.createProject({
-        name: name.trim(),
-        clientName: clientName || null,
-        jobsiteName: jobsiteName || null,
-        jobsiteAddress: jobsiteAddress || null,
-        jobsiteLat: jobsiteLat || null,
-        jobsiteLng: jobsiteLng || null,
-        timezone: timezone || "America/New_York",
-        ...(resolvedCompanyId ? { companyId: resolvedCompanyId } : {}),
-      });
-
-      // Auto-seed default safety checklists for the new project (non-blocking)
-      if (isEnabled("safetyTab")) {
-        const user = getUser(req);
-        try {
-          const { CHECKLIST_TEMPLATES } = await import("./safety-seed-data");
-          const { safetyStorage } = await import("./safety-storage");
-          for (const template of CHECKLIST_TEMPLATES) {
-            const checklist = await safetyStorage.createChecklist({
-              projectId: project.id,
-              checklistType: template.checklistType,
-              title: template.title,
-              description: template.description,
-              roleScope: template.roleScope,
-              createdBy: user.id,
-              isActive: true,
-              version: 1,
-            });
-            const items = template.items.map((item: any) => ({
-              checklistId: checklist.id,
-              sortOrder: item.sortOrder,
-              category: item.category,
-              label: item.label,
-              description: item.description,
-              itemType: item.itemType,
-              isRequired: item.isRequired,
-              equipmentCategory: item.equipmentCategory,
-              regulatoryReference: item.regulatoryReference,
-            }));
-            await safetyStorage.bulkCreateChecklistItems(items);
-          }
-          console.log(`[Safety] Auto-seeded ${CHECKLIST_TEMPLATES.length} default checklists for new project ${project.id}`);
-        } catch (seedErr) {
-          // Non-blocking — checklists will be seeded on first access if this fails
-          console.error("[Safety] Failed to auto-seed checklists on project creation:", seedErr);
-        }
-      }
-
-      res.status(201).json(project);
-    } catch (error: any) {
-      console.error("Create project error:", error);
-      res.status(500).json({ message: error?.message || "Failed to create project" });
-    }
-  });
-
-  app.patch("/api/projects/:id", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
-    const project = await storage.updateProject(req.params.id, req.body);
-    if (!project) return res.status(404).json({ message: "Project not found" });
-    res.json(project);
-  });
-
-  // Set active project for user
-  app.post("/api/projects/:id/activate", requireAuth, async (req: Request, res: Response) => {
-    const user = getUser(req);
-    await storage.setActiveProject(user.id, req.params.id);
-    res.json({ message: "Active project set" });
-  });
-
-  // ──────────────────────────────────────────────────────────────────────────
   // SAFETY CHECKLISTS (fallback — ensures checklists work even if the
   // dynamic safety.routes.ts module fails to load at the end of registerRoutes)
   // ──────────────────────────────────────────────────────────────────────────
