@@ -5529,23 +5529,48 @@ If you're not confident about specific facilities, say so in the notes field. Al
   // HEALTH CHECK & FEATURE FLAGS (Operations)
   // ──────────────────────────────────────────────────────────────────────────
 
+  /**
+   * GET /api/health
+   * ─────────────────────────────────────────────────────────────────────────
+   * Azure Container Apps health probe endpoint.
+   *
+   * Success (HTTP 200):
+   *   { status: "ok", timestamp: string, version: string, database: "connected" }
+   *
+   * Failure (HTTP 503):
+   *   { status: "error", timestamp: string, version: string, database: "disconnected", error: string }
+   *
+   * The endpoint is intentionally unauthenticated so the Azure health probe
+   * can reach it without a session cookie.
+   */
   app.get("/api/health", async (_req: Request, res: Response) => {
+    const timestamp = new Date().toISOString();
+    const version = process.env.npm_package_version || "unknown";
     try {
       const dbCheck = await pool.query("SELECT 1 AS ok");
-      const flags = getFlagStatus();
-      res.json({
-        status: "healthy",
-        timestamp: new Date().toISOString(),
-        database: dbCheck.rows.length > 0 ? "connected" : "error",
-        featureFlags: flags,
-        uptime: process.uptime(),
+      const dbAlive = dbCheck.rows.length > 0 && dbCheck.rows[0].ok === 1;
+      if (!dbAlive) {
+        return res.status(503).json({
+          status: "error",
+          timestamp,
+          version,
+          database: "disconnected",
+          error: "Database health check returned unexpected result",
+        });
+      }
+      return res.status(200).json({
+        status: "ok",
+        timestamp,
+        version,
+        database: "connected",
       });
-    } catch (error) {
-      res.status(503).json({
-        status: "unhealthy",
-        timestamp: new Date().toISOString(),
+    } catch (error: any) {
+      return res.status(503).json({
+        status: "error",
+        timestamp,
+        version,
         database: "disconnected",
-        error: String(error),
+        error: error?.message || String(error),
       });
     }
   });

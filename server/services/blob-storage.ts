@@ -4,11 +4,15 @@
  * Replaces the S3-compatible client from precisionsubsea with native
  * Azure Blob Storage using @azure/storage-blob SDK.
  *
- * Environment variables:
+ * Environment variables (checked in priority order):
  *   AZURE_STORAGE_CONNECTION_STRING — full connection string (preferred)
- *   AZURE_STORAGE_ACCOUNT_NAME     — storage account name (fallback)
- *   AZURE_STORAGE_ACCOUNT_KEY      — storage account key (fallback)
- *   AZURE_STORAGE_CONTAINER        — default container name (default: "documents")
+ *   AZURE_STORAGE_ACCOUNT_NAME || AZURE_STORAGE_ACCOUNT — storage account name (fallback)
+ *   AZURE_STORAGE_ACCOUNT_KEY  || AZURE_STORAGE_KEY     — storage account key (fallback)
+ *   AZURE_STORAGE_CONTAINER    — default container name (default: "documents")
+ *
+ * The shorter env-var names (AZURE_STORAGE_ACCOUNT / AZURE_STORAGE_KEY) match
+ * the names used in the Azure Container App deployment and are checked as
+ * fallbacks so both naming conventions work transparently.
  */
 
 import {
@@ -28,9 +32,28 @@ const DEFAULT_CONTAINER = process.env.AZURE_STORAGE_CONTAINER || "documents";
 let _blobServiceClient: BlobServiceClient | null = null;
 let _credential: StorageSharedKeyCredential | null = null;
 
+/**
+ * Resolve the storage account name from environment variables.
+ * Checks AZURE_STORAGE_ACCOUNT_NAME first (legacy / long form), then
+ * AZURE_STORAGE_ACCOUNT (Azure Container App short form).
+ */
+function resolveAccountName(): string | undefined {
+  return process.env.AZURE_STORAGE_ACCOUNT_NAME || process.env.AZURE_STORAGE_ACCOUNT;
+}
+
+/**
+ * Resolve the storage account key from environment variables.
+ * Checks AZURE_STORAGE_ACCOUNT_KEY first (legacy / long form), then
+ * AZURE_STORAGE_KEY (Azure Container App short form).
+ */
+function resolveAccountKey(): string | undefined {
+  return process.env.AZURE_STORAGE_ACCOUNT_KEY || process.env.AZURE_STORAGE_KEY;
+}
+
 function getBlobServiceClient(): BlobServiceClient {
   if (_blobServiceClient) return _blobServiceClient;
 
+  // ── Option 1: Full connection string (preferred) ──────────────────
   const connStr = process.env.AZURE_STORAGE_CONNECTION_STRING;
   if (connStr) {
     _blobServiceClient = BlobServiceClient.fromConnectionString(connStr);
@@ -43,11 +66,16 @@ function getBlobServiceClient(): BlobServiceClient {
     return _blobServiceClient;
   }
 
-  const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
-  const accountKey = process.env.AZURE_STORAGE_ACCOUNT_KEY;
+  // ── Option 2: Account name + key (supports both naming conventions) ─
+  const accountName = resolveAccountName();
+  const accountKey = resolveAccountKey();
+
   if (!accountName || !accountKey) {
     throw new Error(
-      "Azure Blob Storage not configured. Set AZURE_STORAGE_CONNECTION_STRING or AZURE_STORAGE_ACCOUNT_NAME + AZURE_STORAGE_ACCOUNT_KEY"
+      "Azure Blob Storage not configured. Set one of:\n" +
+      "  • AZURE_STORAGE_CONNECTION_STRING (preferred)\n" +
+      "  • AZURE_STORAGE_ACCOUNT_NAME + AZURE_STORAGE_ACCOUNT_KEY\n" +
+      "  • AZURE_STORAGE_ACCOUNT + AZURE_STORAGE_KEY"
     );
   }
 
@@ -235,6 +263,11 @@ export async function healthCheck(): Promise<{
     };
   }
 }
+
+// ── Exported helpers (for testing) ────────────────────────────────
+
+/** @internal — exposed for unit tests only */
+export { resolveAccountName, resolveAccountKey };
 
 export default {
   uploadBlob,
