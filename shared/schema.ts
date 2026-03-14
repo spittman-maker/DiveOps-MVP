@@ -966,7 +966,11 @@ export type AuditAction =
   | "document.upload" | "document.parse_complete" | "document.parse_failed"
   | "library.upload" | "sop.upload"
   | "analytics.snapshot" | "anomaly.detect" | "anomaly.acknowledge" | "anomaly.dismiss"
-  | "prediction.generate";
+  | "prediction.generate"
+  | "safety.jha.create" | "safety.jha.update" | "safety.jha.delete" | "safety.jha.generate"
+  | "safety.meeting.create" | "safety.meeting.update" | "safety.meeting.delete" | "safety.meeting.generate"
+  | "safety.near_miss.create" | "safety.near_miss.update" | "safety.near_miss.delete"
+  | "safety.topic.create" | "safety.hazard.create";
 
 export const auditEvents = pgTable("audit_events", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

@@ -1,8 +1,10 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { requireAuth, requireRole } from "../auth";
+import { requireProjectAccess } from "../authz";
 import { isEnabled } from "../feature-flags";
 import { safetyStorage } from "../safety-storage";
+import { generateCorrelationId, emitAuditEvent, sanitizeForAudit, type AuditContext } from "../audit";
 import logger from "../logger";
 import type { ChecklistResponse, JhaContent, SafetyMeetingAgenda } from "@shared/safety-schema";
 
@@ -13,6 +15,19 @@ import type { ChecklistResponse, JhaContent, SafetyMeetingAgenda } from "@shared
 function p(req: Request, name: string): string {
   const v = req.params[name];
   return (Array.isArray(v) ? v[0] : v) ?? "";
+}
+
+/** Build an AuditContext from the request, using the middleware-injected auditCtx if available. */
+function auditCtx(req: Request, projectId?: string): AuditContext {
+  const base = (req as any).auditCtx as AuditContext | undefined;
+  const user = req.user as any;
+  return {
+    correlationId: base?.correlationId || (req as any).correlationId || generateCorrelationId(),
+    userId: user?.id || base?.userId,
+    userRole: user?.role || base?.userRole,
+    ipAddress: base?.ipAddress || req.ip || req.socket?.remoteAddress,
+    projectId: projectId || base?.projectId,
+  };
 }
 
 // Track projects currently being seeded to prevent concurrent duplicate seeding
@@ -137,10 +152,10 @@ const createJhaSchema = z.object({
     hazards: z.array(z.object({
       hazard: z.string(),
       riskLevel: z.enum(["low", "medium", "high", "critical"]),
-      controls: z.array(z.string()),
+      controls: z.array(z.string()).min(1, "Each hazard MUST have at least one control measure"),
       responsibleParty: z.string(),
       ppe: z.array(z.string()).optional(),
-    })),
+    })).min(1, "JHA MUST contain at least one hazard"),
     emergencyProcedures: z.array(z.string()).optional(),
     additionalNotes: z.string().optional(),
     historicalIncidentsSummary: z.string().optional(),
@@ -163,7 +178,7 @@ const createMeetingSchema = z.object({
   title: z.string().min(1),
   meetingDate: z.string().min(1),
   agenda: z.object({
-    safetyTopicOfDay: z.string(),
+    safetyTopicOfDay: z.string().min(1, "Safety meeting MUST have a safety topic of the day"),
     previousShiftSummary: z.object({
       workCompleted: z.array(z.string()),
       issues: z.array(z.string()),
@@ -200,9 +215,9 @@ const createNearMissSchema = z.object({
   projectId: z.string().min(1),
   dayId: z.string().optional(),
   title: z.string().min(1),
-  description: z.string().min(1),
+  description: z.string().min(1, "Near-miss report MUST have a description"),
   location: z.string().optional(),
-  severity: z.enum(["low", "medium", "high", "critical"]).default("low"),
+  severity: z.enum(["low", "medium", "high", "critical"]),
   category: z.string().optional(),
   involvedPersonnel: z.array(z.string()).optional(),
   immediateActions: z.string().optional(),
@@ -237,6 +252,35 @@ const aiGenerateMeetingSchema = z.object({
   supervisorNotes: z.string().optional(),
 });
 
+const createSafetyTopicSchema = z.object({
+  category: z.enum([
+    "entanglement", "loss_of_gas", "communications_failure", "hypothermia",
+    "barotrauma", "equipment_failure", "weather_current", "crane_operations",
+    "cutting_welding", "confined_space", "contaminated_water", "general",
+  ]),
+  title: z.string().min(1),
+  description: z.string().min(1),
+  talkingPoints: z.array(z.string()).default([]),
+  applicableDiveTypes: z.array(z.string()).default([]),
+  regulatoryReferences: z.array(z.string()).default([]),
+  isActive: z.boolean().default(true),
+});
+
+const createJhaHazardSchema = z.object({
+  category: z.enum([
+    "environmental", "equipment", "physiological", "operational",
+    "chemical", "mechanical", "electrical",
+  ]),
+  hazard: z.string().min(1),
+  description: z.string().min(1),
+  defaultRiskLevel: z.enum(["low", "medium", "high", "critical"]).default("medium"),
+  standardControls: z.array(z.string()).default([]),
+  requiredPpe: z.array(z.string()).default([]),
+  applicableOperations: z.array(z.string()).default([]),
+  regulatoryBasis: z.string().optional(),
+  isActive: z.boolean().default(true),
+});
+
 // ────────────────────────────────────────────────────────────────────────────
 // Route Registration
 // ────────────────────────────────────────────────────────────────────────────
@@ -247,7 +291,7 @@ export function registerSafetyRoutes(app: Express): void {
 
   // ── Safety Metrics ───────────────────────────────────────────────────
 
-  app.get("/api/safety/:projectId/metrics", requireAuth, requireSafetyFlag, async (req: Request, res: Response) => {
+  app.get("/api/safety/:projectId/metrics", requireAuth, requireSafetyFlag, requireProjectAccess(), async (req: Request, res: Response) => {
     try {
       const projectId = p(req, "projectId");
       const metrics = await safetyStorage.getSafetyMetrics(projectId);
@@ -260,7 +304,7 @@ export function registerSafetyRoutes(app: Express): void {
 
   // ── Checklists (Templates) ──────────────────────────────────────────
 
-  app.get("/api/safety/:projectId/checklists", requireAuth, requireSafetyFlag, async (req: Request, res: Response) => {
+  app.get("/api/safety/:projectId/checklists", requireAuth, requireSafetyFlag, requireProjectAccess(), async (req: Request, res: Response) => {
     try {
       const projectId = p(req, "projectId");
       const type = typeof req.query.type === "string" ? req.query.type : undefined;
@@ -388,7 +432,7 @@ export function registerSafetyRoutes(app: Express): void {
 
   // ── Checklist Completions ───────────────────────────────────────────
 
-  app.get("/api/safety/:projectId/completions", requireAuth, requireSafetyFlag, async (req: Request, res: Response) => {
+  app.get("/api/safety/:projectId/completions", requireAuth, requireSafetyFlag, requireProjectAccess(), async (req: Request, res: Response) => {
     try {
       const projectId = p(req, "projectId");
       const completions = await safetyStorage.getCompletionsByProject(projectId);
@@ -500,7 +544,7 @@ export function registerSafetyRoutes(app: Express): void {
 
   // ── JHA Records ─────────────────────────────────────────────────────
 
-  app.get("/api/safety/:projectId/jha", requireAuth, requireSafetyFlag, async (req: Request, res: Response) => {
+  app.get("/api/safety/:projectId/jha", requireAuth, requireSafetyFlag, requireProjectAccess(), async (req: Request, res: Response) => {
     try {
       const projectId = p(req, "projectId");
       const jhas = await safetyStorage.getJhasByProject(projectId);
@@ -539,6 +583,15 @@ export function registerSafetyRoutes(app: Express): void {
         version: 1,
       });
 
+      // Audit: JHA created — life-safety record
+      const ctx = auditCtx(req, data.projectId);
+      emitAuditEvent(ctx, "safety.jha.create", {
+        targetId: jha.id,
+        targetType: "jha_record",
+        after: sanitizeForAudit(jha),
+        metadata: { title: jha.title, hazardCount: data.content.hazards.length, aiGenerated: data.aiGenerated },
+      }).catch(() => {});
+
       res.status(201).json(jha);
     } catch (err: any) {
       if (err instanceof z.ZodError) {
@@ -554,6 +607,11 @@ export function registerSafetyRoutes(app: Express): void {
       const id = p(req, "id");
       const data = updateJhaSchema.parse(req.body);
       const user = req.user as any;
+
+      // Capture before-state for audit diff
+      const before = await safetyStorage.getJha(id);
+      if (!before) return res.status(404).json({ message: "JHA not found" });
+
       const updates: any = { ...data };
 
       if (data.status === "approved") {
@@ -567,12 +625,47 @@ export function registerSafetyRoutes(app: Express): void {
 
       const updated = await safetyStorage.updateJha(id, updates);
       if (!updated) return res.status(404).json({ message: "JHA not found" });
+
+      // Audit: JHA updated — life-safety record
+      const ctx = auditCtx(req, before.projectId);
+      emitAuditEvent(ctx, "safety.jha.update", {
+        targetId: id,
+        targetType: "jha_record",
+        before: sanitizeForAudit(before),
+        after: sanitizeForAudit(updated),
+        metadata: { statusChange: data.status ? `${before.status} → ${data.status}` : undefined },
+      }).catch(() => {});
+
       res.json(updated);
     } catch (err: any) {
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: "Validation error", errors: err.errors });
       }
       logger.error({ err }, "Failed to update JHA");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/safety/jha/:id", requireAuth, requireSafetyFlag, requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const id = p(req, "id");
+      const before = await safetyStorage.getJha(id);
+      if (!before) return res.status(404).json({ message: "JHA not found" });
+
+      await safetyStorage.deleteJha(id);
+
+      // Audit: JHA deleted (superseded) — life-safety record
+      const ctx = auditCtx(req, before.projectId);
+      emitAuditEvent(ctx, "safety.jha.delete", {
+        targetId: id,
+        targetType: "jha_record",
+        before: sanitizeForAudit(before),
+        metadata: { title: before.title },
+      }).catch(() => {});
+
+      res.json({ message: "JHA superseded" });
+    } catch (err: any) {
+      logger.error({ err }, "Failed to delete JHA");
       res.status(500).json({ error: err.message });
     }
   });
@@ -638,6 +731,20 @@ export function registerSafetyRoutes(app: Express): void {
         version: 1,
       });
 
+      // Audit: AI-generated JHA — life-safety record
+      const ctx = auditCtx(req, data.projectId);
+      emitAuditEvent(ctx, "safety.jha.generate", {
+        targetId: jha.id,
+        targetType: "jha_record",
+        after: sanitizeForAudit(jha),
+        metadata: {
+          aiGenerated: true,
+          hazardCount: jhaContent.hazards?.length ?? 0,
+          ragSourceCount: ragSources.length,
+          nearMissesConsidered: recentNearMisses.length,
+        },
+      }).catch(() => {});
+
       res.status(201).json(jha);
     } catch (err: any) {
       if (err instanceof z.ZodError) {
@@ -650,7 +757,7 @@ export function registerSafetyRoutes(app: Express): void {
 
   // ── Safety Meetings ─────────────────────────────────────────────────
 
-  app.get("/api/safety/:projectId/meetings", requireAuth, requireSafetyFlag, async (req: Request, res: Response) => {
+  app.get("/api/safety/:projectId/meetings", requireAuth, requireSafetyFlag, requireProjectAccess(), async (req: Request, res: Response) => {
     try {
       const projectId = p(req, "projectId");
       const meetings = await safetyStorage.getMeetingsByProject(projectId);
@@ -691,6 +798,15 @@ export function registerSafetyRoutes(app: Express): void {
         attendees: data.attendees || [],
       });
 
+      // Audit: Safety meeting created — life-safety record
+      const ctx = auditCtx(req, data.projectId);
+      emitAuditEvent(ctx, "safety.meeting.create", {
+        targetId: meeting.id,
+        targetType: "safety_meeting",
+        after: sanitizeForAudit(meeting),
+        metadata: { title: meeting.title, meetingDate: data.meetingDate },
+      }).catch(() => {});
+
       res.status(201).json(meeting);
     } catch (err: any) {
       if (err instanceof z.ZodError) {
@@ -705,6 +821,11 @@ export function registerSafetyRoutes(app: Express): void {
     try {
       const id = p(req, "id");
       const data = updateMeetingSchema.parse(req.body);
+
+      // Capture before-state for audit diff
+      const before = await safetyStorage.getMeeting(id);
+      if (!before) return res.status(404).json({ message: "Meeting not found" });
+
       const updates: any = { ...data };
 
       if (data.status === "completed") {
@@ -716,12 +837,47 @@ export function registerSafetyRoutes(app: Express): void {
 
       const updated = await safetyStorage.updateMeeting(id, updates);
       if (!updated) return res.status(404).json({ message: "Meeting not found" });
+
+      // Audit: Safety meeting updated — life-safety record
+      const ctx = auditCtx(req, before.projectId);
+      emitAuditEvent(ctx, "safety.meeting.update", {
+        targetId: id,
+        targetType: "safety_meeting",
+        before: sanitizeForAudit(before),
+        after: sanitizeForAudit(updated),
+        metadata: { statusChange: data.status ? `${before.status} → ${data.status}` : undefined },
+      }).catch(() => {});
+
       res.json(updated);
     } catch (err: any) {
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: "Validation error", errors: err.errors });
       }
       logger.error({ err }, "Failed to update meeting");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/safety/meetings/:id", requireAuth, requireSafetyFlag, requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const id = p(req, "id");
+      const before = await safetyStorage.getMeeting(id);
+      if (!before) return res.status(404).json({ message: "Meeting not found" });
+
+      await safetyStorage.deleteMeeting(id);
+
+      // Audit: Safety meeting deleted — life-safety record
+      const ctx = auditCtx(req, before.projectId);
+      emitAuditEvent(ctx, "safety.meeting.delete", {
+        targetId: id,
+        targetType: "safety_meeting",
+        before: sanitizeForAudit(before),
+        metadata: { title: before.title },
+      }).catch(() => {});
+
+      res.json({ message: "Meeting deleted" });
+    } catch (err: any) {
+      logger.error({ err }, "Failed to delete meeting");
       res.status(500).json({ error: err.message });
     }
   });
@@ -789,6 +945,20 @@ export function registerSafetyRoutes(app: Express): void {
         attendees: [],
       });
 
+      // Audit: AI-generated safety meeting — life-safety record
+      const ctx = auditCtx(req, data.projectId);
+      emitAuditEvent(ctx, "safety.meeting.generate", {
+        targetId: meeting.id,
+        targetType: "safety_meeting",
+        after: sanitizeForAudit(meeting),
+        metadata: {
+          aiGenerated: true,
+          ragSourceCount: ragSources.length,
+          nearMissesConsidered: recentNearMisses.length,
+          hasPreviousMeetingContext: !!lastMeeting,
+        },
+      }).catch(() => {});
+
       res.status(201).json(meeting);
     } catch (err: any) {
       if (err instanceof z.ZodError) {
@@ -801,7 +971,7 @@ export function registerSafetyRoutes(app: Express): void {
 
   // ── Near-Miss Reports ───────────────────────────────────────────────
 
-  app.get("/api/safety/:projectId/near-misses", requireAuth, requireSafetyFlag, async (req: Request, res: Response) => {
+  app.get("/api/safety/:projectId/near-misses", requireAuth, requireSafetyFlag, requireProjectAccess(), async (req: Request, res: Response) => {
     try {
       const projectId = p(req, "projectId");
       const reports = await safetyStorage.getNearMissesByProject(projectId);
@@ -845,6 +1015,15 @@ export function registerSafetyRoutes(app: Express): void {
         voiceTranscript: data.voiceTranscript || null,
       });
 
+      // Audit: Near-miss reported — life-safety record (any authenticated user can report)
+      const ctx = auditCtx(req, data.projectId);
+      emitAuditEvent(ctx, "safety.near_miss.create", {
+        targetId: report.id,
+        targetType: "near_miss_report",
+        after: sanitizeForAudit(report),
+        metadata: { title: report.title, severity: data.severity, location: data.location },
+      }).catch(() => {});
+
       res.status(201).json(report);
     } catch (err: any) {
       if (err instanceof z.ZodError) {
@@ -860,6 +1039,11 @@ export function registerSafetyRoutes(app: Express): void {
       const id = p(req, "id");
       const data = updateNearMissSchema.parse(req.body);
       const user = req.user as any;
+
+      // Capture before-state for audit diff
+      const before = await safetyStorage.getNearMiss(id);
+      if (!before) return res.status(404).json({ message: "Near-miss report not found" });
+
       const updates: any = { ...data };
 
       if (data.status === "under_review") {
@@ -873,6 +1057,20 @@ export function registerSafetyRoutes(app: Express): void {
 
       const updated = await safetyStorage.updateNearMiss(id, updates);
       if (!updated) return res.status(404).json({ message: "Near-miss report not found" });
+
+      // Audit: Near-miss updated — life-safety record
+      const ctx = auditCtx(req, before.projectId);
+      emitAuditEvent(ctx, "safety.near_miss.update", {
+        targetId: id,
+        targetType: "near_miss_report",
+        before: sanitizeForAudit(before),
+        after: sanitizeForAudit(updated),
+        metadata: {
+          statusChange: data.status ? `${before.status} → ${data.status}` : undefined,
+          severityChange: data.severity ? `${before.severity} → ${data.severity}` : undefined,
+        },
+      }).catch(() => {});
+
       res.json(updated);
     } catch (err: any) {
       if (err instanceof z.ZodError) {
@@ -883,9 +1081,33 @@ export function registerSafetyRoutes(app: Express): void {
     }
   });
 
+  app.delete("/api/safety/near-misses/:id", requireAuth, requireSafetyFlag, requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const id = p(req, "id");
+      const before = await safetyStorage.getNearMiss(id);
+      if (!before) return res.status(404).json({ message: "Near-miss report not found" });
+
+      await safetyStorage.deleteNearMiss(id);
+
+      // Audit: Near-miss deleted — life-safety record
+      const ctx = auditCtx(req, before.projectId);
+      emitAuditEvent(ctx, "safety.near_miss.delete", {
+        targetId: id,
+        targetType: "near_miss_report",
+        before: sanitizeForAudit(before),
+        metadata: { title: before.title, severity: before.severity },
+      }).catch(() => {});
+
+      res.json({ message: "Near-miss report deleted" });
+    } catch (err: any) {
+      logger.error({ err }, "Failed to delete near-miss report");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ── Default Checklist Templates ─────────────────────────────────────
 
-  app.post("/api/safety/:projectId/seed-checklists", requireAuth, requireSafetyFlag, requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+  app.post("/api/safety/:projectId/seed-checklists", requireAuth, requireSafetyFlag, requireRole("SUPERVISOR", "ADMIN", "GOD"), requireProjectAccess(), async (req: Request, res: Response) => {
     try {
       const projectId = p(req, "projectId");
       const user = req.user as any;
@@ -1023,7 +1245,7 @@ export function registerSafetyRoutes(app: Express): void {
 
   // ── Seed expanded checklists for a project ─────────────────────────
 
-  app.post("/api/safety/:projectId/seed-expanded-checklists", requireAuth, requireSafetyFlag, requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+  app.post("/api/safety/:projectId/seed-expanded-checklists", requireAuth, requireSafetyFlag, requireRole("SUPERVISOR", "ADMIN", "GOD"), requireProjectAccess(), async (req: Request, res: Response) => {
     try {
       const projectId = p(req, "projectId");
       const user = req.user as any;
@@ -1092,6 +1314,30 @@ export function registerSafetyRoutes(app: Express): void {
     }
   });
 
+  app.post("/api/safety/topics", requireAuth, requireSafetyFlag, requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const data = createSafetyTopicSchema.parse(req.body);
+      const topic = await safetyStorage.createSafetyTopic(data as any);
+
+      // Audit: Safety topic created
+      const ctx = auditCtx(req);
+      emitAuditEvent(ctx, "safety.topic.create", {
+        targetId: topic.id,
+        targetType: "safety_topic",
+        after: sanitizeForAudit(topic),
+        metadata: { category: data.category, title: data.title },
+      }).catch(() => {});
+
+      res.status(201).json(topic);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: "Validation error", errors: err.errors });
+      }
+      logger.error({ err }, "Failed to create safety topic");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ── JHA Hazard Library Endpoints ───────────────────────────────────
 
   app.get("/api/safety/hazards", requireAuth, requireSafetyFlag, async (req: Request, res: Response) => {
@@ -1101,6 +1347,30 @@ export function registerSafetyRoutes(app: Express): void {
       res.json(hazards);
     } catch (err: any) {
       logger.error({ err }, "Failed to get JHA hazards");
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/safety/hazards", requireAuth, requireSafetyFlag, requireRole("SUPERVISOR", "ADMIN", "GOD"), async (req: Request, res: Response) => {
+    try {
+      const data = createJhaHazardSchema.parse(req.body);
+      const hazard = await safetyStorage.createJhaHazard(data as any);
+
+      // Audit: JHA hazard created
+      const ctx = auditCtx(req);
+      emitAuditEvent(ctx, "safety.hazard.create", {
+        targetId: hazard.id,
+        targetType: "jha_hazard",
+        after: sanitizeForAudit(hazard),
+        metadata: { category: data.category, hazard: data.hazard },
+      }).catch(() => {});
+
+      res.status(201).json(hazard);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: "Validation error", errors: err.errors });
+      }
+      logger.error({ err }, "Failed to create JHA hazard");
       res.status(500).json({ error: err.message });
     }
   });

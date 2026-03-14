@@ -163,6 +163,14 @@ export class SafetyStorage {
     return updated;
   }
 
+  async deleteJha(id: string): Promise<boolean> {
+    const [deleted] = await db.update(safetySchema.jhaRecords)
+      .set({ status: "superseded" as any, updatedAt: new Date() })
+      .where(eq(safetySchema.jhaRecords.id, id))
+      .returning();
+    return !!deleted;
+  }
+
   // ── Safety Meetings ────────────────────────────────────────────────────
 
   async createMeeting(meeting: InsertSafetyMeeting): Promise<SafetyMeeting> {
@@ -195,6 +203,12 @@ export class SafetyStorage {
       .where(eq(safetySchema.safetyMeetings.id, id))
       .returning();
     return updated;
+  }
+
+  async deleteMeeting(id: string): Promise<boolean> {
+    await db.delete(safetySchema.safetyMeetings)
+      .where(eq(safetySchema.safetyMeetings.id, id));
+    return true;
   }
 
   // ── Near-Miss Reports ──────────────────────────────────────────────────
@@ -231,6 +245,12 @@ export class SafetyStorage {
     return updated;
   }
 
+  async deleteNearMiss(id: string): Promise<boolean> {
+    await db.delete(safetySchema.nearMissReports)
+      .where(eq(safetySchema.nearMissReports.id, id));
+    return true;
+  }
+
   // ── Safety Topic Library ───────────────────────────────────────────────
 
   async getSafetyTopics(category?: string): Promise<SafetyTopic[]> {
@@ -251,6 +271,12 @@ export class SafetyStorage {
     const [result] = await db.select({ count: sql<number>`count(*)` })
       .from(safetySchema.safetyTopicLibrary);
     return Number(result?.count ?? 0);
+  }
+
+  async createSafetyTopic(topic: InsertSafetyTopic): Promise<SafetyTopic> {
+    const [created] = await db.insert(safetySchema.safetyTopicLibrary)
+      .values(topic as any).returning();
+    return created!;
   }
 
   async bulkCreateSafetyTopics(topics: InsertSafetyTopic[]): Promise<SafetyTopic[]> {
@@ -280,6 +306,12 @@ export class SafetyStorage {
     const [result] = await db.select({ count: sql<number>`count(*)` })
       .from(safetySchema.jhaHazardLibrary);
     return Number(result?.count ?? 0);
+  }
+
+  async createJhaHazard(hazard: InsertJhaHazard): Promise<JhaHazard> {
+    const [created] = await db.insert(safetySchema.jhaHazardLibrary)
+      .values(hazard as any).returning();
+    return created!;
   }
 
   async bulkCreateJhaHazards(hazards: InsertJhaHazard[]): Promise<JhaHazard[]> {
