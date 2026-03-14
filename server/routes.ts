@@ -19,7 +19,10 @@ import { pool, db } from "./storage";
 import { sql } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import { authLimiter } from "./rate-limit";
-import { randomBytes } from "crypto";
+import { registerAuthSystemRoutes } from "./routes/auth-system.routes";
+import { registerDashboardLayoutRoutes } from "./routes/dashboard-layout.routes";
+import { registerWeatherRoutes } from "./routes/weather.routes";
+import { registerProjectsCoreRoutes } from "./routes/projects-core.routes";
 
 declare global {
   namespace Express {
@@ -143,6 +146,11 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   let bootstrapUsed = false;
+  const bootstrapEnabledAtStartup = process.env.BOOTSTRAP_ENABLED === "true";
+  const bootstrapWindowSecondsRaw = Number(process.env.BOOTSTRAP_WINDOW_SECONDS || "900");
+  const bootstrapWindowSeconds = Number.isFinite(bootstrapWindowSecondsRaw) && bootstrapWindowSecondsRaw > 0
+    ? bootstrapWindowSecondsRaw
+    : 900;
 
   app.use((req: Request, _res: Response, next: NextFunction) => {
     const cid = (req.headers["x-correlation-id"] as string) || generateCorrelationId();
@@ -159,368 +167,35 @@ export async function registerRoutes(
   });
 
   // ──────────────────────────────────────────────────────────────────────────
-  // AUTH ROUTES
+  // AUTH / SETUP / SEED ROUTES (extracted module)
   // ──────────────────────────────────────────────────────────────────────────
 
-  app.post("/api/auth/register", authLimiter, async (req: Request, res: Response) => {
-    try {
-      const data = registerSchema.parse(req.body);
-      // MED-01: Role is always DIVER for public registration (role field removed from schema)
-
-      const existing = await storage.getUserByUsername(data.username);
-      if (existing) {
-        return res.status(400).json({ message: "Username already exists" });
-      }
-
-      const user = await storage.createUser({
-        username: data.username,
-        password: hashPassword(data.password),
-        role: "DIVER",
-        fullName: data.fullName || null,
-        initials: data.initials || null,
-        email: data.email || null,
-      });
-
-      req.login(user, (err) => {
-        if (err) return res.status(500).json({ message: "Login failed" });
-        res.status(201).json({ id: user.id, username: user.username, role: user.role });
-      });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Validation error", errors: error.errors });
-      }
-      console.error("Register error:", error);
-      res.status(500).json({ message: "Registration failed" });
-    }
-  });
-
-  app.post("/api/auth/login", authLimiter, (req: Request, res: Response, next: NextFunction) => {
-    passport.authenticate("local", (err: any, user: any, info: any) => {
-      if (err) return next(err);
-      if (!user) {
-        // Log failed login attempt
-        const correlationId = generateCorrelationId();
-        const attemptedUsername = (req.body?.username || "").trim();
-        emitAuditEvent(
-          { correlationId, userId: undefined, ipAddress: req.ip || "unknown" },
-          "auth.login_failed",
-          { metadata: { username: attemptedUsername, reason: info?.message || "Invalid credentials" } }
-        ).catch(() => {});
-        return res.status(401).json({ message: info?.message || "Invalid username or password" });
-      }
-      req.login(user, (loginErr) => {
-        if (loginErr) return next(loginErr);
-        const correlationId = generateCorrelationId();
-        const ctx = { correlationId, userId: user.id, ipAddress: req.ip || "unknown" };
-        emitAuditEvent(ctx, "auth.login", { metadata: { username: user.username, role: user.role } }).catch(() => {});
-        req.session.save((err) => {
-          if (err) {
-            console.error("[auth] Session save error:", err);
-            return res.status(500).json({ message: "Session save failed" });
-          }
-          res.json({ id: user.id, username: user.username, role: user.role, fullName: user.fullName, mustChangePassword: user.mustChangePassword });
-        });
-      });
-    })(req, res, next);
-  });
-
-  // CRIT-06 FIX: Explicit handler for the commonly-guessed /api/login path.
-  // Returns a helpful error pointing callers to the correct endpoint.
-  app.post("/api/login", (_req: Request, res: Response) => {
-    res.status(404).json({
-      message: "This endpoint does not exist. Use POST /api/auth/login instead.",
-      correctEndpoint: "/api/auth/login",
-    });
-  });
-
-  app.post("/api/auth/logout", (req: Request, res: Response) => {
-    const logoutUser = req.user as any;
-    req.logout((err) => {
-      if (err) return res.status(500).json({ message: "Logout failed" });
-      if (logoutUser?.id) {
-        const correlationId = generateCorrelationId();
-        const ctx = { correlationId, userId: logoutUser.id, ipAddress: req.ip || "unknown" };
-        emitAuditEvent(ctx, "auth.logout", { metadata: { username: logoutUser.username } }).catch(() => {});
-      }
-      res.json({ message: "Logged out" });
-    });
-  });
-
-  app.get("/api/auth/me", requireAuth, async (req: Request, res: Response) => {
-    const user = getUser(req);
-    const prefs = await storage.getUserPreferences(user.id);
-    // Multi-tenant: include companyId and companyName in session
-    let companyId = user.companyId || null;
-    let companyName: string | null = null;
-    let activeCompanyId: string | null = null;
-    if (isEnabled("multiTenantOrg")) {
-      if (user.role === "GOD" && prefs?.activeCompanyId) {
-        activeCompanyId = prefs.activeCompanyId;
-        const company = await storage.getCompany(prefs.activeCompanyId);
-        if (company) companyName = company.companyName;
-      } else if (user.role === "GOD" && companyId) {
-        // BUG-01 FIX: GOD user also gets companyName from their own companyId
-        const company = await storage.getCompany(companyId);
-        if (company) companyName = company.companyName;
-      } else if (companyId) {
-        const company = await storage.getCompany(companyId);
-        if (company) companyName = company.companyName;
-      }
-    }
-    res.json({
-      id: user.id,
-      username: user.username,
-      role: user.role,
-      fullName: user.fullName,
-      initials: user.initials,
-      activeProjectId: prefs?.activeProjectId,
-      mustChangePassword: user.mustChangePassword,
-      companyId,
-      companyName,
-      activeCompanyId,
-    });
-  });
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // SETUP (First-time system initialization)
-  // ──────────────────────────────────────────────────────────────────────────
-
-  app.get("/api/setup/status", async (_req: Request, res: Response) => {
-    try {
-      const result = await db.select({ count: sql<number>`count(*)` }).from(schema.users);
-      const userCount = Number(result[0]?.count ?? 0);
-      res.json({ initialized: userCount > 0, userCount });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to check setup status" });
-    }
-  });
-
-  const setupSchema = z.object({
-    username: z.string().min(3, "Username must be at least 3 characters"),
-    password: z.string().min(8, "Password must be at least 8 characters"),
-    fullName: z.string().min(1, "Full name is required"),
-    initials: z.string().min(1, "Initials are required").max(4),
-    email: z.string().email("Valid email required"),
-  });
-
-  app.post("/api/setup/init", async (req: Request, res: Response) => {
-    try {
-      const result = await db.select({ count: sql<number>`count(*)` }).from(schema.users);
-      const userCount = Number(result[0]?.count ?? 0);
-      if (userCount > 0) {
-        return res.status(403).json({ message: "System already initialized. Contact your administrator." });
-      }
-
-      const data = setupSchema.parse(req.body);
-      const admin = await storage.createUser({
-        username: data.username,
-        password: hashPassword(data.password),
-        role: "GOD",
-        fullName: data.fullName,
-        initials: data.initials.toUpperCase(),
-        email: data.email,
-      });
-
-      req.login(admin, (err) => {
-        if (err) return res.status(500).json({ message: "Account created but login failed" });
-        res.status(201).json({
-          message: "System initialized successfully",
-          user: { id: admin.id, username: admin.username, role: admin.role, fullName: admin.fullName },
-        });
-      });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Validation error", errors: error.errors });
-      }
-      console.error("Setup init error:", error);
-      res.status(500).json({ message: "Setup failed" });
-    }
-  });
-
-  // BUG-11 FIX: POST /api/auth/switch-company — GOD users can switch active company context
-  app.post("/api/auth/switch-company", requireRole("GOD"), async (req: Request, res: Response) => {
-    try {
-      const user = getUser(req);
-      const { companyId } = req.body;
-      if (!companyId) {
-        // Clear active company
-        await storage.setActiveCompany(user.id, "");
-        return res.json({ message: "Active company cleared" });
-      }
-      // Verify company exists
-      const company = await storage.getCompany(companyId);
-      if (!company) return res.status(404).json({ message: "Company not found" });
-      await storage.setActiveCompany(user.id, companyId);
-      return res.json({ message: "Active company set", companyId, companyName: company.companyName });
-    } catch (error: any) {
-      console.error("Switch company error:", error);
-      res.status(500).json({ message: error?.message || "Failed to switch company" });
-    }
-  });
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // SEED (Development/Testing Only — blocked in production)
-  // ──────────────────────────────────────────────────────────────────────────
-
-  app.post("/api/seed", async (req: Request, res: Response) => {
-    if (process.env.NODE_ENV === "production") {
-      return res.status(403).json({ message: "Seed endpoint is disabled in production" });
-    }
-    const seedToken = process.env.DEV_SEED_TOKEN;
-    if (!seedToken) {
-      return res.status(403).json({ message: "Seed endpoint disabled: DEV_SEED_TOKEN is not configured" });
-    }
-    if (req.body?.seedToken !== seedToken) {
-      return res.status(403).json({ message: "Invalid seed token" });
-    }
-    try {
-      const generatedPasswords: Record<string, string> = {
-        god: randomBytes(12).toString("base64url"),
-        supervisor: randomBytes(12).toString("base64url"),
-        diver: randomBytes(12).toString("base64url"),
-      };
-
-      let god = await storage.getUserByUsername("spittman@precisionsubsea.com");
-      if (!god) {
-        god = await storage.getUserByUsername("god");
-      }
-      if (!god) {
-        god = await storage.createUser({
-          username: "spittman@precisionsubsea.com",
-          password: hashPassword(generatedPasswords.god),
-          role: "GOD",
-          fullName: "S. Pittman",
-          initials: "SP",
-          email: "spittman@precisionsubsea.com",
-        });
-      }
-
-      let supervisor = await storage.getUserByUsername("supervisor");
-      if (!supervisor) {
-        supervisor = await storage.createUser({
-          username: "supervisor",
-          password: hashPassword(generatedPasswords.supervisor),
-          role: "SUPERVISOR",
-          fullName: "John Smith",
-          initials: "JS",
-          email: "jsmith@navydive.console",
-        });
-      }
-
-      let diver = await storage.getUserByUsername("diver");
-      if (!diver) {
-        diver = await storage.createUser({
-          username: "diver",
-          password: hashPassword(generatedPasswords.diver),
-          role: "DIVER",
-          fullName: "Mike Johnson",
-          initials: "MJ",
-          email: "mjohnson@navydive.console",
-        });
-      }
-
-      const projects = await storage.getAllProjects();
-      let project = projects.find(p => p.name === "Pearl Harbor Inspection");
-      if (!project) {
-        project = await storage.createProject({
-          name: "Pearl Harbor Inspection",
-          clientName: "NAVFAC Pacific",
-          jobsiteName: "Pearl Harbor Naval Shipyard",
-          jobsiteAddress: "1 Dry Dock Way, Pearl Harbor, HI 96860",
-          jobsiteLat: "21.3544",
-          jobsiteLng: "-157.9501",
-          timezone: "Pacific/Honolulu",
-          emergencyContacts: [
-            { name: "Base Emergency", role: "Emergency Services", phone: "808-555-0911" },
-            { name: "NAVFAC POC", role: "Client Representative", phone: "808-555-1234" },
-          ],
-        });
-
-        await storage.addProjectMember({ projectId: project.id, userId: god.id, role: "GOD" });
-        await storage.addProjectMember({ projectId: project.id, userId: supervisor.id, role: "SUPERVISOR" });
-        await storage.addProjectMember({ projectId: project.id, userId: diver.id, role: "DIVER" });
-      }
-
-      const showPasswords = process.env.DEV_SEED_SHOW_PASSWORDS === "true" && process.env.NODE_ENV === "development";
-
-      if (showPasswords) {
-        console.info("[seed] Generated temporary credentials:", {
-          god: generatedPasswords.god,
-          supervisor: generatedPasswords.supervisor,
-          diver: generatedPasswords.diver,
-        });
-      }
-
-      res.json({
-        message: "Seed data created",
-        users: { god: god.username, supervisor: supervisor.username, diver: diver.username },
-        project: { id: project.id, name: project.name },
-        ...(showPasswords ? { temporaryPasswords: generatedPasswords } : {}),
-      });
-    } catch (error) {
-      console.error("Seed error:", error);
-      res.status(500).json({ message: "Seed failed" });
-    }
+  registerAuthSystemRoutes(app, {
+    authLimiter,
+    registerSchema,
+    hashPassword,
+    passport,
+    requireAuth,
+    requireRole,
+    generateCorrelationId,
+    emitAuditEvent,
+    storage,
+    isEnabled,
+    db,
+    schema,
+    sql,
+    getUser,
   });
 
   // ──────────────────────────────────────────────────────────────────────────
   // DASHBOARD
   // ──────────────────────────────────────────────────────────────────────────
 
-  // Get user's dashboard layout
-  app.get("/api/dashboard/layout", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const user = getUser(req);
-      const layout = await storage.getDashboardLayout(user.id);
-      
-      if (!layout) {
-        // Return default layout if none exists
-        return res.json({
-          widgets: [
-            { id: "w1", type: "live_dive_board", title: "Live Dive Board", x: 0, y: 0, w: 4, h: 3 },
-            { id: "w2", type: "live_log_feed", title: "Live Log Feed", x: 0, y: 3, w: 2, h: 3 },
-            { id: "w3", type: "station_overview", title: "Station Overview", x: 2, y: 3, w: 2, h: 3 },
-            { id: "w4", type: "daily_summary", title: "Today's Summary", x: 0, y: 6, w: 2, h: 2 },
-            { id: "w5", type: "safety_incidents", title: "Safety Status", x: 2, y: 6, w: 2, h: 2 },
-            { id: "w6", type: "diver_certs", title: "Diver Certifications", x: 0, y: 8, w: 2, h: 2 },
-            { id: "w7", type: "equipment_certs", title: "Equipment Certifications", x: 2, y: 8, w: 2, h: 2 },
-          ],
-          version: 2,
-        });
-      }
-      
-      res.json(layout.layoutData);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
-    }
-  });
-
-  // BUG-14 FIX: Reset dashboard layout to default
-  app.delete("/api/dashboard/layout", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const user = getUser(req);
-      await pool.query('DELETE FROM "dashboard_layouts" WHERE "user_id" = $1', [user.id]);
-      res.json({ message: "Dashboard layout reset to default" });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
-    }
-  });
-
-  // Save user's dashboard layout
-  app.post("/api/dashboard/layout", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const user = getUser(req);
-      const layoutData = req.body;
-      
-      if (!layoutData.widgets || !Array.isArray(layoutData.widgets)) {
-        return res.status(400).json({ message: "Invalid layout data" });
-      }
-      
-      const saved = await storage.saveDashboardLayout(user.id, layoutData);
-      res.json({ success: true, layout: saved.layoutData });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
-    }
+  registerDashboardLayoutRoutes(app, {
+    requireAuth,
+    getUser,
+    storage,
+    pool,
   });
 
   // Get dashboard stats for widgets
@@ -856,287 +531,25 @@ export async function registerRoutes(
   // WEATHER API
   // ──────────────────────────────────────────────────────────────────────────
 
-  app.get("/api/weather", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const { lat, lon, location } = req.query;
-      const apiKey = process.env.OPENWEATHER_API_KEY;
-      
-      if (!apiKey) {
-        return res.status(503).json({ 
-          message: "Weather API not configured",
-          configured: false 
-        });
-      }
-      
-      let queryParams = `appid=${apiKey}&units=metric`;
-      
-      if (lat && lon) {
-        queryParams += `&lat=${lat}&lon=${lon}`;
-      } else if (location) {
-        queryParams += `&q=${encodeURIComponent(location as string)}`;
-      } else {
-        // HIGH-01 FIX: Fall back to the user's active project location when no params passed
-        try {
-          const user = getUser(req);
-          const prefs = await storage.getUserPreferences(user.id);
-          if (prefs?.activeProjectId) {
-            const project = await storage.getProject(prefs.activeProjectId);
-            if (project?.jobsiteLat && project?.jobsiteLng) {
-              queryParams += `&lat=${project.jobsiteLat}&lon=${project.jobsiteLng}`;
-            } else if (project?.jobsiteName) {
-              queryParams += `&q=${encodeURIComponent(project.jobsiteName)}`;
-            } else {
-              return res.status(400).json({ message: "Location or coordinates required. Active project has no location set." });
-            }
-          } else {
-            return res.status(400).json({ message: "Location or coordinates required. No active project selected." });
-          }
-        } catch {
-          return res.status(400).json({ message: "Location or coordinates required" });
-        }
-      }
-      
-      const weatherRes = await fetch(
-        `https://api.openweathermap.org/data/2.5/weather?${queryParams}`
-      );
-      
-      if (!weatherRes.ok) {
-        const error = await weatherRes.text();
-        return res.status(weatherRes.status).json({ message: error });
-      }
-      
-      const data = await weatherRes.json();
-      
-      const hasThunderstorm = data.weather?.some((w: any) => 
-        w.id >= 200 && w.id < 300
-      );
-      
-      res.json({
-        configured: true,
-        location: data.name,
-        country: data.sys?.country,
-        temp: Math.round(data.main?.temp),
-        feelsLike: Math.round(data.main?.feels_like),
-        humidity: data.main?.humidity,
-        windSpeed: data.wind?.speed,
-        windDir: data.wind?.deg,
-        conditions: data.weather?.[0]?.main,
-        description: data.weather?.[0]?.description,
-        icon: data.weather?.[0]?.icon,
-        hasThunderstorm,
-        visibility: data.visibility,
-        pressure: data.main?.pressure,
-        clouds: data.clouds?.all,
-        sunrise: data.sys?.sunrise,
-        sunset: data.sys?.sunset,
-        timestamp: data.dt,
-      });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
-    }
-  });
-
-  app.get("/api/weather/lightning", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const { lat, lon } = req.query;
-      const apiKey = process.env.OPENWEATHER_API_KEY;
-      
-      if (!apiKey) {
-        return res.status(503).json({ 
-          message: "Weather API not configured",
-          configured: false 
-        });
-      }
-      
-      if (!lat || !lon) {
-        return res.status(400).json({ message: "Coordinates required" });
-      }
-      
-      const forecastRes = await fetch(
-        `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`
-      );
-      
-      if (!forecastRes.ok) {
-        const error = await forecastRes.text();
-        return res.status(forecastRes.status).json({ message: error });
-      }
-      
-      const data = await forecastRes.json();
-      
-      const alerts = data.list?.filter((item: any) => 
-        item.weather?.some((w: any) => w.id >= 200 && w.id < 300)
-      ).map((item: any) => ({
-        time: item.dt,
-        timeText: item.dt_txt,
-        conditions: item.weather?.[0]?.description,
-        probability: item.pop,
-        temp: Math.round(item.main?.temp),
-      })) || [];
-      
-      res.json({
-        configured: true,
-        location: data.city?.name,
-        thunderstormAlerts: alerts,
-        hasUpcomingStorms: alerts.length > 0,
-        nextStormTime: alerts[0]?.time || null,
-      });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
-    }
+  registerWeatherRoutes(app, {
+    requireAuth,
+    getUser,
+    storage,
   });
 
   // ──────────────────────────────────────────────────────────────────────────
   // PROJECTS
   // ──────────────────────────────────────────────────────────────────────────
 
-  app.get("/api/projects", requireAuth, async (req: Request, res: Response) => {
-    const user = getUser(req);
-    
-    if (isEnabled("multiTenantOrg")) {
-      // Multi-tenant mode
-      if (isGod(user.role)) {
-        // GOD can optionally filter by company via query param, but always
-        // defaults to ALL projects across ALL companies (never scoped by
-        // activeCompanyId — that context is for other features, not the
-        // project list).
-        const companyFilter = req.query.companyId as string;
-        if (companyFilter) {
-          const projects = await storage.getProjectsByCompany(companyFilter);
-          return res.json(projects);
-        }
-        const projects = await storage.getAllProjects();
-        return res.json(projects);
-      }
-      // ADMIN: scoped to their company
-      if (user.companyId) {
-        const projects = await storage.getProjectsByCompany(user.companyId);
-        return res.json(projects);
-      }
-      // SUPERVISOR/DIVER: only their assigned projects
-      const projects = await storage.getUserProjects(user.id);
-      return res.json(projects);
-    }
-    
-    // Legacy mode: GOD sees all, others see assigned
-    if (isGod(user.role)) {
-      const projects = await storage.getAllProjects();
-      return res.json(projects);
-    }
-    
-    const projects = await storage.getUserProjects(user.id);
-    res.json(projects);
+  registerProjectsCoreRoutes(app, {
+    requireAuth,
+    requireRole,
+    getUser,
+    storage,
+    isEnabled,
+    isGod,
   });
 
-  app.get("/api/projects/:id", requireAuth, async (req: Request, res: Response) => {
-    const project = await storage.getProject(req.params.id);
-    if (!project) return res.status(404).json({ message: "Project not found" });
-    // BUG-ISO-01 FIX: Enforce company boundary on direct project access
-    if (isEnabled("multiTenantOrg")) {
-      const user = getUser(req);
-      if (!isGod(user.role) && project.companyId && user.companyId && project.companyId !== user.companyId) {
-        return res.status(403).json({ message: "Forbidden: project belongs to a different company" });
-      }
-    }
-    res.json(project);
-  });
-
-  app.post("/api/projects", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
-    try {
-      const { name, clientName, jobsiteName, jobsiteAddress, jobsiteLat, jobsiteLng, timezone, companyId: bodyCompanyId } = req.body;
-      if (!name || !name.trim()) {
-        return res.status(400).json({ message: "Project name is required" });
-      }
-      // Multi-tenant: resolve companyId
-      let resolvedCompanyId: string | null = null;
-      if (isEnabled("multiTenantOrg")) {
-        const user = getUser(req);
-        if (isGod(user.role)) {
-          // GOD must specify companyId or use active company context
-          resolvedCompanyId = bodyCompanyId || null;
-          if (!resolvedCompanyId) {
-            const prefs = await storage.getUserPreferences(user.id);
-            resolvedCompanyId = prefs?.activeCompanyId || null;
-          }
-          if (!resolvedCompanyId) {
-            return res.status(400).json({ message: "companyId is required when creating a project as GOD" });
-          }
-        } else {
-          // ADMIN: auto-assign to their company
-          resolvedCompanyId = user.companyId || null;
-          if (!resolvedCompanyId) {
-            return res.status(400).json({ message: "You must be assigned to a company to create projects" });
-          }
-        }
-      }
-      const project = await storage.createProject({
-        name: name.trim(),
-        clientName: clientName || null,
-        jobsiteName: jobsiteName || null,
-        jobsiteAddress: jobsiteAddress || null,
-        jobsiteLat: jobsiteLat || null,
-        jobsiteLng: jobsiteLng || null,
-        timezone: timezone || "America/New_York",
-        ...(resolvedCompanyId ? { companyId: resolvedCompanyId } : {}),
-      });
-
-      // Auto-seed default safety checklists for the new project (non-blocking)
-      if (isEnabled("safetyTab")) {
-        const user = getUser(req);
-        try {
-          const { CHECKLIST_TEMPLATES } = await import("./safety-seed-data");
-          const { safetyStorage } = await import("./safety-storage");
-          for (const template of CHECKLIST_TEMPLATES) {
-            const checklist = await safetyStorage.createChecklist({
-              projectId: project.id,
-              checklistType: template.checklistType,
-              title: template.title,
-              description: template.description,
-              roleScope: template.roleScope,
-              createdBy: user.id,
-              isActive: true,
-              version: 1,
-            });
-            const items = template.items.map((item: any) => ({
-              checklistId: checklist.id,
-              sortOrder: item.sortOrder,
-              category: item.category,
-              label: item.label,
-              description: item.description,
-              itemType: item.itemType,
-              isRequired: item.isRequired,
-              equipmentCategory: item.equipmentCategory,
-              regulatoryReference: item.regulatoryReference,
-            }));
-            await safetyStorage.bulkCreateChecklistItems(items);
-          }
-          console.log(`[Safety] Auto-seeded ${CHECKLIST_TEMPLATES.length} default checklists for new project ${project.id}`);
-        } catch (seedErr) {
-          // Non-blocking — checklists will be seeded on first access if this fails
-          console.error("[Safety] Failed to auto-seed checklists on project creation:", seedErr);
-        }
-      }
-
-      res.status(201).json(project);
-    } catch (error: any) {
-      console.error("Create project error:", error);
-      res.status(500).json({ message: error?.message || "Failed to create project" });
-    }
-  });
-
-  app.patch("/api/projects/:id", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
-    const project = await storage.updateProject(req.params.id, req.body);
-    if (!project) return res.status(404).json({ message: "Project not found" });
-    res.json(project);
-  });
-
-  // Set active project for user
-  app.post("/api/projects/:id/activate", requireAuth, async (req: Request, res: Response) => {
-    const user = getUser(req);
-    await storage.setActiveProject(user.id, req.params.id);
-    res.json({ message: "Active project set" });
-  });
-
-  // ──────────────────────────────────────────────────────────────────────────
   // SAFETY CHECKLISTS (fallback — ensures checklists work even if the
   // dynamic safety.routes.ts module fails to load at the end of registerRoutes)
   // ──────────────────────────────────────────────────────────────────────────
@@ -5391,11 +4804,17 @@ If you're not confident about specific facilities, say so in the notes field. Al
   // Bootstrap endpoint - create/promote GOD user using a secret token
   // Protected by BOOTSTRAP_SECRET env var. Remove after initial setup.
   app.post("/api/bootstrap", async (req: Request, res: Response) => {
-    if (process.env.BOOTSTRAP_ENABLED !== "true") {
+    if (!bootstrapEnabledAtStartup) {
       return res.status(404).json({ message: "Not found" });
+    }
+    if (process.uptime() > bootstrapWindowSeconds) {
+      return res.status(410).json({ message: "Bootstrap endpoint expired for this process" });
     }
     if (bootstrapUsed) {
       return res.status(410).json({ message: "Bootstrap token already used" });
+    }
+    if (req.header("x-bootstrap-confirm") !== "YES_I_UNDERSTAND") {
+      return res.status(400).json({ message: "Missing required bootstrap confirmation header" });
     }
     const secret = process.env.BOOTSTRAP_SECRET;
     if (!secret) {
