@@ -8,13 +8,15 @@
     "dev": "NODE_ENV=development tsx server/index.ts",
     "build": "tsx script/build.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
-    "check": "tsc",
+    "check": "npm run test:unit && npm run test:functional",
     "db:push": "drizzle-kit push",
     "test": "vitest",
     "test:unit": "vitest --run tests/unit",
     "test:integration": "vitest --run tests/integration",
-    "test:functional": "vitest --run tests/functional",
-    "test:coverage": "vitest --coverage"
+    "test:functional": "node scripts/run-functional-tests.mjs",
+    "test:coverage": "vitest --coverage",
+    "check:full": "tsc -p tsconfig.json",
+    "check:types": "tsc -p tsconfig.check.json"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

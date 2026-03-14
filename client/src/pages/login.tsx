@@ -244,9 +244,12 @@ function LoginForm() {
         }, 1500);
       }
     } catch (error) {
+      const description = error instanceof Error && error.message.trim()
+        ? error.message
+        : "Invalid username or password";
       toast({
         title: "Login failed",
-        description: "Invalid username or password",
+        description,
         variant: "destructive",
       });
     } finally {

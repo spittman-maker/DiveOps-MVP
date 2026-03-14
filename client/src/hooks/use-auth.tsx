@@ -53,7 +53,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ username, password }),
       });
       if (!res.ok) {
-        throw new Error("Login failed");
+        let message = "Login failed";
+        const contentType = res.headers.get("content-type") || "";
+
+        try {
+          if (contentType.includes("application/json")) {
+            const data = await res.json();
+            if (typeof data?.message === "string" && data.message.trim()) {
+              message = data.message;
+            }
+          } else {
+            const text = (await res.text()).trim();
+            if (text) {
+              message = text;
+            }
+          }
+        } catch {
+          // ignore parse errors and keep generic message
+        }
+
+        throw new Error(message);
       }
       return res.json();
     },
