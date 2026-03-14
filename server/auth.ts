@@ -42,7 +42,6 @@ passport.use(
 
       return done(null, user);
     } catch (error) {
-      console.error(`[auth] Error during login:`, error);
       return done(error);
     }
   })

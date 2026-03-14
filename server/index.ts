@@ -10,6 +10,7 @@ import { registerChatRoutes } from "./replit_integrations/chat";
 import { apiLimiter } from "./rate-limit";
 import { startPeriodicSweep } from "./sweep";
 import { runMigrations } from "./migrate";
+import crypto from "crypto";
 
 process.on("uncaughtException", (err) => {
   console.error("[FATAL] Uncaught exception:", err);
@@ -40,15 +41,26 @@ function validateEnvironment() {
 
 validateEnvironment();
 
+const localFallbackSessionSecret = crypto.randomBytes(32).toString("hex");
+
+function resolveSessionSecret(): string {
+  if (process.env.SESSION_SECRET) {
+    return process.env.SESSION_SECRET;
+  }
+
+  if (isExplicitLocalMode()) {
+    console.warn("[WARN] SESSION_SECRET not set in local mode — using ephemeral in-memory secret for this process only.");
+    return localFallbackSessionSecret;
+  }
+
+  throw new Error("SESSION_SECRET is required outside explicit local development mode");
+}
+
 // Trust first proxy (Azure Container Apps, AWS ALB, etc.)
 // Required for secure cookies to work behind a reverse proxy
 app.set("trust proxy", 1);
 
 const httpServer = createServer(app);
-
-if (!process.env.SESSION_SECRET) {
-  console.warn("[WARN] SESSION_SECRET not set — using insecure default. Set SESSION_SECRET before deploying.");
-}
 
 declare module "http" {
   interface IncomingMessage {
@@ -88,7 +100,7 @@ const cookieSecure = process.env.COOKIE_SECURE === "false" ? false : process.env
 app.use(
   session({
     store: sessionStore,
-    secret: process.env.SESSION_SECRET || "dev-only-insecure-fallback",
+    secret: resolveSessionSecret(),
     resave: false,
     saveUninitialized: false,
     cookie: {

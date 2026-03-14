@@ -143,6 +143,11 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   let bootstrapUsed = false;
+  const bootstrapEnabledAtStartup = process.env.BOOTSTRAP_ENABLED === "true";
+  const bootstrapWindowSecondsRaw = Number(process.env.BOOTSTRAP_WINDOW_SECONDS || "900");
+  const bootstrapWindowSeconds = Number.isFinite(bootstrapWindowSecondsRaw) && bootstrapWindowSecondsRaw > 0
+    ? bootstrapWindowSecondsRaw
+    : 900;
 
   app.use((req: Request, _res: Response, next: NextFunction) => {
     const cid = (req.headers["x-correlation-id"] as string) || generateCorrelationId();
@@ -5391,11 +5396,17 @@ If you're not confident about specific facilities, say so in the notes field. Al
   // Bootstrap endpoint - create/promote GOD user using a secret token
   // Protected by BOOTSTRAP_SECRET env var. Remove after initial setup.
   app.post("/api/bootstrap", async (req: Request, res: Response) => {
-    if (process.env.BOOTSTRAP_ENABLED !== "true") {
+    if (!bootstrapEnabledAtStartup) {
       return res.status(404).json({ message: "Not found" });
+    }
+    if (process.uptime() > bootstrapWindowSeconds) {
+      return res.status(410).json({ message: "Bootstrap endpoint expired for this process" });
     }
     if (bootstrapUsed) {
       return res.status(410).json({ message: "Bootstrap token already used" });
+    }
+    if (req.header("x-bootstrap-confirm") !== "YES_I_UNDERSTAND") {
+      return res.status(400).json({ message: "Missing required bootstrap confirmation header" });
     }
     const secret = process.env.BOOTSTRAP_SECRET;
     if (!secret) {
