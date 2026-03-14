@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Settings, GripVertical, X, Save, RotateCcw, Sun, Cloud, CloudRain, Wind, Droplets, Zap, Waves, Radio, Activity, ChevronDown, AlertTriangle, Shield, ShieldCheck, Send, Loader2, Users, Clock, Edit2 } from "lucide-react";
+import { Plus, Settings, GripVertical, X, Save, RotateCcw, Sun, Cloud, CloudRain, Wind, Droplets, Zap, Waves, Radio, Activity, ChevronDown, AlertTriangle, Shield, ShieldCheck, Send, Loader2, Users, Clock, Edit2, MapPin, Radar, OctagonX } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -144,7 +144,7 @@ const WIDGET_TYPES = [
   { type: "risk_register", label: "Risk Register", defaultW: 2, defaultH: 2 },
   { type: "dive_stats", label: "Dive Statistics", defaultW: 2, defaultH: 2 },
   { type: "project_status", label: "Project Status", defaultW: 2, defaultH: 2 },
-  { type: "weather", label: "Weather & Lightning", defaultW: 2, defaultH: 2 },
+  { type: "weather", label: "Weather & Lightning", defaultW: 2, defaultH: 4 },
   { type: "diver_certs", label: "Diver Certifications", defaultW: 2, defaultH: 2 },
   { type: "equipment_certs", label: "Equipment Certifications", defaultW: 2, defaultH: 2 },
   { type: "expiring_certs", label: "Expiring Certifications", defaultW: 2, defaultH: 2 },
@@ -925,6 +925,7 @@ interface WeatherData {
   feelsLike?: number;
   humidity?: number;
   windSpeed?: number;
+  windDir?: number;
   conditions?: string;
   description?: string;
   icon?: string;
@@ -933,6 +934,14 @@ interface WeatherData {
 
 interface LightningData {
   configured: boolean;
+  source?: string;
+  flashRateDensity?: number | null;
+  nearestLightningMiles?: number | null;
+  threatLevel?: "none" | "low" | "moderate" | "high" | "severe";
+  threatColor?: string;
+  stopWork?: boolean;
+  warningBanner?: boolean;
+  message?: string;
   hasUpcomingStorms?: boolean;
   thunderstormAlerts?: Array<{
     time: number;
@@ -942,6 +951,161 @@ interface LightningData {
     temp: number;
   }>;
 }
+
+interface RadarData {
+  configured: boolean;
+  generated?: number;
+  host?: string;
+  pastFrames?: Array<{
+    time: number;
+    path: string;
+    tileUrl: string;
+  }>;
+  nowcastFrames?: Array<{
+    time: number;
+    path: string;
+    tileUrl: string;
+  }>;
+  message?: string;
+}
+
+// ─── Radar Map Component ────────────────────────────────────────────────────
+
+function RadarMapWidget({ lat, lon, radar }: { lat: number; lon: number; radar?: RadarData }) {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const leafletMapRef = useRef<any>(null);
+  const radarLayersRef = useRef<any[]>([]);
+  const animFrameRef = useRef<number>(0);
+  const animIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [currentFrame, setCurrentFrame] = useState(0);
+  const [leafletLoaded, setLeafletLoaded] = useState(false);
+  const [L, setL] = useState<any>(null);
+
+  // Dynamically load Leaflet CSS and JS
+  useEffect(() => {
+    if ((window as any).L) {
+      setL((window as any).L);
+      setLeafletLoaded(true);
+      return;
+    }
+    // Load CSS
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+    document.head.appendChild(link);
+    // Load JS
+    const script = document.createElement("script");
+    script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    script.onload = () => {
+      setL((window as any).L);
+      setLeafletLoaded(true);
+    };
+    document.head.appendChild(script);
+    return () => {
+      // Don't remove — other instances may use it
+    };
+  }, []);
+
+  // Initialize map
+  useEffect(() => {
+    if (!leafletLoaded || !L || !mapRef.current || leafletMapRef.current) return;
+    const map = L.map(mapRef.current, {
+      center: [lat, lon],
+      zoom: 7,
+      zoomControl: false,
+      attributionControl: false,
+      dragging: true,
+      scrollWheelZoom: false,
+    });
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+      maxZoom: 18,
+    }).addTo(map);
+    // Project location marker
+    const icon = L.divIcon({
+      className: "",
+      html: '<div style="width:12px;height:12px;background:#d4a855;border:2px solid #fff;border-radius:50%;box-shadow:0 0 6px rgba(212,168,85,0.8)"></div>',
+      iconSize: [12, 12],
+      iconAnchor: [6, 6],
+    });
+    L.marker([lat, lon], { icon }).addTo(map);
+    leafletMapRef.current = map;
+    return () => {
+      map.remove();
+      leafletMapRef.current = null;
+    };
+  }, [leafletLoaded, L, lat, lon]);
+
+  // Add/update radar layers
+  useEffect(() => {
+    if (!leafletMapRef.current || !L || !radar?.configured || !radar.pastFrames?.length) return;
+    const map = leafletMapRef.current;
+    // Remove old layers
+    radarLayersRef.current.forEach(layer => map.removeLayer(layer));
+    radarLayersRef.current = [];
+    // Add all past frame layers (hidden initially)
+    const host = radar.host || "https://tilecache.rainviewer.com";
+    const layers = radar.pastFrames.map((frame) => {
+      const tileUrl = `${host}${frame.path}/256/{z}/{x}/{y}/6/1_1.png`;
+      const layer = L.tileLayer(tileUrl, {
+        opacity: 0,
+        zIndex: 10,
+      });
+      layer.addTo(map);
+      return layer;
+    });
+    radarLayersRef.current = layers;
+    // Show last frame
+    if (layers.length > 0) {
+      layers[layers.length - 1].setOpacity(0.6);
+      setCurrentFrame(layers.length - 1);
+      animFrameRef.current = layers.length - 1;
+    }
+    // Animate
+    if (animIntervalRef.current) clearInterval(animIntervalRef.current);
+    animIntervalRef.current = setInterval(() => {
+      const allLayers = radarLayersRef.current;
+      if (allLayers.length === 0) return;
+      // Hide current
+      allLayers[animFrameRef.current]?.setOpacity(0);
+      // Advance
+      animFrameRef.current = (animFrameRef.current + 1) % allLayers.length;
+      // Show next
+      allLayers[animFrameRef.current]?.setOpacity(0.6);
+      setCurrentFrame(animFrameRef.current);
+    }, 800);
+    return () => {
+      if (animIntervalRef.current) clearInterval(animIntervalRef.current);
+    };
+  }, [L, radar]);
+
+  if (!radar?.configured) {
+    return (
+      <div className="flex items-center justify-center h-full text-navy-400 text-xs">
+        <Radar className="h-4 w-4 mr-1 opacity-50" />
+        {radar?.message || "Radar unavailable"}
+      </div>
+    );
+  }
+
+  const frameTime = radar.pastFrames?.[currentFrame]?.time;
+  const frameDate = frameTime ? new Date(frameTime * 1000) : null;
+
+  return (
+    <div className="relative w-full" style={{ height: "160px" }}>
+      <div ref={mapRef} className="w-full h-full rounded" style={{ background: "#1a1a2e" }} />
+      {frameDate && (
+        <div className="absolute bottom-1 left-1 bg-black/70 text-[9px] text-navy-300 px-1.5 py-0.5 rounded z-[1000]">
+          {frameDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+        </div>
+      )}
+      <div className="absolute top-1 right-1 bg-black/70 text-[9px] text-navy-400 px-1.5 py-0.5 rounded z-[1000]">
+        Radar: RainViewer
+      </div>
+    </div>
+  );
+}
+
+// ─── Weather Widget (upgraded) ──────────────────────────────────────────────
 
 function WeatherWidget({ projectId }: { projectId?: string } = {}) {
   const { data: projects } = useQuery<any[]>({
@@ -995,6 +1159,7 @@ function WeatherWidget({ projectId }: { projectId?: string } = {}) {
   const effectiveLat = lat || geoLat;
   const effectiveLon = lon || geoLon;
 
+  // ── Weather data (refresh every 10 min) ──
   const { data: weather, isLoading: weatherLoading } = useQuery<WeatherData>({
     queryKey: ["weather", effectiveLat, effectiveLon],
     queryFn: async () => {
@@ -1003,10 +1168,11 @@ function WeatherWidget({ projectId }: { projectId?: string } = {}) {
       return res.json();
     },
     enabled: !!effectiveLat && !!effectiveLon,
-    refetchInterval: 300000,
+    refetchInterval: 600000, // 10 minutes
     staleTime: 60000,
   });
 
+  // ── Lightning data (refresh every 5 min when storms, else 10 min) ──
   const { data: lightning } = useQuery<LightningData>({
     queryKey: ["lightning", effectiveLat, effectiveLon],
     queryFn: async () => {
@@ -1015,7 +1181,26 @@ function WeatherWidget({ projectId }: { projectId?: string } = {}) {
       return res.json();
     },
     enabled: !!effectiveLat && !!effectiveLon,
-    refetchInterval: 300000,
+    refetchInterval: (query) => {
+      const data = query.state.data as LightningData | undefined;
+      // 5 min if storms detected, 10 min otherwise
+      if (data?.hasUpcomingStorms || (data?.threatLevel && data.threatLevel !== "none")) {
+        return 300000; // 5 minutes
+      }
+      return 600000; // 10 minutes
+    },
+  });
+
+  // ── Radar data (refresh every 10 min) ──
+  const { data: radar } = useQuery<RadarData>({
+    queryKey: ["radar"],
+    queryFn: async () => {
+      const res = await fetch("/api/weather/radar", { credentials: "include" });
+      if (!res.ok) return { configured: false, message: "Radar unavailable" };
+      return res.json();
+    },
+    refetchInterval: 600000, // 10 minutes
+    staleTime: 300000,
   });
 
   if (!effectiveLat || !effectiveLon) {
@@ -1051,12 +1236,39 @@ function WeatherWidget({ projectId }: { projectId?: string } = {}) {
     return <Cloud className="h-8 w-8" />;
   };
 
+  const getWindDirection = (deg?: number) => {
+    if (deg == null) return "";
+    const dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+    return dirs[Math.round(deg / 22.5) % 16];
+  };
+
   const tempF = weather.temp != null ? Math.round(weather.temp * 9 / 5 + 32) : null;
   const feelsLikeF = weather.feelsLike != null ? Math.round(weather.feelsLike * 9 / 5 + 32) : null;
   const windMph = weather.windSpeed != null ? Math.round(weather.windSpeed * 2.237) : null;
+  const windDir = getWindDirection(weather.windDir);
+
+  // Lightning threat level colors
+  const threatBgMap: Record<string, string> = {
+    none: "bg-green-600/20 border-green-600",
+    low: "bg-yellow-600/20 border-yellow-600",
+    moderate: "bg-orange-600/20 border-orange-600",
+    high: "bg-red-600/20 border-red-600",
+    severe: "bg-red-700/30 border-red-500",
+  };
+  const threatTextMap: Record<string, string> = {
+    none: "text-green-400",
+    low: "text-yellow-300",
+    moderate: "text-orange-300",
+    high: "text-red-300",
+    severe: "text-red-200",
+  };
+
+  const threatLevel = lightning?.threatLevel || "none";
+  const lightningConfigured = lightning?.configured !== false;
 
   return (
-    <div className="space-y-2 p-1" data-testid="widget-weather">
+    <div className="space-y-2 p-1 overflow-auto h-full" data-testid="widget-weather">
+      {/* ── Current Conditions ── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {getWeatherIcon(weather.icon)}
@@ -1074,7 +1286,7 @@ function WeatherWidget({ projectId }: { projectId?: string } = {}) {
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="flex items-center gap-1 text-navy-300">
           <Wind className="h-3 w-3" />
-          {windMph} mph
+          {windMph} mph {windDir}
         </div>
         <div className="flex items-center gap-1 text-navy-300">
           <Droplets className="h-3 w-3" />
@@ -1082,19 +1294,71 @@ function WeatherWidget({ projectId }: { projectId?: string } = {}) {
         </div>
       </div>
 
-      {weather.hasThunderstorm && (
-        <div className="flex items-center gap-2 bg-yellow-600/20 border border-yellow-600 rounded px-2 py-1">
-          <Zap className="h-4 w-4 text-yellow-400 animate-pulse" />
-          <span className="text-xs text-yellow-300">Thunderstorm Warning</span>
+      {/* ── Lightning Section ── */}
+      {lightning?.stopWork && (
+        <div className="flex items-center gap-2 bg-red-700/40 border-2 border-red-500 rounded px-2 py-2 animate-pulse">
+          <OctagonX className="h-5 w-5 text-red-300 shrink-0" />
+          <div>
+            <div className="text-xs font-bold text-red-200">STOP WORK — LIGHTNING HAZARD</div>
+            <div className="text-[10px] text-red-300">Per USACE EM 385-1-1 §30 — diving ops must cease when lightning is within 5 NM</div>
+          </div>
         </div>
       )}
 
-      {lightning?.hasUpcomingStorms && !weather.hasThunderstorm && (
+      {lightning?.warningBanner && !lightning?.stopWork && (
+        <div className="flex items-center gap-2 bg-orange-600/30 border border-orange-500 rounded px-2 py-1.5">
+          <AlertTriangle className="h-4 w-4 text-orange-400 shrink-0" />
+          <div className="text-xs text-orange-300">
+            Lightning within 10 miles — monitor closely
+          </div>
+        </div>
+      )}
+
+      <div className={`flex items-center gap-2 rounded px-2 py-1.5 border ${threatBgMap[threatLevel]}`}>
+        <Zap className={`h-4 w-4 shrink-0 ${threatLevel !== "none" ? "animate-pulse" : ""} ${threatTextMap[threatLevel]}`} />
+        <div className="flex-1 min-w-0">
+          {lightningConfigured ? (
+            <>
+              <div className={`text-xs font-medium ${threatTextMap[threatLevel]}`}>
+                {lightning?.nearestLightningMiles != null
+                  ? `Nearest lightning: ~${lightning.nearestLightningMiles} miles`
+                  : "No lightning detected"}
+              </div>
+              <div className="text-[10px] text-navy-400">
+                Threat: {threatLevel.charAt(0).toUpperCase() + threatLevel.slice(1)}
+                {lightning?.source === "tomorrow.io" && lightning?.flashRateDensity != null
+                  ? ` · Flash rate: ${lightning.flashRateDensity.toFixed(3)}/mi²`
+                  : ""}
+              </div>
+            </>
+          ) : (
+            <div className="text-xs text-navy-400">Lightning data not configured</div>
+          )}
+        </div>
+      </div>
+
+      {weather.hasThunderstorm && threatLevel === "none" && (
+        <div className="flex items-center gap-2 bg-yellow-600/20 border border-yellow-600 rounded px-2 py-1">
+          <Zap className="h-4 w-4 text-yellow-400 animate-pulse" />
+          <span className="text-xs text-yellow-300">Thunderstorm Warning (current conditions)</span>
+        </div>
+      )}
+
+      {lightning?.hasUpcomingStorms && threatLevel === "none" && !weather.hasThunderstorm && (
         <div className="flex items-center gap-2 bg-orange-600/20 border border-orange-600 rounded px-2 py-1">
           <Zap className="h-4 w-4 text-orange-400" />
           <span className="text-xs text-orange-300">Storms expected in forecast</span>
         </div>
       )}
+
+      {/* ── Radar Section ── */}
+      <div>
+        <div className="flex items-center gap-1 mb-1">
+          <Radar className="h-3 w-3 text-cyan-400" />
+          <span className="text-[10px] text-navy-400 font-semibold uppercase tracking-wider">Precipitation Radar</span>
+        </div>
+        <RadarMapWidget lat={effectiveLat} lon={effectiveLon} radar={radar} />
+      </div>
     </div>
   );
 }
