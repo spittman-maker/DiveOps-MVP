@@ -28,6 +28,8 @@ function isExplicitLocalMode(): boolean {
 
 function validateEnvironment() {
   const localMode = isExplicitLocalMode();
+  const isProd = process.env.NODE_ENV === "production";
+
   if (!process.env.SESSION_SECRET && !localMode) {
     console.error("[FATAL] SESSION_SECRET environment variable is required outside explicit local development mode. Exiting.");
     process.exit(1);
@@ -36,6 +38,34 @@ function validateEnvironment() {
   if (process.env.ENABLE_CORS === "true" && process.env.CSRF_MODE !== "token") {
     console.error("[FATAL] ENABLE_CORS=true requires CSRF_MODE=token to protect state-changing routes. Exiting.");
     process.exit(1);
+  }
+
+  if (isProd && process.env.DEV_SEED_TOKEN) {
+    console.error("[FATAL] DEV_SEED_TOKEN must not be configured in production. Exiting.");
+    process.exit(1);
+  }
+
+  if (process.env.BOOTSTRAP_ENABLED === "true") {
+    if (!process.env.BOOTSTRAP_SECRET) {
+      console.error("[FATAL] BOOTSTRAP_ENABLED=true requires BOOTSTRAP_SECRET. Exiting.");
+      process.exit(1);
+    }
+
+    const expiresAt = process.env.BOOTSTRAP_EXPIRES_AT;
+    if (!expiresAt || !Number.isFinite(Date.parse(expiresAt))) {
+      console.error("[FATAL] BOOTSTRAP_ENABLED=true requires a valid BOOTSTRAP_EXPIRES_AT timestamp. Exiting.");
+      process.exit(1);
+    }
+
+    if (Date.now() > Date.parse(expiresAt)) {
+      console.error("[FATAL] BOOTSTRAP_EXPIRES_AT is already in the past. Exiting.");
+      process.exit(1);
+    }
+
+    if (isProd) {
+      console.error("[FATAL] BOOTSTRAP_ENABLED must be false in production deployments. Exiting.");
+      process.exit(1);
+    }
   }
 }
 
@@ -79,6 +109,20 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
+
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "same-origin");
+  res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+
+  if (process.env.NODE_ENV === "production") {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    res.setHeader("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+  }
+
+  next();
+});
 
 const PgSession = connectPgSimple(session);
 
