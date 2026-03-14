@@ -20,6 +20,7 @@ import { sql } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import { authLimiter } from "./rate-limit";
 import { randomBytes } from "crypto";
+import { psg } from "./psg-data-layer";
 
 declare global {
   namespace Express {
@@ -1340,6 +1341,8 @@ export async function registerRoutes(
         }
       }
 
+      // PSG Data Layer: forward project created
+      psg.onProjectCreated(project);
       res.status(201).json(project);
     } catch (error: any) {
       console.error("Create project error:", error);
@@ -1738,6 +1741,9 @@ export async function registerRoutes(
         status: "DRAFT",
         createdBy: user.id,
       });
+      // PSG Data Layer: forward day opened
+      const dayProject = await storage.getProject(p(req.params.projectId));
+      psg.onDayOpened(day, dayProject);
       res.status(201).json(day);
     } catch (error: any) {
       console.error("Create day error:", error);
@@ -1948,6 +1954,9 @@ export async function registerRoutes(
       before: { status: beforeDay?.status }, after: { status: "CLOSED", closedBy: user.id },
       metadata: forceClose ? { forceClose: true } : undefined,
     });
+    // PSG Data Layer: forward day closed
+    const closedProject = await storage.getProject(day.projectId);
+    psg.onDayClosed(day, closedProject, closeoutData);
     res.json(day);
   });
 
@@ -2585,6 +2594,9 @@ export async function registerRoutes(
         }
       }
       
+      // PSG Data Layer: forward log event
+      psg.onLogEventCreated(logEvent, project, day);
+
       // Return immediately with the persisted event
       const responseBody = {
         ...logEvent,
@@ -3014,6 +3026,9 @@ export async function registerRoutes(
         tableUsed: req.body.tableUsed || null,
         decompRequired: req.body.decoRequired ? "Y" : "N",
       });
+      // PSG Data Layer: forward dive log
+      const diveProject = await storage.getProject(day.projectId);
+      psg.onDiveLogged(dive, diveProject);
       res.status(201).json(dive);
     } catch (error: any) {
       console.error("Create dive error:", error);

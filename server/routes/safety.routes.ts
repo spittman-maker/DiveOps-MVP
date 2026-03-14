@@ -7,6 +7,7 @@ import { safetyStorage } from "../safety-storage";
 import { generateCorrelationId, emitAuditEvent, sanitizeForAudit, type AuditContext } from "../audit";
 import logger from "../logger";
 import type { ChecklistResponse, JhaContent, SafetyMeetingAgenda } from "@shared/safety-schema";
+import { psg } from "../psg-data-layer";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -520,6 +521,17 @@ export function registerSafetyRoutes(app: Express): void {
         logger.warn({ err: libErr }, "Failed to auto-save checklist completion to Library");
       }
 
+      // PSG Data Layer: forward checklist completion
+      psg.onChecklistCompleted({
+        id: completion.id,
+        type: data.checklistId,
+        projectId: data.projectId,
+        dayId: data.dayId,
+        completedById: user.id,
+        completedAt: new Date().toISOString(),
+        responses: data.responses,
+      });
+
       res.status(201).json({ ...completion, savedToLibrary: true });
     } catch (err: any) {
       if (err instanceof z.ZodError) {
@@ -591,6 +603,9 @@ export function registerSafetyRoutes(app: Express): void {
         after: sanitizeForAudit(jha),
         metadata: { title: jha.title, hazardCount: data.content.hazards.length, aiGenerated: data.aiGenerated },
       }).catch(() => {});
+
+      // PSG Data Layer: forward JHA
+      psg.onJHACompleted(jha);
 
       res.status(201).json(jha);
     } catch (err: any) {
@@ -1023,6 +1038,9 @@ export function registerSafetyRoutes(app: Express): void {
         after: sanitizeForAudit(report),
         metadata: { title: report.title, severity: data.severity, location: data.location },
       }).catch(() => {});
+
+      // PSG Data Layer: forward near-miss report
+      psg.onNearMissReported(report);
 
       res.status(201).json(report);
     } catch (err: any) {
