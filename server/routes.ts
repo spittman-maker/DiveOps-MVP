@@ -6315,12 +6315,14 @@ If you're not confident about specific facilities, say so in the notes field. Al
     const { registerAnalyticsRoutes } = await import("./routes/analytics.routes");
     const { registerMlRoutes } = await import("./routes/ml.routes");
     const { registerSafetyRoutes } = await import("./routes/safety.routes");
+    const { registerDocumentUploadRoutes } = await import("./routes/document-upload.routes");
     
     registerKnowledgeBaseRoutes(app);
     registerAnalyticsRoutes(app);
     registerMlRoutes(app);
     registerSafetyRoutes(app);
-    console.log("[Routes] Knowledge-base, analytics, ML, and safety route modules registered successfully");
+    registerDocumentUploadRoutes(app);
+    console.log("[Routes] Knowledge-base, analytics, ML, safety, and document-upload route modules registered successfully");
   } catch (error) {
     console.error("[Routes] Failed to register route modules:", error);
   }

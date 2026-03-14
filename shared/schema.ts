@@ -962,7 +962,9 @@ export type AuditAction =
   | "user.create" | "user.update"
   | "auth.login" | "auth.login_failed" | "auth.logout" | "auth.password_change"
   | "company.create" | "company.update" | "company.delete"
-  | "company_member.add" | "company_member.remove";
+  | "company_member.add" | "company_member.remove"
+  | "document.upload" | "document.parse_complete" | "document.parse_failed"
+  | "library.upload" | "sop.upload";
 
 export const auditEvents = pgTable("audit_events", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
