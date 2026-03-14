@@ -4623,7 +4623,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
   // ADMIN: USER MANAGEMENT
   // ──────────────────────────────────────────────────────────────────────────
 
-  app.get("/api/users", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+  app.get("/api/users", requireRole("ADMIN", "GOD", "SUPERVISOR"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       let users;
@@ -5733,6 +5733,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
     try {
       const user = getUser(req);
       const userId = req.query.userId as string | undefined;
+      const projectId = req.query.projectId as string | undefined;
       // BUG-05 FIX: If a userId is provided, verify the target user belongs to the same company
       if (userId && isEnabled("multiTenantOrg") && !isGod(user.role)) {
         const targetUser = await storage.getUser(userId);
@@ -5742,6 +5743,18 @@ If you're not confident about specific facilities, say so in the notes field. Al
       }
       if (userId) {
         const certs = await storage.getDiverCertifications(userId);
+        return res.json(certs);
+      }
+      // Filter by projectId if provided (used by the Certifications tab)
+      if (projectId) {
+        // BUG-05 FIX: Verify projectId belongs to user's company
+        if (isEnabled("multiTenantOrg") && !isGod(user.role)) {
+          const project = await storage.getProject(projectId);
+          if (project?.companyId && user.companyId && project.companyId !== user.companyId) {
+            return res.status(403).json({ message: "Forbidden: project belongs to a different company" });
+          }
+        }
+        const certs = await storage.getDiverCertificationsByProject(projectId);
         return res.json(certs);
       }
       // BUG-05 FIX: Non-GOD users should only see certs for users in their company
@@ -5761,7 +5774,19 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.post("/api/diver-certifications", requireRole("ADMIN", "GOD", "SUPERVISOR"), async (req: Request, res: Response) => {
     try {
-      const cert = await storage.createDiverCertification(req.body);
+      const body = { ...req.body };
+      // Convert ISO date strings to Date objects for Drizzle timestamp columns
+      if (body.issuedDate && typeof body.issuedDate === "string") {
+        body.issuedDate = new Date(body.issuedDate);
+      }
+      if (body.expirationDate && typeof body.expirationDate === "string") {
+        body.expirationDate = new Date(body.expirationDate);
+      }
+      // Validate required fields
+      if (!body.userId || !body.certType) {
+        return res.status(400).json({ message: "userId and certType are required" });
+      }
+      const cert = await storage.createDiverCertification(body);
       res.status(201).json(cert);
     } catch (error: any) {
       res.status(500).json({ message: error?.message || "Failed to create diver certification" });
@@ -5770,7 +5795,15 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.patch("/api/diver-certifications/:id", requireRole("ADMIN", "GOD", "SUPERVISOR"), async (req: Request, res: Response) => {
     try {
-      const cert = await storage.updateDiverCertification(p(req.params.id), req.body);
+      const body = { ...req.body };
+      // Convert ISO date strings to Date objects for Drizzle timestamp columns
+      if (body.issuedDate && typeof body.issuedDate === "string") {
+        body.issuedDate = new Date(body.issuedDate);
+      }
+      if (body.expirationDate && typeof body.expirationDate === "string") {
+        body.expirationDate = new Date(body.expirationDate);
+      }
+      const cert = await storage.updateDiverCertification(p(req.params.id), body);
       if (!cert) return res.status(404).json({ message: "Certification not found" });
       res.json(cert);
     } catch (error: any) {
@@ -5778,7 +5811,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
     }
   });
 
-  app.delete("/api/diver-certifications/:id", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+  app.delete("/api/diver-certifications/:id", requireRole("ADMIN", "GOD", "SUPERVISOR"), async (req: Request, res: Response) => {
     try {
       const deleted = await storage.deleteDiverCertification(p(req.params.id));
       if (!deleted) return res.status(404).json({ message: "Certification not found" });
@@ -5822,7 +5855,19 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.post("/api/equipment-certifications", requireRole("ADMIN", "GOD", "SUPERVISOR"), async (req: Request, res: Response) => {
     try {
-      const cert = await storage.createEquipmentCertification(req.body);
+      const body = { ...req.body };
+      // Convert ISO date strings to Date objects for Drizzle timestamp columns
+      if (body.issuedDate && typeof body.issuedDate === "string") {
+        body.issuedDate = new Date(body.issuedDate);
+      }
+      if (body.expirationDate && typeof body.expirationDate === "string") {
+        body.expirationDate = new Date(body.expirationDate);
+      }
+      // Validate required fields
+      if (!body.equipmentName || !body.equipmentCategory || !body.certType) {
+        return res.status(400).json({ message: "equipmentName, equipmentCategory, and certType are required" });
+      }
+      const cert = await storage.createEquipmentCertification(body);
       res.status(201).json(cert);
     } catch (error: any) {
       res.status(500).json({ message: error?.message || "Failed to create equipment certification" });
@@ -5831,7 +5876,15 @@ If you're not confident about specific facilities, say so in the notes field. Al
 
   app.patch("/api/equipment-certifications/:id", requireRole("ADMIN", "GOD", "SUPERVISOR"), async (req: Request, res: Response) => {
     try {
-      const cert = await storage.updateEquipmentCertification(p(req.params.id), req.body);
+      const body = { ...req.body };
+      // Convert ISO date strings to Date objects for Drizzle timestamp columns
+      if (body.issuedDate && typeof body.issuedDate === "string") {
+        body.issuedDate = new Date(body.issuedDate);
+      }
+      if (body.expirationDate && typeof body.expirationDate === "string") {
+        body.expirationDate = new Date(body.expirationDate);
+      }
+      const cert = await storage.updateEquipmentCertification(p(req.params.id), body);
       if (!cert) return res.status(404).json({ message: "Certification not found" });
       res.json(cert);
     } catch (error: any) {
@@ -5839,7 +5892,7 @@ If you're not confident about specific facilities, say so in the notes field. Al
     }
   });
 
-  app.delete("/api/equipment-certifications/:id", requireRole("ADMIN", "GOD"), async (req: Request, res: Response) => {
+  app.delete("/api/equipment-certifications/:id", requireRole("ADMIN", "GOD", "SUPERVISOR"), async (req: Request, res: Response) => {
     try {
       const deleted = await storage.deleteEquipmentCertification(p(req.params.id));
       if (!deleted) return res.status(404).json({ message: "Certification not found" });

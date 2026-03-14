@@ -124,9 +124,22 @@ export function SafetyChecklists() {
     setSelectedChecklist(data);
   };
 
+  // Validate that all required items have been answered
+  const requiredItems = selectedChecklist?.items?.filter(i => i.isRequired) || [];
+  const unansweredRequired = requiredItems.filter(item => {
+    const resp = responses[item.id];
+    if (!resp) return true;
+    if (resp.value === "" || resp.value === undefined || resp.value === null) return true;
+    // For pass_fail_flag items, ensure a status was selected
+    if (item.itemType === "pass_fail_flag" && !resp.status) return true;
+    return false;
+  });
+  const allRequiredAnswered = unansweredRequired.length === 0;
+
   const submitMutation = useMutation({
     mutationFn: async () => {
       if (!selectedChecklist || !activeProject) throw new Error("No checklist selected");
+      if (!allRequiredAnswered) throw new Error(`${unansweredRequired.length} required item(s) not completed`);
       const responseArray = Object.values(responses);
       const res = await fetch("/api/safety/completions", {
         method: "POST",
@@ -352,10 +365,15 @@ export function SafetyChecklists() {
                   onChange={(e) => setSignature(e.target.value)}
                 />
               </div>
+              {!allRequiredAnswered && (
+                <p className="text-xs text-amber-400">
+                  {unansweredRequired.length} required item(s) still need to be completed before submission.
+                </p>
+              )}
               <Button
                 className="w-full btn-gold-metallic"
                 onClick={() => submitMutation.mutate()}
-                disabled={submitMutation.isPending || !signature}
+                disabled={submitMutation.isPending || !signature || !allRequiredAnswered}
               >
                 {submitMutation.isPending ? "Submitting..." : "Sign & Submit Checklist"}
               </Button>
